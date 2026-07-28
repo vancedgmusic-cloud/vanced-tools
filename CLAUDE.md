@@ -66,16 +66,18 @@ Untuk kerja Remotion, pakai skill `remotion-best-practices`.
 
 ## Keamanan
 
-API key ada di `state.api`, memori saja. `saveProject()` (baris ~1862) menghapusnya
-dari file ekspor lewat **blocklist hardcoded**:
+API key ada di `state.api`, memori saja. `saveProject()` menghapusnya dari file
+ekspor berdasarkan **bentuk nama field**, bukan daftar nama:
 
 ```js
-snap.api={...snap.api, claudeKey:'',geminiKey:'',groqKey:'',orKey:'',customKey:''};
+snap.api=Object.fromEntries(Object.entries(snap.api).map(([k,v])=>[k, /key$/i.test(k)?'':v]));
 ```
 
-Kalau menambah provider baru dengan field key baru, **wajib tambahkan ke blocklist
-itu** — kalau tidak, key ikut ter-download ke file project user. `loadProject` juga
-sengaja mempertahankan `state.api` yang sedang aktif dan tidak menimpanya dari file.
+Artinya provider baru aman secara default — asal field kredensialnya diberi nama
+berakhiran `Key` (`deepseekKey`, `mistralKey`, dst). **Jangan menamai field
+kredensial di luar pola itu**, karena ia akan lolos ke file project yang di-download
+dan dibagikan user. `loadProject` juga sengaja mempertahankan `state.api` yang
+sedang aktif dan tidak menimpanya dari file.
 
 Key hanya dikirim ke API resmi provider-nya. Jangan tambah endpoint pihak ketiga,
 telemetry, atau logging yang menyentuh key.

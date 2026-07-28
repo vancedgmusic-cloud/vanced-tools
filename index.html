@@ -1598,6 +1598,17 @@ function storyboardIssues(data){
   data.scenes.forEach((s,i)=>{
     if(!s.beats.length) out.push('Scene '+(i+1)+' belum punya isi timeline.');
   });
+  /* Aturan #1 dicek juga di sini, bukan cuma di validate(). validate() hanya
+     mengisi panel tahap 09 yang bisa saja tidak pernah dibuka, sementara ekspor
+     inilah yang benar-benar mengirim storyboard keluar — sebelumnya file tetap
+     terbit membawa CTA di scene Hook. */
+  const last=data.scenes.length-1;
+  data.scenes.forEach((s,i)=>{
+    const cta=String(s.cta||'').trim();
+    if(i!==last && cta && cta!=='-'){
+      out.push('Scene '+(i+1)+' memuat CTA padahal bukan scene terakhir — Aturan #1. Kosongkan dulu (isi "-").');
+    }
+  });
   if(!data.scenes.some(s=>s.role==='cta')) out.push('Belum ada scene penutup (CTA).');
   return out;
 }
@@ -1859,7 +1870,13 @@ function render(){ renderRail(); renderPanel(); }
 
 /* ---------------- project save/load ---------------- */
 function saveProject(){
-  const snap=JSON.parse(JSON.stringify(state)); snap.api={...snap.api, claudeKey:'',geminiKey:'',groqKey:'',orKey:'',customKey:''};
+  /* Credentials are stripped by shape, not by name. The previous version listed
+     each key field explicitly, so adding a provider later meant its key would
+     ride along inside the project file the user downloads and shares — a leak
+     that nothing would flag. Every field ending in "Key" is cleared instead, so
+     a new provider is safe by default. */
+  const snap=JSON.parse(JSON.stringify(state));
+  snap.api=Object.fromEntries(Object.entries(snap.api).map(([k,v])=>[k, /key$/i.test(k)?'':v]));
   download((state.setup.nama||'project').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-').toLowerCase()+'-brain-director.json', JSON.stringify(snap,null,2),'application/json');
   toast('Project disimpan sebagai .json (API key tidak ikut disimpan).','ok');
 }
