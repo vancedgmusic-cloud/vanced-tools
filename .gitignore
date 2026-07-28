@@ -1,0 +1,15 @@
+# Claude Code local state
+.claude/settings.local.json
+.claude/skills/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+
+# Working output
+*.local.html
+*-brain-director.json
+*-remotion-props.json
+out/
