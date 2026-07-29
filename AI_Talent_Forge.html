@@ -709,6 +709,7 @@ async function callAI(prompt, maxTokens=1800, images){
       const part=(d.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
       full=pre+part;
       if(d.stop_reason!=='max_tokens') break;
+      if(!part.trim()) throw new Error(label+': model berhenti tanpa menghasilkan teks. Kecilkan Jumlah Scene di tahap 00 lalu coba lagi.');
     }
     return full;
   }
@@ -719,16 +720,24 @@ async function callAI(prompt, maxTokens=1800, images){
     const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(a.geminiKey);
     const parts=[{text:prompt}];
     if(images&&images.length) images.forEach(img=>parts.push({inline_data:{mime_type:img.mimeType,data:img.data}}));
+    /* Model Gemini 2.5 memakai "thinking", dan token berpikirnya ikut
+       memotong maxOutputTokens. Pada prompt panjang, berpikir bisa melahap
+       nyaris seluruh jatah sehingga jawabannya keluar kosong. Karena itu
+       jatahnya dilipatgandakan — bukan sekadar disamakan dengan tahap lain. */
     let full='';
     for(let g=0; g<MAX_CHUNK; g++){
       const contents=[{role:'user',parts}];
       if(full.trim()) contents.push({role:'model',parts:[{text:full}]},{role:'user',parts:[{text:'Lanjutkan persis dari karakter terakhir. Jangan mengulang apa pun.'}]});
       const d=await postJSON(url,{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({contents,generationConfig:{maxOutputTokens:Math.max(maxTokens,2048),temperature:0.85}})},'Gemini');
+        body:JSON.stringify({contents,generationConfig:{maxOutputTokens:Math.max(maxTokens*3,8192),temperature:0.85}})},'Gemini');
       const c=d.candidates&&d.candidates[0];
       const part=((c&&c.content&&c.content.parts)||[]).map(p=>p.text||'').join('');
       full+=part;
       if(!c||c.finishReason!=='MAX_TOKENS') break;
+      /* Kalau satu putaran tidak menghasilkan teks sama sekali, mengulang
+         dengan permintaan yang sama tidak akan pernah maju — berhenti dan
+         beri tahu penyebabnya, jangan buang waktu 6 putaran. */
+      if(!part.trim()) throw new Error('Gemini menghabiskan jatah token untuk berpikir sebelum sempat menjawab. Coba model gemini-2.5-pro, atau kecilkan Jumlah Scene di tahap 00.');
     }
     return full;
   }
@@ -753,8 +762,10 @@ async function callAI(prompt, maxTokens=1800, images){
       body:JSON.stringify({model,messages,max_tokens:Math.max(maxTokens,2048),temperature:0.85})
     },P.name);
     const ch=d.choices&&d.choices[0];
-    full+=((ch&&ch.message&&ch.message.content)||'');
+    const part=((ch&&ch.message&&ch.message.content)||'');
+    full+=part;
     if(!ch||ch.finish_reason!=='length') break;
+    if(!part.trim()) throw new Error(P.name+': model berhenti tanpa menghasilkan teks. Kecilkan Jumlah Scene di tahap 00 lalu coba lagi.');
   }
   return full;
 }
@@ -1111,13 +1122,24 @@ function setBusy(b, text){
 
 /* Balasan AI bisa terpotong dan menyisakan lebih sedikit item dari yang diminta.
    Hasil parsial tetap dipakai, tapi user harus tahu supaya tidak mengira sudah lengkap. */
+/* Aturan "scene berdialog wajib gerak tenang" bersifat deterministik, jadi
+   ditegakkan di sini alih-alih dititipkan ke kepatuhan model. Uji dengan API
+   sungguhan menunjukkan model kadang tetap memberi gerak dinamis pada scene
+   berdialog, dan itu merusak sinkronisasi bibir. */
 function normScene(x,i){
-  return {
+  const s={
     nama:x.nama||('Scene '+(i+1)), use_case:x.use_case||'', aksi:x.aksi||'',
     setting:x.setting||'', wardrobe:x.wardrobe||'', komposisi:x.komposisi||'',
     kamera:x.kamera||'', disiplin:(SHOT_DISCIPLINE[x.disiplin]?x.disiplin:''), beats:x.beats||'', dialog:x.dialog||'',
     prompt_image:stripText(x.prompt_image), prompt_video:stripText(x.prompt_video)
   };
+  if(String(s.dialog).trim()){
+    s.disiplin='tenang';
+    if(s.prompt_video && !/restrained|minimal head movement|nearly still/i.test(s.prompt_video)){
+      s.prompt_video=s.prompt_video.replace(/\s*$/,'').replace(/[.;]$/,'')+'; '+SHOT_DISCIPLINE.tenang.en+'.';
+    }
+  }
+  return s;
 }
 
 function warnShort(got, want, satuan){
@@ -1134,7 +1156,7 @@ async function runStage(id, fb){
     setBusy(true, 'Menyusun '+(STAGE_LABEL[id]||id)+'…');
     const imgs = (id==='refs'||id==='dna'||id==='persona') ? visionCapableImages() : null;
     if(id==='sheet'){
-      const raw=await callAI(promptSheet(fb), 4200, null);
+      const raw=await callAI(promptSheet(fb), 12000, null);
       const d=parseJSONLoose(raw);
       const arr=Array.isArray(d.sheet)?d.sheet:[];
       if(!arr.length) throw new Error('AI tidak mengembalikan shot apa pun. Coba lagi.');
@@ -1145,14 +1167,14 @@ async function runStage(id, fb){
       }));
       warnShort(state.sheet.length, SHEET_SHOTS.length, 'shot');
     } else if(id==='scenes'){
-      const raw=await callAI(promptScenes(fb), 5200, null);
+      const raw=await callAI(promptScenes(fb), 14000, null);
       const d=parseJSONLoose(raw);
       const arr=Array.isArray(d.scenes)?d.scenes:[];
       if(!arr.length) throw new Error('AI tidak mengembalikan scene apa pun. Coba lagi.');
       state.scenes=arr.map((x,i)=>normScene(x,i));
       warnShort(state.scenes.length, sceneCount(), 'scene');
     } else {
-      const raw=await callAI(promptStage(id, fb), 2600, imgs);
+      const raw=await callAI(promptStage(id, fb), 4000, imgs);
       const d=parseJSONLoose(raw);
       const o={}; F[id].forEach(f=>{ o[f.k]=String(d[f.k]==null?'':d[f.k]).trim(); });
       state[id]=o;
@@ -1175,14 +1197,14 @@ async function runAll(){
     try{
       setBusy(true,'Menyusun '+(STAGE_LABEL[id]||id)+'…');
       if(id==='sheet'){
-        const d=parseJSONLoose(await callAI(promptSheet(''),4200,null));
+        const d=parseJSONLoose(await callAI(promptSheet(''),12000,null));
         state.sheet=(d.sheet||[]).map((x,i)=>({id:x.id||('shot'+i),label:x.label||('Shot '+(i+1)),prompt:stripText(x.prompt),negative:stripText(x.negative),catatan:stripText(x.catatan)}));
       } else if(id==='scenes'){
-        const d=parseJSONLoose(await callAI(promptScenes(''),5200,null));
+        const d=parseJSONLoose(await callAI(promptScenes(''),14000,null));
         state.scenes=(d.scenes||[]).map((x,i)=>normScene(x,i));
       } else {
         const imgs=(id==='dna'||id==='persona')?visionCapableImages():null;
-        const d=parseJSONLoose(await callAI(promptStage(id,''),2600,imgs));
+        const d=parseJSONLoose(await callAI(promptStage(id,''),4000,imgs));
         const o={}; F[id].forEach(f=>{ o[f.k]=String(d[f.k]==null?'':d[f.k]).trim(); });
         state[id]=o;
       }
