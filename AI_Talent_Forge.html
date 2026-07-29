@@ -268,7 +268,7 @@ const state = {
   refmode:'komposit',
   realism:{
     tekstur:'detail', garis:'normal', imperfeksi:'ringan', kilap:'natural',
-    kamera:'iphone', cahaya:'jendela', grain:'halus', tubuh:'natural'
+    kamera:'iphone', cahaya:'jendela', grain:'halus', tubuh:'natural', gerak:'penuh'
   },
   refs:{}, persona:{}, dna:{}, wardrobe:{}, voice:{}, content:{}, compliance:{},
   sheet:[], scenes:[],
@@ -492,6 +492,40 @@ const REALISM={
   }
 };
 
+/* ---------------- realisme gerak (khusus video) ----------------
+   Realism Lock di atas semuanya soal kulit yang DIAM. Untuk video, yang
+   membuat hasil terasa palsu justru fisika: subjek melayang, kain tidak
+   punya berat, latar tidak bergeser saat kamera bergerak. Lapisan ini
+   ditempel ke prompt video, bukan ke prompt gambar. */
+const MOTION={
+  label:'Realisme Gerak',
+  opt:{
+    mati:{l:'Mati (biarkan engine)', en:''},
+    ringan:{l:'Ringan', en:'physically plausible motion with correct weight and natural acceleration; natural motion blur on fast-moving elements'},
+    penuh:{l:'Penuh (disarankan)', en:'physically accurate motion: correct weight and inertia, natural acceleration and deceleration, hair and fabric lagging a beat behind the body, feet planting with real contact and no sliding; natural motion blur consistent with shutter speed; depth-consistent parallax between foreground, subject and background as the camera moves; subtle handheld micro-shake and slight rolling-shutter wobble on fast pans'}
+  }
+};
+
+/* Gerakan kamera — dipilih AI per scene, daftar ini jadi kosakata bakunya. */
+const CAM_MOVE=[
+  'locked-off static tripod shot',
+  'handheld with subtle natural sway',
+  'slow steady dolly push-in',
+  'slow dolly pull-out revealing the setting',
+  'smooth arcing orbit around the subject',
+  'tracking shot moving with the subject',
+  'slow tilt revealing the subject bottom to top',
+  'whip pan into the next beat'
+];
+
+/* Kosakata komposisi. Negative space penting untuk UGC karena caption dan
+   sticker teks butuh ruang kosong yang sudah direncanakan, bukan sisa. */
+const COMPO={
+  sudut:['eye level','low angle looking up','high angle looking down','three-quarter angle','over-the-shoulder','top-down flat lay'],
+  jarak:['extreme close-up','close-up','medium close-up','medium shot','medium-wide shot','wide shot'],
+  aturan:['rule of thirds with the subject on the left third','rule of thirds with the subject on the right third','centered symmetrical framing','generous negative space on the upper third for text overlay','generous negative space on the right for text overlay']
+};
+
 /* Detail yang paling sering gagal di hasil AI, jadi selalu diminta eksplisit. */
 const EYE_DETAIL='eyes with crisp iris fibre detail and a visible limbal ring, fine sclera vascularity, a wet corneal reflection, catchlights that match the shape and direction of the key light, pupil dilation consistent with the ambient level, individually separated lower lashes';
 const HAIR_DETAIL='individual flyaway hairs breaking the silhouette, a natural parting with visible scalp, slight frizz and irregular strand clumping rather than uniform styled hair';
@@ -541,6 +575,23 @@ function realismLock(mode){
     'unretouched raw photograph of a real person, not a render and not a beauty-filtered image'
   ].join('; ')+'.';
 }
+function motionLock(){ return (MOTION.opt[rcfg().gerak]||MOTION.opt.penuh).en; }
+
+/* Kerangka waktu untuk BEATS. Satu shot pendek tetap perlu tiga titik —
+   tanpa itu model cenderung menghasilkan gerakan datar tanpa perkembangan. */
+function beatSkeleton(){
+  const d=Math.max(4, Math.min(20, +state.setup.durasi||8));
+  const r=n=>Math.round(n*10)/10;
+  return { d, hook:r(d*0.18), build:r(d*0.65) };
+}
+function beatBrief(){
+  const b=beatSkeleton();
+  return 'Durasi scene '+b.d+' detik. BEATS wajib memakai kerangka ini, satu shot menerus tanpa potongan:\n'+
+    '  t=0–'+b.hook+'s HOOK — perubahan visual yang langsung terbaca di detik pertama\n'+
+    '  t='+b.hook+'–'+b.build+'s BUILD — perkembangan aksi / demo produk\n'+
+    '  t='+b.build+'–'+b.d+'s PAYOFF — penutup yang menetap (produk jelas / CTA)';
+}
+
 function engineParams(){
   const k=rpick('kamera'), e=state.setup.imgEngine;
   if(e==='midjourney') return '--ar '+ratio()+' --style raw --s '+k.mjs+' --v 7';
@@ -960,11 +1011,28 @@ function promptScenes(fb){
     '- dialog: tulis dalam '+state.setup.bahasa+', gaya bicara natural sesuai Voice & Speech, panjang pas untuk '+(state.setup.durasi||8)+' detik (sekitar 20–28 kata). Pakai filler words khas talent.\n'+
     '- Scene pertama wajib punya hook kuat di 3 detik pertama: sebutkan hook visual DAN hook verbal.\n'+
     '- Scene terakhir wajib berisi CTA.\n'+
-    '- setting: lokasi konkret yang masuk akal untuk '+state.setup.pasar+', bukan lokasi generik.\n'+
-    '- kamera: gerakan kamera spesifik (mis. handheld slight sway, slow push-in).\n'+
+    '- setting: lokasi konkret yang masuk akal untuk '+state.setup.pasar+', bukan lokasi generik.\n\n'+
+
+    'SLOT WAJIB TIAP SCENE\n'+
+    '- aksi: SATU kata kerja fisik yang bisa dibaca instan, bukan pose diam. Contoh bagus: "menuang serum ke telapak tangan", "menepuk pipi dua kali", "membalik kemasan untuk baca komposisi". Contoh buruk: "berpose", "tersenyum".\n'+
+    '- komposisi: gabungkan tiga hal — sudut, jarak, dan aturan framing. Kosakata baku:\n'+
+    '  sudut: '+COMPO.sudut.join(' / ')+'\n'+
+    '  jarak: '+COMPO.jarak.join(' / ')+'\n'+
+    '  framing: '+COMPO.aturan.join(' / ')+'\n'+
+    '  Minimal 2 scene WAJIB memakai framing bernegative space, karena caption dan sticker teks butuh ruang kosong yang direncanakan — bukan sisa.\n'+
+    '- kamera: gerakan kamera spesifik, pakai kosakata ini: '+CAM_MOVE.join(' / ')+'\n'+
+    '- beats: '+beatBrief()+'\n'+
+    '  Tulis beats sebagai satu baris: "t=0–Xs HOOK: … | t=X–Ys BUILD: … | t=Y–Zs PAYOFF: …". Isi tiap beat dengan perubahan visual konkret, bukan deskripsi suasana.\n\n'+
+
+    'KONTINUITAS GAMBAR → VIDEO (penting, ini alur kerja sebenarnya)\n'+
+    'prompt_image adalah frame pembuka, prompt_video menganimasikan frame itu. Karena itu:\n'+
+    '- prompt_video WAJIB memakai subjek, wardrobe, setting, dan KOMPOSISI yang sama persis dengan prompt_image scene itu. Jangan memindahkan lokasi atau mengganti baju di tengah scene.\n'+
+    '- Yang BOLEH ditambahkan hanya di prompt_video: gerakan kamera, perkembangan aksi sesuai beats, perilaku partikel/kain/rambut, dan realisme gerak.\n'+
+    '- prompt_video WAJIB memuat blok realisme gerak berikut, disalin apa adanya:\n'+
+    (motionLock()?'"""\n'+motionLock()+'\n"""\n':'(realisme gerak dimatikan — lewati)\n')+
     fbLine(fb)+'\n\n'+
     JSON_RULE+'\nSkema wajib:\n'+
-    '{"scenes":[{"nama":"","use_case":"","setting":"","wardrobe":"","kamera":"","dialog":"","prompt_image":"","prompt_video":""}]}\n'+
+    '{"scenes":[{"nama":"","use_case":"","aksi":"","setting":"","wardrobe":"","komposisi":"","kamera":"","beats":"","dialog":"","prompt_image":"","prompt_video":""}]}\n'+
     'Tepat '+n+' item, urut.';
 }
 
@@ -999,6 +1067,15 @@ function setBusy(b, text){
 
 /* Balasan AI bisa terpotong dan menyisakan lebih sedikit item dari yang diminta.
    Hasil parsial tetap dipakai, tapi user harus tahu supaya tidak mengira sudah lengkap. */
+function normScene(x,i){
+  return {
+    nama:x.nama||('Scene '+(i+1)), use_case:x.use_case||'', aksi:x.aksi||'',
+    setting:x.setting||'', wardrobe:x.wardrobe||'', komposisi:x.komposisi||'',
+    kamera:x.kamera||'', beats:x.beats||'', dialog:x.dialog||'',
+    prompt_image:stripText(x.prompt_image), prompt_video:stripText(x.prompt_video)
+  };
+}
+
 function warnShort(got, want, satuan){
   if(got<want) toast('AI hanya mengembalikan '+got+' dari '+want+' '+satuan+'. Klik Generate Ulang untuk melengkapi.','err');
 }
@@ -1028,11 +1105,7 @@ async function runStage(id, fb){
       const d=parseJSONLoose(raw);
       const arr=Array.isArray(d.scenes)?d.scenes:[];
       if(!arr.length) throw new Error('AI tidak mengembalikan scene apa pun. Coba lagi.');
-      state.scenes=arr.map((x,i)=>({
-        nama:x.nama||('Scene '+(i+1)), use_case:x.use_case||'', setting:x.setting||'',
-        wardrobe:x.wardrobe||'', kamera:x.kamera||'', dialog:x.dialog||'',
-        prompt_image:stripText(x.prompt_image), prompt_video:stripText(x.prompt_video)
-      }));
+      state.scenes=arr.map((x,i)=>normScene(x,i));
       warnShort(state.scenes.length, sceneCount(), 'scene');
     } else {
       const raw=await callAI(promptStage(id, fb), 2600, imgs);
@@ -1062,7 +1135,7 @@ async function runAll(){
         state.sheet=(d.sheet||[]).map((x,i)=>({id:x.id||('shot'+i),label:x.label||('Shot '+(i+1)),prompt:stripText(x.prompt),negative:stripText(x.negative),catatan:stripText(x.catatan)}));
       } else if(id==='scenes'){
         const d=parseJSONLoose(await callAI(promptScenes(''),5200,null));
-        state.scenes=(d.scenes||[]).map((x,i)=>({nama:x.nama||('Scene '+(i+1)),use_case:x.use_case||'',setting:x.setting||'',wardrobe:x.wardrobe||'',kamera:x.kamera||'',dialog:x.dialog||'',prompt_image:stripText(x.prompt_image),prompt_video:stripText(x.prompt_video)}));
+        state.scenes=(d.scenes||[]).map((x,i)=>normScene(x,i));
       } else {
         const imgs=(id==='dna'||id==='persona')?visionCapableImages():null;
         const d=parseJSONLoose(await callAI(promptStage(id,''),2600,imgs));
@@ -1122,6 +1195,22 @@ function audit(){
   const hasCTA=state.scenes.some(s=>/cta|link|keranjang|checkout|beli|klik/i.test(s.dialog+' '+s.use_case));
   push(!!hasCTA,'Ada scene dengan CTA yang jelas', true);
 
+  /* Slot dari master formula: aksi, komposisi, beats, dan realisme gerak. */
+  if(state.scenes.length){
+    const withBeats=state.scenes.filter(s=>/t\s*=/.test(s.beats||'')).length;
+    push(withBeats===state.scenes.length,'Semua scene punya BEATS bertimestamp — '+withBeats+'/'+state.scenes.length, true);
+    const withAksi=state.scenes.filter(s=>String(s.aksi||'').trim()).length;
+    push(withAksi===state.scenes.length,'Semua scene punya kata kerja aksi — '+withAksi+'/'+state.scenes.length, true);
+    const withKomp=state.scenes.filter(s=>String(s.komposisi||'').trim()).length;
+    push(withKomp===state.scenes.length,'Semua scene punya komposisi eksplisit — '+withKomp+'/'+state.scenes.length, true);
+    const negSpace=state.scenes.filter(s=>/negative space/i.test(s.komposisi||'')).length;
+    push(negSpace>=2,'Minimal 2 scene menyediakan negative space untuk teks overlay — '+negSpace, true);
+    if(motionLock()){
+      const mo=state.scenes.filter(s=>/inertia|motion blur|parallax|weight/i.test(s.prompt_video||'')).length;
+      push(mo===state.scenes.length,'Semua prompt video memuat realisme gerak — '+mo+'/'+state.scenes.length, true);
+    }
+  }
+
   push(!!state.content.pilar,'Content pillars sudah disusun');
   push(!!state.compliance.disclosure_id && !!state.compliance.disclosure_en,'Disclosure AI tersedia dalam 2 bahasa');
   push(!!state.compliance.checklist,'Checklist sebelum posting sudah ada');
@@ -1154,6 +1243,8 @@ function mdDoc(){
   m+='Setelan: '+['tekstur','garis','imperfeksi','kilap','tubuh','kamera','cahaya','grain']
       .map(g=>REALISM[g].label+' = '+rpick(g).l).join(' · ')+'\n\n';
   m+='**Realism Lock (versi '+(short?'ringkas':'penuh')+', ditempel ke setiap prompt)**\n\n```\n'+realismLock(short?'short':'full')+'\n```\n\n';
+  if(motionLock()) m+='**Motion Lock (khusus prompt video)**\n\n```\n'+motionLock()+'\n```\n\n';
+  m+='**Struktur BEATS**\n\n```\n'+beatBrief()+'\n```\n\n';
   m+='**Negative anti-slop**\n\n```\n'+ANTI_SLOP_NEG+'\n```\n\n';
   m+='**Parameter engine ('+ie.name+')**\n\n```\n'+engineParams()+'\n```\n\n';
   m+='**Kata terlarang:** '+SLOP_WORDS.join(', ')+'\n\n';
@@ -1173,10 +1264,13 @@ function mdDoc(){
     state.scenes.forEach((x,i)=>{
       m+='### Scene '+(i+1)+' — '+x.nama+'\n\n';
       if(x.use_case) m+='- **Use case:** '+x.use_case+'\n';
+      if(x.aksi) m+='- **Aksi:** '+x.aksi+'\n';
       if(x.setting) m+='- **Setting:** '+x.setting+'\n';
       if(x.wardrobe) m+='- **Wardrobe:** '+x.wardrobe+'\n';
+      if(x.komposisi) m+='- **Komposisi:** '+x.komposisi+'\n';
       if(x.kamera) m+='- **Kamera:** '+x.kamera+'\n';
       if(x.dialog) m+='- **Dialog:** '+x.dialog+'\n';
+      if(x.beats) m+='- **Beats:** '+x.beats+'\n';
       m+='\n**Image prompt ('+ie.name+')**\n\n```\n'+x.prompt_image+'\n```\n\n';
       m+='**Video prompt ('+ve.name+')**\n\n```\n'+x.prompt_video+'\n```\n\n';
     });
@@ -1249,6 +1343,9 @@ function mergeLoadedState(d){
   if(!Array.isArray(state.uploads.refs)) state.uploads.refs=[];
   /* setelan realisme lama / rusak dikembalikan ke opsi yang valid */
   Object.keys(REALISM).forEach(g=>{ if(!REALISM[g].opt[state.realism[g]]) state.realism[g]=Object.keys(REALISM[g].opt)[0]; });
+  if(!MOTION.opt[state.realism.gerak]) state.realism.gerak='penuh';
+  /* project lama menyimpan scene tanpa slot aksi/komposisi/beats */
+  state.scenes=state.scenes.map((x,i)=>normScene(x,i));
 }
 function saveProject(){
   const nm=(state.persona.nama_lengkap||state.setup.namaProject||'ai-talent').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
@@ -1440,6 +1537,19 @@ function renderPanel(){
       '<div class="rowbtns"><button class="btn sm" id="btnCopyRealism">⧉ Salin Realism Lock</button>'+
       '<button class="btn sm" id="btnCopyRealismAlt">⧉ Salin versi '+(short?'penuh':'ringkas')+'</button></div></div>';
 
+    h+='<div class="card"><h3>Realisme Gerak <span class="tag">khusus prompt video</span></h3>'+
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Kontrol di atas semuanya soal kulit yang diam. Di video, yang bikin hasil terasa palsu justru fisika: subjek melayang, kain tanpa berat, latar tidak bergeser saat kamera bergerak. Blok ini hanya ditempel ke prompt video.</p>'+
+      '<div class="grid two"><div class="field"><label>'+esc(MOTION.label)+'</label><select data-path="realism.gerak">'+
+      Object.keys(MOTION.opt).map(k=>'<option value="'+k+'"'+(rcfg().gerak===k?' selected':'')+'>'+esc(MOTION.opt[k].l)+'</option>').join('')+
+      '</select></div></div>'+
+      (motionLock()?'<div class="lockbox" style="margin-top:12px">'+esc(motionLock())+'</div>'+
+        '<div class="rowbtns"><button class="btn sm" id="btnCopyMotion">⧉ Salin Motion Lock</button></div>':'')+
+      '</div>';
+
+    h+='<div class="card"><h3>Struktur BEATS <span class="tag">durasi '+beatSkeleton().d+' detik</span></h3>'+
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Satu shot pendek tetap butuh tiga titik. Tanpa ini model cenderung menghasilkan gerakan datar tanpa perkembangan. Kerangka waktunya ikut durasi scene di tahap 00.</p>'+
+      '<div class="lockbox">'+esc(beatBrief())+'</div></div>';
+
     h+='<div class="card"><h3>Negative Prompt Anti-Slop</h3>'+
       '<div class="promptbox" style="max-height:140px">'+esc(ANTI_SLOP_NEG)+'</div>'+
       '<div class="rowbtns"><button class="btn sm" id="btnCopyNeg">⧉ Salin Negative</button></div>'+
@@ -1504,11 +1614,14 @@ function renderPanel(){
       state.scenes.forEach((x,i)=>{
         h+='<div class="card"><h3>Scene '+(i+1)+' — '+esc(x.nama)+'<span class="tag">'+esc(x.use_case||'')+'</span></h3>'+
           '<div class="scroll-x"><table class="mini">'+
+            (x.aksi?'<tr><th style="width:110px">Aksi</th><td>'+esc(x.aksi)+'</td></tr>':'')+
             (x.setting?'<tr><th style="width:110px">Setting</th><td>'+esc(x.setting)+'</td></tr>':'')+
             (x.wardrobe?'<tr><th>Wardrobe</th><td>'+esc(x.wardrobe)+'</td></tr>':'')+
+            (x.komposisi?'<tr><th>Komposisi</th><td>'+esc(x.komposisi)+'</td></tr>':'')+
             (x.kamera?'<tr><th>Kamera</th><td>'+esc(x.kamera)+'</td></tr>':'')+
             (x.dialog?'<tr><th>Dialog</th><td>'+esc(x.dialog)+'</td></tr>':'')+
           '</table></div>'+
+          (x.beats?'<div class="meta" style="margin:12px 0 5px">BEATS</div><div class="lockbox">'+esc(x.beats)+'</div>':'')+
           '<div class="meta" style="margin:12px 0 5px">IMAGE PROMPT</div><div class="promptbox">'+esc(x.prompt_image)+'</div>'+
           '<div class="meta" style="margin:12px 0 5px">VIDEO PROMPT</div><div class="promptbox">'+esc(x.prompt_video)+'</div>'+
           '<div class="rowbtns"><button class="btn sm" data-copy="scenes.'+i+'.prompt_image">⧉ Image</button>'+
@@ -1657,6 +1770,10 @@ document.addEventListener('click', async e=>{
     const short=['midjourney','sdxl'].includes(state.setup.imgEngine);
     const want=(t.id==='btnCopyRealism')?(short?'short':'full'):(short?'full':'short');
     try{ await navigator.clipboard.writeText(realismLock(want)); toast('Realism Lock tersalin.','ok'); }
+    catch(err){ toast('Clipboard diblokir browser.','err'); } return;
+  }
+  if(t.id==='btnCopyMotion'){
+    try{ await navigator.clipboard.writeText(motionLock()); toast('Motion Lock tersalin.','ok'); }
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
   }
   if(t.id==='btnCopyNeg'){
