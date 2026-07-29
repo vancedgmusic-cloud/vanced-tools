@@ -1,0 +1,18 @@
+# Situs statis murni: tidak ada build step, semua file disajikan apa adanya.
+[build]
+  publish = "."
+  command = ""
+
+[build.processing]
+  skip_processing = true
+
+# Tool ini menyimpan API key hanya di memori tab dan memanggil provider AI
+# langsung dari browser. Header di bawah menutup hal-hal yang tidak dibutuhkan
+# situs statis, tanpa memblokir panggilan ke provider AI.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+    X-Frame-Options = "SAMEORIGIN"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
