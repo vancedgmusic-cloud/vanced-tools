@@ -1,0 +1,1798 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Framework Brain Director</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0F1218; --panel:#161A22; --panel2:#1C212C; --panel3:#222834;
+  --line:#2A3040; --line2:#39415A;
+  --text:#EAEDF4; --muted:#9AA3B6; --faint:#6B7488;
+  --amber:#F5A83B; --amber-soft:#F5A83B22; --amber-ink:#181005;
+  --teal:#57D0BE; --teal-soft:#57D0BE1c;
+  --red:#F1685A; --red-soft:#F1685A1f;
+  --green:#5CC98B; --green-soft:#5CC98B1f;
+  --r:12px; --r-sm:8px;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--text); font-family:var(--sans);
+  font-size:14.5px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--amber);color:var(--amber-ink)}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{
+  font-family:inherit;font-size:13.5px;color:var(--text);
+  background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:8px 10px;width:100%;outline:none;transition:border-color .15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--amber)}
+textarea{resize:vertical;min-height:64px;line-height:1.5}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239AA3B6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;font-weight:600}
+a{color:var(--teal)}
+
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-rows:auto 1fr auto;height:100vh}
+header.top{
+  display:flex;align-items:center;gap:14px;padding:10px 16px;
+  border-bottom:1px solid var(--line);background:var(--panel);
+  position:relative;z-index:5;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand .mark{
+  width:34px;height:34px;border-radius:8px;display:grid;place-items:center;
+  background:linear-gradient(140deg,var(--amber),#c97b16);color:var(--amber-ink);
+  font-weight:900;font-size:15px;letter-spacing:-.5px;
+}
+.brand h1{font-size:15px;font-weight:800;letter-spacing:.02em;line-height:1.1}
+.brand small{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;letter-spacing:.06em}
+.top .grow{flex:1;min-width:10px}
+.statusline{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);min-width:0}
+.recdot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.busy .recdot{background:var(--red);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.busy .recdot{animation:none}}
+.top .actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.btn{
+  border:1px solid var(--line);background:var(--panel2);color:var(--text);
+  border-radius:var(--r-sm);padding:7px 12px;font-size:12.5px;font-weight:600;
+  display:inline-flex;align-items:center;gap:7px;transition:.15s;white-space:nowrap;
+}
+.btn:hover{border-color:var(--line2);background:var(--panel3)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:var(--amber-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--red);border-color:#5a3a38}
+.btn.small{padding:5px 9px;font-size:11.5px}
+.btn .ico{font-size:13px;line-height:1}
+
+/* ---------- body layout ---------- */
+.body{display:grid;grid-template-columns:250px 1fr;min-height:0}
+nav.rail{
+  border-right:1px solid var(--line);background:var(--panel);
+  overflow-y:auto;padding:14px 10px 24px;
+}
+.rail .railtitle{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);padding:0 8px 10px;text-transform:uppercase}
+.step{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  background:none;border:1px solid transparent;border-radius:10px;
+  padding:8px 8px;margin-bottom:2px;color:var(--muted);position:relative;
+}
+.step:hover{background:var(--panel2);color:var(--text)}
+.step.active{background:var(--panel3);border-color:var(--line2);color:var(--text)}
+.step .no{
+  font-family:var(--mono);font-size:10.5px;color:var(--faint);width:22px;flex:none;
+}
+.step.active .no{color:var(--amber)}
+.step .lbl{flex:1;font-size:13px;font-weight:600}
+.step .led{width:7px;height:7px;border-radius:50%;background:var(--line2);flex:none}
+.step .led.done{background:var(--green)}
+.step .led.dirty{background:var(--amber)}
+.railnote{margin:14px 8px 0;padding:10px;border:1px dashed var(--line);border-radius:10px;font-size:11.5px;color:var(--faint);line-height:1.5}
+
+main{overflow-y:auto;padding:22px 26px 120px;min-width:0}
+.panelhead{margin-bottom:18px}
+.panelhead .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--amber);text-transform:uppercase;margin-bottom:6px}
+.panelhead h2{font-size:22px;font-weight:800;letter-spacing:-.01em}
+.panelhead p{color:var(--muted);margin-top:5px;max-width:70ch;font-size:13.5px}
+
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:18px;margin-bottom:16px;
+}
+.card h3{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.kvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px 14px}
+.kv.full{grid-column:1/-1}
+.hint{font-size:11.5px;color:var(--faint);margin-top:4px}
+
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.toolbar .spacer{flex:1}
+.stamp{
+  font-family:var(--mono);font-size:10.5px;color:var(--faint);
+  border:1px solid var(--line);border-radius:99px;padding:3px 9px;
+}
+.stamp.done{color:var(--green);border-color:#2c4a3a}
+.stamp.dirty{color:var(--amber);border-color:#54401f}
+
+.revise{display:flex;gap:8px;margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;flex-wrap:wrap}
+.revise textarea{flex:1;min-width:220px;min-height:44px}
+.revise .btn{align-self:flex-start}
+
+/* ---------- scene cards ---------- */
+.scene{
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  margin-bottom:20px;background:var(--panel);
+}
+.clapper{
+  background:repeating-linear-gradient(135deg,var(--amber) 0 12px,#141821 12px 24px);
+  height:9px;
+}
+.scenehead{
+  display:flex;align-items:center;gap:12px;padding:12px 16px;
+  border-bottom:1px solid var(--line);flex-wrap:wrap;
+}
+.scenehead .sceneno{font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.14em;color:var(--text)}
+.scenehead .focus{font-size:12px;color:var(--muted)}
+.lamp{
+  margin-left:auto;display:inline-flex;align-items:center;gap:7px;
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;
+  border-radius:99px;padding:4px 10px;border:1px solid;
+}
+.lamp.no{color:var(--red);border-color:#5a3a38;background:var(--red-soft)}
+.lamp.yes{color:var(--green);border-color:#2c4a3a;background:var(--green-soft)}
+.lamp .dotd{width:7px;height:7px;border-radius:50%;background:currentColor}
+.scenebody{padding:16px}
+.scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm)}
+table.tl{border-collapse:collapse;width:100%;min-width:860px}
+table.tl th{
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);text-align:left;padding:8px 8px;background:var(--panel2);
+  border-bottom:1px solid var(--line);position:sticky;top:0;
+}
+table.tl td{border-bottom:1px solid var(--line);padding:4px;vertical-align:top}
+table.tl tr:last-child td{border-bottom:none}
+table.tl td:first-child{font-family:var(--mono);font-size:11px;color:var(--amber);white-space:nowrap;padding:10px 8px;width:64px}
+table.tl textarea{min-height:52px;font-size:12.5px;border-color:transparent;background:transparent;padding:6px}
+table.tl textarea:focus{background:var(--panel2);border-color:var(--amber)}
+.subgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:14px}
+.mini{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;margin:16px 0 8px}
+
+.promptbox{
+  font-family:var(--mono);font-size:12.5px;line-height:1.6;background:var(--panel2);
+  border:1px solid var(--line);border-radius:var(--r-sm);width:100%;min-height:150px;padding:12px;
+}
+.tagbox{font-family:var(--mono);font-size:12.5px;min-height:70px}
+
+/* ---------- validation ---------- */
+.check{display:flex;gap:10px;padding:10px 12px;border-radius:var(--r-sm);margin-bottom:8px;font-size:13px;border:1px solid var(--line);background:var(--panel2)}
+.check .sym{font-family:var(--mono);flex:none}
+.check.ok{border-color:#2c4a3a;background:var(--green-soft)}.check.ok .sym{color:var(--green)}
+.check.warn{border-color:#54401f;background:var(--amber-soft)}.check.warn .sym{color:var(--amber)}
+.check.err{border-color:#5a3a38;background:var(--red-soft)}.check.err .sym{color:var(--red)}
+
+/* ---------- assistant bar ---------- */
+.assist{
+  position:fixed;left:0;right:0;bottom:0;z-index:20;
+  border-top:1px solid var(--line);background:linear-gradient(180deg,#161A22f2,#12151cf9);
+  backdrop-filter:blur(8px);padding:10px 16px;
+}
+.assist .inner{max-width:1100px;margin:0 auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.assist .tag{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--teal);text-transform:uppercase;flex:none}
+.assist input{flex:1;min-width:200px;background:var(--panel2)}
+.assist .plan{
+  max-width:1100px;margin:8px auto 0;font-size:12.5px;color:var(--muted);
+  display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+}
+.assist .plan .btn{flex:none}
+
+/* ---------- modal ---------- */
+.overlay{position:fixed;inset:0;background:#0009;z-index:40;display:none;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line2);border-radius:14px;max-width:620px;width:100%;padding:20px}
+.modal h2{font-size:17px;font-weight:800;margin-bottom:4px}
+.modal .sub{color:var(--muted);font-size:12.5px;margin-bottom:16px}
+.provgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-bottom:16px}
+.prov{
+  border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel2);
+  text-align:left;color:var(--muted);
+}
+.prov.sel{border-color:var(--amber);color:var(--text);background:var(--amber-soft)}
+.prov b{display:block;font-size:12.5px;color:var(--text);margin-bottom:2px}
+.prov span{font-size:10.5px;line-height:1.35;display:block}
+.keynote{font-size:11.5px;color:var(--faint);border:1px dashed var(--line);border-radius:8px;padding:9px 11px;margin-top:12px;line-height:1.5}
+.modal .foot{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.field{margin-bottom:12px}
+
+/* ---------- toast ---------- */
+.toasts{position:fixed;top:14px;right:14px;z-index:60;display:flex;flex-direction:column;gap:8px;max-width:340px}
+.toast{
+  background:var(--panel3);border:1px solid var(--line2);border-left:3px solid var(--teal);
+  border-radius:10px;padding:10px 14px;font-size:12.5px;box-shadow:0 8px 30px #0007;
+}
+.toast.err{border-left-color:var(--red)}
+.toast.ok{border-left-color:var(--green)}
+
+.empty{
+  border:1px dashed var(--line2);border-radius:var(--r);padding:34px 20px;text-align:center;color:var(--muted);
+}
+.empty .big{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
+.empty p{font-size:12.5px;max-width:52ch;margin:0 auto 16px}
+
+.rulebanner{
+  display:flex;gap:12px;align-items:flex-start;border:1px solid #54401f;background:var(--amber-soft);
+  border-radius:var(--r);padding:12px 14px;margin-bottom:18px;font-size:13px;
+}
+.rulebanner .sym{font-family:var(--mono);color:var(--amber);font-weight:600;flex:none}
+
+@media (max-width:900px){
+  .body{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  nav.rail{
+    display:flex;overflow-x:auto;overflow-y:hidden;border-right:none;
+    border-bottom:1px solid var(--line);padding:8px 10px;gap:4px;
+  }
+  .rail .railtitle,.railnote{display:none}
+  .step{width:auto;flex:none;margin-bottom:0;padding:6px 10px}
+  .step .lbl{font-size:12px;white-space:nowrap}
+  main{padding:16px 14px 150px}
+  .kvgrid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <header class="top" id="topbar">
+    <div class="brand">
+      <div class="mark">BD</div>
+      <h1>Brain Director<small>FRAMEWORK BRAIN DIRECTOR · V0.2</small></h1>
+    </div>
+    <div class="grow"></div>
+    <div class="statusline" id="statusline"><span class="recdot"></span><span id="statustext">Siaga</span></div>
+    <div class="actions">
+      <button class="btn small" id="btnLoad" title="Buka project .json">📂 Buka</button>
+      <button class="btn small" id="btnSave" title="Simpan project sebagai .json">💾 Simpan</button>
+      <button class="btn small" id="btnApi">⚙ API</button>
+      <button class="btn small primary" id="btnGenAll">⚡ Generate semua</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <nav class="rail" id="rail"></nav>
+    <main id="main"></main>
+  </div>
+
+  <div class="assist">
+    <div class="inner">
+      <span class="tag">◆ Asisten Adaptif</span>
+      <input id="assistInput" placeholder='Minta perubahan apa pun, mis. "ganti target audiens jadi ibu muda" atau "hook lebih FOMO" — AI menentukan tahap mana yang perlu disesuaikan'>
+      <button class="btn primary" id="assistBtn">Adaptasi</button>
+    </div>
+    <div class="plan" id="assistPlan" style="display:none"></div>
+  </div>
+</div>
+
+<!-- API modal -->
+<div class="overlay" id="apiOverlay">
+  <div class="modal">
+    <h2>Mesin AI &amp; API Key</h2>
+    <div class="sub">Pilih penyedia AI yang menjalankan penalaran pipeline. Key hanya disimpan di memori sesi ini dan hanya dikirim langsung ke penyedia yang dipilih.</div>
+    <div class="provgrid" id="provGrid"></div>
+    <div id="provFields"></div>
+    <div class="keynote" id="provNote"></div>
+    <div class="foot">
+      <button class="btn ghost" id="btnTestApi">Tes koneksi</button>
+      <button class="btn primary" id="btnCloseApi">Selesai</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<input type="file" id="fileInput" accept=".json" style="display:none">
+
+<script>
+/* =====================================================================
+   Framework Brain Director — single-file app
+   Pipeline: Input → Analisis → Angle → Brief → Storyboard → Prompt →
+   Caption/Hashtag → Validasi & Ekspor. Aturan inti: CTA hanya scene akhir.
+===================================================================== */
+'use strict';
+
+/* ---------------- utilities ---------------- */
+const $ = s => document.querySelector(s);
+const esc = v => String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function setPath(obj, path, val){
+  const ks = path.split('.'); let o = obj;
+  for(let i=0;i<ks.length-1;i++){ const k = isNaN(ks[i])?ks[i]:+ks[i]; if(o[k]==null) o[k]={}; o=o[k]; }
+  const last = isNaN(ks.at(-1))?ks.at(-1):+ks.at(-1); o[last]=val;
+}
+function getPath(obj, path){ return path.split('.').reduce((o,k)=>o==null?o:o[isNaN(k)?k:+k], obj); }
+/* Sumber tunggal jumlah scene — rentang resmi aplikasi 2..5, anti nilai kosong/0/NaN saat user sedang mengetik */
+function totalScenes(){ return Math.max(2, Math.min(5, Math.round(+state.setup.jumlahScene)||3)); }
+function toast(msg, type=''){ 
+  const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
+  $('#toasts').appendChild(t); setTimeout(()=>t.remove(), 5200);
+}
+function download(name, text, mime='text/plain'){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type:mime}));
+  a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+
+/* ---------------- state ---------------- */
+const state = {
+  api:{
+    provider:'builtin',
+    claudeKey:'', claudeModel:'claude-sonnet-4-6',
+    geminiKey:'', geminiModel:'gemini-2.5-flash',
+    groqKey:'', groqModel:'llama-3.3-70b-versatile',
+    orKey:'', orModel:'openai/gpt-4o-mini',
+    customBase:'https://api.openai.com/v1', customKey:'', customModel:'gpt-4o-mini'
+  },
+  setup:{ nama:'', mode:'Model Talent', suara:'Voice Over', bahasa:'Bahasa Indonesia', platform:'TikTok', jumlahScene:3, durasi:10 },
+  input:{ deskripsi:'', link:'', talent:'', catatan:'',
+    temaVisual:'custom', temaVisualCustom:'', temaVisualResearched:'', temaVisualSources:[],
+    gayaKamera:'cam_iphone15', gayaKameraCustom:'' },
+  uploads:{ talentImage:null, productImages:[] },
+  knowledge:{}, marketing:{}, angle:{}, brief:{},
+  scenes:[], prompts:[],
+  caption:{utama:'',alternatif:''},
+  hashtag:{tiktok:'', shopee:''},
+  done:{}, dirty:{},
+  pendingFeedback:''
+};
+let currentStep='setup', busy=false;
+
+/* ---------------- step + field definitions ---------------- */
+const STEPS=[
+  {id:'setup', no:'00', label:'Setup Project'},
+  {id:'input', no:'01', label:'Input Produk'},
+  {id:'knowledge', no:'02', label:'Analisis Produk', ai:true},
+  {id:'marketing', no:'03', label:'Analisis Marketing', ai:true},
+  {id:'angle', no:'04', label:'Content Angle', ai:true},
+  {id:'brief', no:'05', label:'Creative Brief', ai:true},
+  {id:'storyboard', no:'06', label:'Storyboard', ai:true},
+  {id:'prompts', no:'07', label:'Video Prompt', ai:true},
+  {id:'caphash', no:'08', label:'Caption & Hashtag', ai:true},
+  {id:'export', no:'09', label:'Validasi & Ekspor'}
+];
+const F = {
+  knowledge:[
+    {k:'kategori',l:'Kategori'},{k:'material',l:'Material / Bahan'},
+    {k:'fungsi_utama',l:'Fungsi Utama'},{k:'usp',l:'Unique Selling Point',long:1},
+    {k:'visual_highlight',l:'Visual Highlight',long:1},{k:'possible_demo',l:'Possible Demo',long:1},
+    {k:'target_audiens',l:'Target Audiens'},{k:'problem',l:'Problem yang Diselesaikan',long:1},
+    {k:'benefit_utama',l:'Benefit Utama',long:1}
+  ],
+  marketing:[
+    {k:'audiens',l:'Audiens (usia, peran, gaya hidup)',long:1},{k:'pain_point',l:'Pain Point',long:1},
+    {k:'desire',l:'Desire',long:1},{k:'objection',l:'Objection',long:1},
+    {k:'emotional_trigger',l:'Emotional Trigger'},{k:'buying_motivation',l:'Buying Motivation',long:1}
+  ],
+  angle:[
+    {k:'problem',l:'Problem',long:1},{k:'angle',l:'Angle'},
+    {k:'hook',l:'Hook (kalimat pembuka)',long:1},{k:'solution',l:'Solution',long:1},
+    {k:'benefit',l:'Benefit',long:1},{k:'cta',l:'CTA (hanya untuk scene terakhir)',long:1}
+  ],
+  brief:[
+    {k:'nama_produk',l:'Nama Produk'},{k:'kategori',l:'Kategori'},
+    {k:'target_audiens',l:'Target Audiens'},{k:'platform',l:'Platform'},
+    {k:'jumlah_scene',l:'Jumlah Scene'},{k:'durasi_per_scene',l:'Durasi per Scene'},
+    {k:'mode',l:'Mode'},{k:'pain_point',l:'Pain Point',long:1},
+    {k:'emotional_trigger',l:'Emotional Trigger'},{k:'angle',l:'Angle'},
+    {k:'hook',l:'Hook',long:1},{k:'benefit',l:'Benefit',long:1},
+    {k:'cta',l:'CTA',long:1},{k:'background',l:'Background'},
+    {k:'style_visual',l:'Style Visual'},{k:'outfit',l:'Outfit'},
+    {k:'continuity_lock',l:'Continuity Lock',long:1}
+  ]
+};
+const TL_COLS=[['visual','Visual'],['action','Action'],['audio','Audio / SFX'],['dialog','Voice Over / Dialog'],['camera','Camera'],['transisi','Transisi']];
+const STAGE_LABEL={knowledge:'Analisis Produk',marketing:'Analisis Marketing',angle:'Content Angle',brief:'Creative Brief',storyboard:'Storyboard',prompts:'Video Prompt',caphash:'Caption & Hashtag'};
+const REGEN_ORDER=['knowledge','marketing','angle','brief','storyboard','prompts','caphash'];
+
+/* ---------------- tema visual & gaya kamera (diadopsi dari money_printer_turbo) ---------------- */
+const THEME_DATA = {
+  skin_minimalist_bathroom: { description: "Minimalist bathroom with marble sink, LED-backlit mirror, clean white towels and transparent glass bottles. Lighting: soft diffused natural light, balanced even exposure and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_vanity_dressing_table: { description: "Bright wooden vanity dressing table with wavy aesthetic mirror, acrylic makeup organizer and ring light. Lighting: soft diffused natural light, balanced even exposure and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_clean_botanical: { description: "Clean white backdrop with minimalist indoor green plants for an organic feel. Lighting: controlled studio softboxes with key and fill, clean even product lighting and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_the_glass_reflection: { description: "Beside a large window with golden hour sunlight reflection for natural glowing skin. Lighting: warm golden hour directional sunlight, soft long shadows and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_pastel_aesthetic_room: { description: "Pastel-painted room (sage green, soft beige, taupe) decorated with pampas grass. Lighting: soft diffused natural light, balanced even exposure and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_shower_cubicle_pov: { description: "Foggy glass shower cubicle with gently running water, ideal for cleanser or waterproof products. Lighting: soft diffused natural light, balanced even exposure and large ring light for clean glowing skin. Angle: first-person POV handheld shot." },
+  skin_close_up_macro: { description: "Pure black or white plain backdrop with no texture, for macro skin and product zoom-in detail. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: extreme close-up macro detail." },
+  skin_silk_satin_bed: { description: "Glossy silk satin bed sheets depicting a luxurious night skincare routine. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_bright_natural_outdoor: { description: "Open outdoor area under direct bright sunlight, perfect for sunscreen efficacy testing. Lighting: soft natural window daylight, gentle even fill, no harsh shadows and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_clear_acrylic_floating: { description: "Transparent acrylic floating shelves on the wall with products neatly lined up, shelfie aesthetic. Lighting: soft diffused natural light, balanced even exposure and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_aesthetic_spa_bed: { description: "Folding salon facial bed with rolled warm towels and aromatherapy candles. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_water_ripple_background: { description: "Shallow tray of clear water with artificial lighting casting water-ripple silhouettes on the product. Lighting: soft diffused natural light, balanced even exposure and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_fluffy_towel_head: { description: "Model in a fluffy towel head wrap after shower against a neutral cement wall. Lighting: soft diffused natural light, balanced even exposure and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_sunkissed_car_seat: { description: "Applying cushion, lip tint or sunscreen in the driver seat using windshield daylight. Lighting: soft natural window daylight, gentle even fill, no harsh shadows and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_minimalist_wabi_sabi: { description: "Wabi-sabi corner with natural stone texture, cement floor and irregular Japanese ceramic vases. Lighting: soft diffused natural light, balanced even exposure and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_neon_rgb_glow: { description: "Dim room with pink and purple neon glow for edgy night makeup looks. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_cafe_table_flatlay: { description: "Cosmetics arranged aesthetically beside a latte-art coffee cup and warm croissant on a cafe table. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light and large ring light for clean glowing skin. Angle: top-down 90 degree flatlay framing." },
+  skin_zen_garden_backdrop: { description: "Zen garden backdrop with fine white gravel, fern plants and small bamboo ornaments for herbal products. Lighting: controlled studio softboxes with key and fill, clean even product lighting and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_monochrome_white_on: { description: "All-white setting, table and model clothing so the product packaging stands out. Lighting: soft diffused natural light, balanced even exposure and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  skin_color_blocked_studio: { description: "Solid contrasting color paper backdrop (mustard yellow, bright pink) for Gen-Z products. Lighting: controlled studio softboxes with key and fill, clean even product lighting and large ring light for clean glowing skin. Angle: eye-level product shot with optional 45 degree tilt." },
+  fashion_urban_industrial_street: { description: "Exposed unfinished concrete wall, building fire escape stairs and grey rolling-door shutter. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fashion_walk_in_closet: { description: "Open wooden and black-iron wardrobe with a full-body arched standing mirror. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fashion_brutalist_architecture_backdrop: { description: "Grand rough-textured wall, giant concrete pillars or minimalist modern building facade. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: eye-level wide full-body framing." },
+  fashion_cozy_cafe_facade: { description: "Outdoor European-style cafe facade with classic wooden door and climbing plants. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  fashion_monochrome_blank_wall: { description: "Plain studio wall in white, dark grey or deep black making clothing colors pop. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: eye-level wide full-body framing." },
+  fashion_rooftop_city_skyline: { description: "Open rooftop with a row of skyscrapers as a dynamic city-skyline backdrop. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: wide low-angle hero shot." },
+  fashion_escalator_moving_walkway: { description: "Walking down an escalator or moving walkway in a modern mall or airport. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fashion_vintage_thrift_record: { description: "Stacks of leather jackets, vinyl record racks and dim warm yellow lighting. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level wide full-body framing." },
+  fashion_sunflower_flower_garden: { description: "Bright flower-garden field for summer dresses or floral-motif outfits. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fashion_minimalist_art_gallery: { description: "All-white high-ceiling gallery room with a few abstract paintings. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fashion_zebra_cross_pedestrian: { description: "Walking across a clean Shibuya-style city crossing, focus on fabric movement. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fashion_luxury_hotel_corridor: { description: "Corridor with thick patterned carpet, symmetric doors and dim warm wall lamps. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level wide full-body framing." },
+  fashion_subway_mrt_station: { description: "Clean modern subway platform or a quiet train carriage interior. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fashion_beach_club_poolside: { description: "Rattan sunbeds, beach umbrellas and clear resort pool water. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  fashion_studio_color_paper: { description: "Bright solid color paper roll backdrop (red, electric blue) for fast outfit transitions. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: eye-level wide full-body framing." },
+  fashion_tennis_court_golf: { description: "Sports court with terracotta or green grass flooring for streetwear or sportswear. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  fashion_classic_museum_staircase: { description: "Grand solid wood or marble staircase with red carpet for preppy or formal wear. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fashion_full_length_led: { description: "Dark room with a large LED-framed mirror for Outfit Check content. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: full-body mirror-selfie angle." },
+  fashion_moving_convertible_car: { description: "Inside a convertible with the roof down, sunglasses and wind-blown hair, freedom lifestyle vibe. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fashion_supermarket_aisle: { description: "Colorful contrasting supermarket aisle of cereal or drink shelves for casual streetwear. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fnb_modern_kitchen_island: { description: "Modern kitchen island with marble or quartz top, built-in stove and pastel cookware. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_aesthetic_cafe_window: { description: "Minimalist wooden table beside a large cafe window with natural light and leaf-shadow silhouettes. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_warm_dining_setup: { description: "Solid teak dining table with warm hanging lamp light and handmade ceramic plates. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_outdoor_picnic_vibe: { description: "Fresh green grass with gingham checkered cloth, rattan picnic basket and aesthetic glasses. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_dark_moody_studio: { description: "Dark wood or black stone table with dramatic lighting highlighting food steam and freshness. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_traditional_bamboo_rattan: { description: "Bamboo tray, rattan weave and fresh banana leaf as a base for traditional cuisine. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_marble_countertop_splash: { description: "Kitchen counter for slow-motion pouring of syrup, sauce or milk to a splash. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_sunny_breakfast_bed: { description: "Wooden tray with a full breakfast on thick white sheets bathed in morning sunlight. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_street_food_night: { description: "Night market scene with street-lamp bokeh and steam rising from a food-cart wok. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_minimalist_white_pedestal: { description: "A single drink or dish placed on a single white pedestal for a premium product feel. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_messy_baking_station: { description: "Aesthetically scattered flour, stainless oven tray, eggs and a wooden rolling pin. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_rustic_wooden_cutting: { description: "Rough natural wooden cutting board with a Japanese kitchen knife and bright vegetables. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_clear_glass_table: { description: "Camera placed under a clear glass table looking up at food being served or cut. Lighting: soft diffused natural light, balanced even exposure. Angle: top-down 90 degree flatlay framing, first-person POV handheld shot." },
+  fnb_tropical_tiki_bar: { description: "Straw weave, coconut shell and whole pineapple backdrop for fresh juice or diet drinks. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_high_tech_smart: { description: "Glossy stainless-steel surfaces of modern appliances like an air fryer and advanced microwave. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_office_desk_snack: { description: "Snacks tucked between a mechanical keyboard, mousepad and a monitor showing a work spreadsheet. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_cinematic_fridge_view: { description: "Camera placed inside the fridge capturing the face as the door opens and a drink is taken. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_outdoor_campfire_grill: { description: "Small campfire, portable iron grill and rising smoke in the wild campground. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_pastel_korean_kitchenette: { description: "Mini kitchenette dominated by mint green, cream or soft pink Korean-cafe interior tones. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  fnb_elegant_high_tea: { description: "Three-tier cake stand and gold-rimmed porcelain teacups for an elegant high tea. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_rgb_gamer_desk: { description: "Minimalist desk with dynamic RGB LED strips, hexagon acoustic panels and a mechanical keyboard. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_clean_productivity_setup: { description: "Clean Scandinavian wooden desk with hidden cable management, succulents and an architect lamp. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_cyberpunk_dark_mode: { description: "Dark room with blue and purple neon bar accents and a matte black desk surface. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_on_the_go: { description: "Laptop, tablet or TWS placed casually on an industrial cafe table with black coffee. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_floating_shelves_backdrop: { description: "Floating wall shelves holding gadget retail boxes, action figures and tech books. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: first-person POV handheld shot." },
+  tech_minimalist_white_pegboard: { description: "White pegboard wall neatly hanging cables, headphones, a smartwatch and electronics. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_inside_a_modern: { description: "Lit car dashboard screen and leather steering wheel showing phone or car-charger integration. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_airplane_tray_table: { description: "Gadget filmed on an airplane folding tray table with a cloud window backdrop. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_cozy_bed_tech: { description: "Using a tablet or phone while lounging on a thick textured duvet. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_outdoor_park_bench: { description: "Sitting on a park bench under direct sunlight, ideal for screen brightness testing. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_high_tech_server: { description: "Computer rack panels with fast-blinking green and red indicator lights for an advanced feel. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_studio_macro_turntable: { description: "Reflective black auto-rotating display turntable highlighting smartphone body curves. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: extreme close-up macro detail." },
+  tech_gym_workout_setup: { description: "Testing a smartwatch or sports earphones against a yoga mat and a row of dumbbells. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_water_splash_test: { description: "Clear-water glass tray to demonstrate a gadget's water resistance (IP rating). Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_living_room_tv: { description: "Using a smart-home device or game console on a living room sofa with a large TV on. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_commuter_train_ride: { description: "Holding a gadget with a commuter-train window showing stations passing by. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: first-person POV handheld shot." },
+  tech_concrete_asphalt_floor: { description: "Rough asphalt or cement surface for a phone case drop test or durability video. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_futuristic_neon_tunnel: { description: "A bright circular LED-light tunnel as a video transition backdrop. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level product shot with optional 45 degree tilt." },
+  tech_overhead_unboxing_desk: { description: "Straight top-down flatlay over a green or black cutting mat on a work desk. Lighting: soft diffused natural light, balanced even exposure. Angle: top-down 90 degree flatlay framing." },
+  tech_pocket_sling_bag: { description: "Pulling a gadget out of a small sling bag or jeans pocket. Lighting: soft diffused natural light, balanced even exposure. Angle: first-person POV handheld shot." },
+  home_japandi_living_room: { description: "Woven cream fabric sofa, short round wooden coffee table and a light textured Japandi-Scandi rug. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_scandinavian_cozy_bedroom: { description: "Bed with aesthetically wrinkled linen duvet, stacked pillows and a fabric-shade hanging lamp. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_sun_drenched_balcony: { description: "Balcony with interlocking parquet wood floor, rattan folding chairs and hanging plant pots. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_reading_nook: { description: "Velvet single armchair, an arc floor lamp and a minimalist wooden bookshelf. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_minimalist_dining_area: { description: "Minimalist wooden dining set with a vase of dried pampas in the center. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_clean_organized_pantry: { description: "Pantry shelves with dozens of uniform labeled glass jars for ASMR restocking content. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_aesthetic_laundry_room: { description: "Front-load washer, uniform aesthetic detergent bottles and a woven rattan laundry basket. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_modern_minimalist_bathroom: { description: "Clear glass shower cabin, terrazzo-pattern walls and a wall-mounted soap dispenser. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_bohemian_lounge: { description: "Macrame wall hangings, an ethnic-patterned rug and large floor cushions scattered around. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_mid_century_modern: { description: "Dark walnut furniture, tapered 60s legs and brushed brass-gold accents. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_smart_home_foyer: { description: "Entryway with a closed shoe rack, a smart-lock door handle and a minimalist key tray. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_indoor_jungle_conservatory: { description: "Indoor corner filled with houseplant shelves like monstera and philodendron. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_minimalist_wardrobe_interior: { description: "Wardrobe drawers neatly partitioned with fabric dividers for socks and clothes. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_kitchen_sink_with: { description: "Marble kitchen sink with a luxe black gooseneck faucet facing a garden window. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_zen_entryway_genkan: { description: "Shoe-removal genkan with smooth cement floor, wooden rack and a steaming aroma diffuser. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_kids_playroom: { description: "Thick non-toxic soft-pastel floor rug with Montessori-style wooden toy storage. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_wfh_ergonomic_corner: { description: "Hydraulic standing desk, an ergonomic mesh chair and a monitor on an adjustable arm. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_cozy_fireplace_tv: { description: "Living room wall clad in fluted wood panels with a slim TV neatly wall-mounted. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_monochrome_black_white: { description: "Elegant masculine black-and-white monochrome room with a thick geometric rug. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  home_outdoor_patio_backyard: { description: "Backyard wooden deck floor, outdoor lounge chairs and a string of warm bulb lights. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light. Angle: eye-level natural framing, slight 3/4 angle." },
+  fit_home_gym_corner: { description: "Bedroom corner with a premium yoga mat, pastel and chrome hex dumbbells and a large wall mirror. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fit_commercial_gym_grid: { description: "Rows of modern black-iron weight machines, thick rubber flooring and ceiling neon strip lights. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level wide full-body framing." },
+  fit_urban_rooftop_track: { description: "Concrete building rooftop with a skyscraper skyline as the backdrop for skipping or running in place. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: wide low-angle hero shot." },
+  fit_outdoor_sports_court: { description: "Retro outdoor tennis court (terracotta floor) or a basketball court with a wire fence. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  fit_nature_trail_city: { description: "A gracefully curving paving-block trail in a city park surrounded by lush green trees. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  fit_minimalist_white_pilates: { description: "All-white clean pilates studio with an aesthetic maple-wood reformer. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: eye-level wide full-body framing." },
+  fit_indoor_cycling_spin: { description: "Dark room with dynamic colorful neon lighting focused on the stationary spin bike. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level wide full-body framing." },
+  fit_beach_sand_workout: { description: "Doing yoga or calisthenics directly on beach sand at sunrise or sunset. Lighting: warm golden hour directional sunlight, soft long shadows. Angle: eye-level wide full-body framing." },
+  fit_swimming_pool_deck: { description: "Blue-tiled or wooden poolside deck, jumping or swimming in clear water. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  fit_boxing_ring_punching: { description: "Garage corner with a hanging leather punching bag and hard dramatic shadow lighting. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fit_mountain_hike_trail: { description: "Red-dirt or natural-rock trail surrounded by pine trees, perfect for trail running shoes. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  fit_living_room_tv: { description: "Living room rug with an aerobics or Zumba video playing on the TV. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fit_stadium_bleachers: { description: "Long concrete stadium bleacher steps for intense running stair drills. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fit_athletic_tartan_track: { description: "Brick-red synthetic running track with crisp white lanes, pro athletics field. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fit_bouldering_climbing_wall: { description: "Indoor climbing wall with bright contrasting colorful hand and foot holds. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fit_minimalist_locker_room: { description: "A long wooden bench flanked by rows of pure-grey steel storage lockers. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  fit_ballet_barre_studio: { description: "A large mirror covering one wall, a cylindrical wooden barre and glossy parquet floor. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: eye-level wide full-body framing." },
+  fit_garage_gym_setup: { description: "Fully open garage door backlit by sunlight with a large steel squat rack. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: wide low-angle hero shot." },
+  fit_golf_driving_range: { description: "Endless wide green grass, a green-carpet hitting box and a leather golf bag. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  fit_snowy_mountain_ski: { description: "White snowy cold mountains, focus on a thick windproof jacket and goggles. Lighting: bright cool overcast daylight, high-key snow reflection. Angle: eye-level wide full-body framing." },
+  travel_glamping_luxury_tent: { description: "Luxury canvas tent interior with tumblr lights, a soft bed and a wild-nature view outside. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  travel_infinity_pool_edge: { description: "Sitting or swimming at the edge of a luxury infinity pool merging with an ocean or forest view. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  travel_airport_lounge_gate: { description: "A quiet modern airport waiting seat beside a large glass wall facing the runway. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light. Angle: eye-level wide full-body framing." },
+  travel_train_window_vibe: { description: "Beside an executive train window with fast-passing green rice-field scenery. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level wide full-body framing." },
+  travel_scenic_hotel_balcony: { description: "Hotel balcony with a small coffee table overlooking night city lights or a dawn beach. Lighting: warm golden hour directional sunlight, soft long shadows. Angle: eye-level wide full-body framing." },
+  travel_plane_window_pov: { description: "POV from a window cabin seat gazing at thick white cloud formations. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: first-person POV handheld shot." },
+  travel_cozy_cabin_wooden: { description: "Real log-cabin interior walls, a lit stone fireplace and a snowy view outside the window. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level wide full-body framing." },
+  travel_roadtrip_car_dashboard: { description: "Filmed from the back seat showing the car dashboard and a straight road toward mountains. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  travel_campervan_rv_back: { description: "Wide-open campervan rear door facing the beach, showing a bed and aesthetic cushions inside. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: first-person POV handheld shot." },
+  travel_tropical_beach_hammock: { description: "A white net hammock tied between two leaning coconut trees on white-sand beach. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  travel_ancient_architecture: { description: "Mossy ancient stone walls and natural stone footpaths of historic ruins. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  travel_yacht_boat_deck: { description: "Standing on the wooden stern deck of a luxury yacht with a mast and blue ocean waves. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  travel_european_cobblestone_street: { description: "A narrow old cobblestone street with classic brick buildings and a row of outdoor cafes. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level wide full-body framing." },
+  travel_passport_ticket_flatlay: { description: "Stacked passports on a wooden table beside plane tickets, sunglasses and a vintage compass. Lighting: soft diffused natural light, balanced even exposure. Angle: top-down 90 degree flatlay framing." },
+  travel_snowy_winter_wonderland: { description: "Walking a path among fir trees with branches covered in thick white snow. Lighting: bright cool overcast daylight, high-key snow reflection. Angle: eye-level wide full-body framing." },
+  travel_aerial_drone_shot: { description: "A high top-down drone view of sea cliffs hit by blue wave foam. Lighting: soft diffused natural light, balanced even exposure. Angle: top-down 90 degree flatlay framing, first-person POV handheld shot." },
+  travel_night_city_walkway: { description: "Walking a capital-city main sidewalk with vehicle-light bokeh and neon shop signs. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level wide full-body framing." },
+  travel_desert_sand_dunes: { description: "Smooth endless golden desert dunes with sharp shadows from the late-afternoon sun. Lighting: warm golden hour directional sunlight, soft long shadows. Angle: eye-level wide full-body framing." },
+  travel_hot_air_balloon: { description: "Inside a rattan hot-air balloon basket at altitude with a sky full of other balloons. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  travel_local_traditional_market: { description: "A local market with piles of colorful spices and hanging traditional woven fabrics. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level wide full-body framing." },
+  book_dark_academia_study: { description: "Old textured wooden desk, a classic green banker's lamp, stacks of old books and a scented candle. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_minimalist_desk_setup: { description: "Clean white desk, a wire grid wall for notes and a clear acrylic pencil holder. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_warm_library_corner: { description: "A giant floor-to-ceiling packed wooden bookshelf with dim warm yellow lighting. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_aesthetic_bullet_journaling: { description: "Top-down flatlay on wooden floor showing journaling with washi tape. Lighting: soft diffused natural light, balanced even exposure. Angle: top-down 90 degree flatlay framing." },
+  book_window_facing_study: { description: "A study desk facing a window with a fresh green-plant view. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_coffee_shop_window: { description: "An open book beside a cappuccino on a wooden table with rain drops on the window. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_cloudy_sky_nature: { description: "A hand holding a book up against a blue sky with white clouds. Lighting: soft diffused natural light, balanced even exposure. Angle: first-person POV handheld shot." },
+  book_pastel_stationery_organizer: { description: "Mini pastel plastic drawers with color-graded highlighter pens neatly lined up. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_bed_desk_setup: { description: "A folding wooden lap desk on white sheets with legs covered by a warm knit blanket. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_tablet_note_taking: { description: "Close zoom on a digital stylus tip writing on a paper-like textured tablet screen. Lighting: controlled studio softboxes with key and fill, clean even product lighting. Angle: extreme close-up macro detail." },
+  book_stack_of_old: { description: "Thick yellowed-paper novels stacked asymmetrically as a decorative product riser. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_bookstore_aisle: { description: "A long narrow aisle flanked by two tall bookshelves in a classic indie bookstore. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_studygram_cork_board: { description: "A cork board full of pinned schedules, quote clippings and sticky notes. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_messy_but_aesthetic: { description: "Neatly scattered formula notes, an open pencil case and a half-finished coffee cup. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_vintage_typewriter_desk: { description: "An old black manual typewriter, rough cream linen paper sheets and metal reading glasses. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_plant_filled_desk: { description: "A study desk filled with mini cactus pots, terracotta succulents and trailing pothos. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_sunset_golden_hour: { description: "Orange late-afternoon side light casting long aesthetic shadows over stacked pencils. Lighting: warm golden hour directional sunlight, soft long shadows. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_backseat_study_pov: { description: "POV reading a thick book in the back passenger seat on a long out-of-town trip. Lighting: soft diffused natural light, balanced even exposure. Angle: first-person POV handheld shot." },
+  book_library_reading_room: { description: "A long smooth wooden public-library reading table with a central divider lamp, quiet and still. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  book_crafting_scrapbook_table: { description: "Colorful fabric ribbon rolls, antique copper scissors, stacked cardstock and craft glue. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_pastel_nursery_room: { description: "Nursery with cloud/star wall decor, an aesthetic wooden crib and knitted fabric toys. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_cozy_white_bed: { description: "A large all-white double bed where a mother rolls and cuddles her baby. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_sunny_backyard_play: { description: "Backyard green grass with a play mat and a teepee-shaped kids play tent. Lighting: soft natural window daylight, gentle even fill, no harsh shadows. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_soft_carpet_living: { description: "Thick neutral fluffy living-room rug with a minimalist earth-tone baby walker. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_modern_stroller_walkway: { description: "A clean quiet residential sidewalk to show how easily the stroller folds. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_baby_highchair_feeding: { description: "A slim wooden-leg baby highchair, a flexible silicone bib and pastel bowls. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_baby_bath_setup: { description: "An aesthetic plastic baby bathtub full of soap foam, a rubber duck and a bear-hooded towel. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_changing_table_station: { description: "A diaper-changing table with a rattan basket of diaper rolls and cream tubes. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_aesthetic_car_seat: { description: "A premium cotton-fabric baby safety car seat firmly mounted in the family car. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_breastfeeding_pumping_corner: { description: "A soft rocking sofa chair, a nursing pillow and a modern breast-pump box. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_supermarket_trolley_pov: { description: "A baby sitting happily in a supermarket trolley seat lined with a hygienic trolley cover. Lighting: soft diffused natural light, balanced even exposure. Angle: first-person POV handheld shot." },
+  baby_minimalist_baby_gym: { description: "An A-frame wooden baby gym with knitted toys swaying gently above a play mat. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_matching_outfits_at: { description: "A mother and toddler in matching outfits walking in a green city park. Lighting: bright outdoor daylight, natural sun key with sky fill. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_reading_bedtime_story: { description: "Sitting at the edge of a child's bed reading a pop-up storybook under a star-projector light. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_organized_baby_wardrobe: { description: "An open small baby wardrobe showing color-sorted onesie hangers. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_kitchen_helper_stool: { description: "A toddler standing safely on a wooden helper-tower stool helping mom stir cake batter. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_messy_sensory_play: { description: "A large plastic bin of kinetic sand, molds and colorful macaroni for motor-skill play. Lighting: bright cool overcast daylight, high-key snow reflection. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_welcoming_baby_hospital: { description: "A VIP wood-toned maternity hospital room decorated with pastel congratulations balloons. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_baby_swings_in: { description: "A toddler in a canvas hanging swing on the front porch swaying in the afternoon breeze. Lighting: soft diffused natural light, balanced even exposure. Angle: eye-level natural framing, slight 3/4 angle." },
+  baby_diaper_bag_spill: { description: "A neatly spilled diaper backpack (bottle, wet wipes, silicone pacifier, spare clothes). Lighting: soft diffused natural light, balanced even exposure. Angle: top-down 90 degree flatlay framing." },
+  lux_penthouse_living_room: { description: "A penthouse living room with a giant glass wall over the city from the 50th floor and glossy marble floor. Lighting: soft diffused natural light, balanced even exposure and crisp specular highlights and rich contrast for premium gloss. Angle: wide low-angle hero shot." },
+  lux_luxury_car_interior: { description: "Premium nappa-leather seats, a real wood or carbon-fiber dashboard and a luxury-badge steering wheel. Lighting: soft diffused natural light, balanced even exposure and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_marble_backdrop_gold: { description: "A solid black marble slab with fine white veins and brass-gold decorative accents. Lighting: controlled studio softboxes with key and fill, clean even product lighting and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_high_end_hotel: { description: "Walking gracefully across a five-star pillared hotel lobby under a giant crystal chandelier. Lighting: soft diffused natural light, balanced even exposure and crisp specular highlights and rich contrast for premium gloss. Angle: wide low-angle hero shot." },
+  lux_velvet_lounge_chair: { description: "An emerald-green velvet single lounge chair beside a slim brass-legged side table. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_private_jet_interior: { description: "An exclusive private-jet cabin with small oval windows, a glossy wood fold table and a champagne glass. Lighting: soft natural window daylight, gentle even fill, no harsh shadows and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_fine_dining_table: { description: "A smooth white-linen dining table with long-stem crystal glasses, silver spoons and dim candlelight. Lighting: low ambient with colored neon glow and practical light sources, moody night atmosphere and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_golf_country_club: { description: "Leaning on a luxury club-house balcony rail overlooking a neat green golf course. Lighting: bright outdoor daylight, natural sun key with sky fill and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_luxury_boutique_fitting: { description: "A spacious exclusive boutique fitting room with silk-fabric wallpaper and a gold carved-frame mirror. Lighting: soft diffused natural light, balanced even exposure and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_safe_vault_room: { description: "A thick round steel vault door ajar revealing jewelry boxes lined with red velvet. Lighting: controlled studio softboxes with key and fill, clean even product lighting and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_yacht_deck_in: { description: "Standing at the bow of a super-luxury yacht against Mediterranean coastal cliffs. Lighting: soft diffused natural light, balanced even exposure and crisp specular highlights and rich contrast for premium gloss. Angle: wide low-angle hero shot." },
+  lux_high_gloss_black: { description: "A super-glossy reflective black display pedestal hit by a single sharp spotlight. Lighting: controlled studio softboxes with key and fill, clean even product lighting and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_premium_cigar_whiskey: { description: "A dark mahogany-panel lounge with an old Chesterfield leather sofa and a central billiard table. Lighting: warm ambient 2700K tungsten and practical lamp glow, cozy intimate light and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_macro_detail_diamond: { description: "Super-macro on a product logo catching rainbow refraction from pure diamond reflection. Lighting: controlled studio softboxes with key and fill, clean even product lighting and crisp specular highlights and rich contrast for premium gloss. Angle: extreme close-up macro detail." },
+  lux_luxury_jacuzzi_bathtub: { description: "A freestanding marble bathtub with a classic Roman brass shower faucet. Lighting: soft diffused natural light, balanced even exposure and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_red_carpet_vip: { description: "Posing on a long red carpet bordered by stanchion posts with glowing red velvet rope. Lighting: soft diffused natural light, balanced even exposure and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_classic_grand_piano: { description: "A premium cosmetic or perfume placed on the glossy black lid of a grand piano. Lighting: soft diffused natural light, balanced even exposure and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_infinity_pool_floating: { description: "Soaking in a resort pool with a large floating woven tray of breakfast fruit and grapes. Lighting: bright outdoor daylight, natural sun key with sky fill and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." },
+  lux_helipad_rooftop: { description: "Standing in the center of a yellow rooftop helipad H with a city-horizon wind. Lighting: bright outdoor daylight, natural sun key with sky fill and crisp specular highlights and rich contrast for premium gloss. Angle: wide low-angle hero shot." },
+  lux_artisan_crafting_desk: { description: "A professional artisan desk with white-gloved hands hand-stitching an exclusive leather bag with a gold needle. Lighting: soft diffused natural light, balanced even exposure and crisp specular highlights and rich contrast for premium gloss. Angle: eye-level product shot with optional 45 degree tilt." }
+};
+const CAMERA_DATA = {
+  cam_iphone15: "Shot on iPhone 15 Pro main camera, 24mm, computational HDR but natural, true-to-life colors, deep focus, visible skin pores and natural skin texture, candid unposed snapshot, slight handheld tilt, real indoor ambient light, no beauty filter, authentic amateur framing",
+  cam_iphone_cinematic: "Shot on iPhone 15 Pro Cinematic style, 35mm-equivalent framing, computational shallow depth of field with creamy background blur, natural HDR skin tones with visible pores and texture, soft contrast, candid handheld framing, no beauty filter",
+  cam_iphone_golden: "Shot on iPhone 15 Pro during golden hour, warm low-sun backlight with a soft lens flare kiss, glowing rim light on hair and product, long soft shadows, slightly lifted warm shadows, natural skin texture with sun glow, candid snapshot energy",
+  cam_iphone_night: "Shot on iPhone 15 Pro Night Mode, moody low-light ambience, warm practical lamps against deep shadows, mild luminance noise, slightly soft detail, real skin texture under dim light, authentic late-night phone snapshot",
+  cam_iphone_frontcam: "Shot on iPhone front-facing camera at arm's length, 23mm-style selfie framing with slight wide-angle distortion, window light or screen glow on face, visible pores and natural skin shine, casual imperfect angle, authentic talking-to-camera UGC energy",
+  cam_fuji_x100vi: "Shot on Fujifilm X100VI, 23mm f/2, Classic Negative film simulation, muted earthy tones, soft natural contrast, fine organic film grain, natural matte skin with visible pores and subsurface scattering, realistic catchlights in eyes, slightly imperfect candid composition, true-to-life dynamic range",
+  cam_fuji_classic_chrome: "Shot on Fujifilm X-T5 with Classic Chrome simulation, muted desaturated colors with steely blue cast, magazine-documentary contrast, hard-edged shadows, natural matte skin with visible texture, timeless reportage mood",
+  cam_fuji_astia: "Shot on Fujifilm X-T5, 35mm f/1.4, Astia/Soft film simulation, gentle pastel skin tones, low contrast, smooth but realistic skin texture with fine pores and peach fuzz, soft diffused window light, no plastic skin, natural color science, editorial beauty look",
+  cam_fuji_eterna: "Shot on Fujifilm X-H2 with Eterna cinema simulation, ultra-soft contrast and desaturated cinematic palette, gentle highlight roll-off, muted teal-green shadows, realistic skin texture preserved, flat ready-graded film tonality",
+  cam_fuji_velvia: "Shot on Fujifilm Velvia simulation, punchy high-saturation slide-film colors, deep contrast, vivid reds and lush greens, crisp sharpness with natural skin texture intact, energetic eye-catching color pop",
+  cam_fuji_nostalgic_neg: "Shot on Fujifilm Nostalgic Negative simulation, warm amber highlights with soft cyan shadows, 1970s American New Color photography mood, creamy low-mid contrast, natural matte skin, sentimental vintage warmth",
+  cam_fuji_acros: "Shot on Fujifilm Acros monochrome simulation, ultra-fine grain black and white, silky tonal gradation, deep rich blacks with delicate highlight detail, realistic skin texture in monochrome, refined premium B&W",
+  cam_ricoh_gr: "Shot on Ricoh GR IV, 28mm f/2.8, APS-C, positive film look, crisp natural detail, moderate contrast, subtle grain, authentic street documentary candid moment, unposed subject, real environmental light and shadow, slightly off-center framing",
+  cam_ricoh_positive: "Shot on Ricoh GR III Positive Film mode, punchy contrast with golden-warm midtones and teal-leaning shadows, crisp 28mm snapshot framing, natural skin texture, bold street-photography color signature",
+  cam_ricoh_hibw: "Shot on Ricoh GR Hi-Contrast B&W mode, gritty blown highlights and crushed blacks, heavy grain, raw street-photography energy, fearless candid framing, real skin texture under harsh contrast",
+  cam_sony_a7: "Shot on Sony A7 IV, 50mm f/1.8, natural color profile, lifelike skin tones with visible pores and micro-texture, shallow depth of field with creamy bokeh, soft realistic catchlight, true skin imperfections preserved, professional but unedited look",
+  cam_sony_slog_teal: "Shot on Sony FX3 graded from S-Log3, blockbuster teal and orange grade, warm glowing skin tones with visible texture against cool teal shadows, cinematic contrast curve, clean full-frame detail with creamy bokeh",
+  cam_sony_a7s_night: "Shot on Sony A7S III at high ISO, remarkably clean low-light frame, neon and practical lights rendered noise-free, deep night blacks with crisp subject detail, realistic skin under mixed night light, pro nighttime clarity",
+  cam_portra: "Shot on Canon AE-1 with Kodak Portra 400, 50mm f/1.8, warm natural tones, fine film grain, matte realistic skin with pores, slightly underexposed, imperfect candid framing, organic color rendition, unedited analog feel",
+  cam_portra160: "Shot on Kodak Portra 160, featherweight pastel palette, porcelain-soft yet textured skin tones with visible pores, gentle contrast with airy highlights, very fine grain, refined editorial daylight film look",
+  cam_kodak_gold: "Shot on Kodak Gold 200, honey-warm golden cast, gentle saturation with nostalgic 90s family-album feel, soft visible grain, natural skin texture, sun-faded summer warmth",
+  cam_ektar: "Shot on Kodak Ektar 100, ultra-vivid saturated color with razor-fine grain, punchy reds and rich blues, glossy commercial clarity, natural skin texture preserved, maximum color impact",
+  cam_ektachrome: "Shot on Kodak Ektachrome E100 slide film, clean neutral-cool palette with crisp micro-contrast, refined retro-modern transparency look, accurate skin tones with subtle blue undertone and real texture",
+  cam_vision3: "Shot on Kodak Vision3 500T motion picture film, tungsten-balanced warm practicals with soft halation around lights, organic cinematic grain, gentle highlight bloom, realistic skin texture, true movie-frame quality",
+  cam_trix: "Shot on Kodak Tri-X 400 pushed one stop, gritty pronounced grain, high-contrast black and white, inky blacks with reportage urgency, real skin texture and shadow detail, classic photojournalism soul",
+  cam_cinestill: "Shot on Cinestill 800T, 50mm f/1.4, tungsten-balanced cool base tones, red halation glowing around lights, heavy organic grain, slightly underexposed, realistic skin texture under mixed neon lighting, gritty cinematic night atmosphere",
+  cam_cinestill50d: "Shot on Cinestill 50D in daylight, ultra-fine grain cinematic color, soft warm highlights with subtle halation edges, gentle saturation, natural skin texture in daylight, movie-still elegance",
+  cam_hasselblad: "Shot on Hasselblad 907X with 80mm f/2.8, medium format, extreme natural detail, creamy shallow depth of field, true-to-life skin tones with pores and fine texture, soft directional light, editorial documentary realism, high dynamic range without HDR artifacts",
+  cam_xpan: "Shot on Hasselblad XPan 45mm, sweeping 65:24 panoramic frame, cinematic widescreen composition with subject placed off-center, fine film grain, natural skin texture, epic letterboxed storytelling",
+  cam_leica_q3: "Shot on Leica Q3, 28mm Summilux f/1.7, full-frame, natural micro-contrast, rich realistic colors, lifelike skin with visible pores and subsurface scattering, soft natural bokeh, authentic catchlights, premium unedited photojournalistic look",
+  cam_noctilux: "Shot on Leica M11 with Noctilux 50mm f/0.95 wide open, dreamlike razor-thin focus plane, swirling painterly bokeh, glowing specular highlights, lifelike skin with visible pores in the focus plane, intimate luxury rendering",
+  cam_disposable: "Shot on Kodak FunSaver disposable camera, direct on-camera flash, harsh shadow on wall behind, grainy, slightly tilted frame, slight green color cast, real skin shine from flash, slightly out of focus, raw unedited party snapshot",
+  cam_ccd_y2k: "Shot on an early-2000s CCD digicam with direct flash, slightly blown highlights, cool-magenta white balance shift, soft 5-megapixel detail, real skin shine from harsh flash, date-stamp era Y2K party authenticity",
+  cam_polaroid: "Shot on Polaroid SX-70 instant film, visible white border, slight light leak in corner, faded vintage colors, soft realistic focus falloff, natural skin texture, slightly washed out 1970s aesthetic",
+  cam_polaroid600: "Shot on Polaroid 600 with built-in flash, instant-film vignette and creamy whites, slightly washed warm cast, soft dreamy focus with real skin shine from flash, white-frame party keepsake feel",
+  cam_super8: "Shot on Super 8mm film, heavy organic grain with gate dust and faint scratches, warm faded saturation, soft vintage lens glow, natural skin under nostalgic warmth, home-movie keepsake aesthetic",
+  cam_16mm: "Shot on 16mm film, textured medium grain with a muted indie palette, soft halation in highlights, slightly low contrast, realistic skin texture through film grain, intimate festival-documentary aesthetic",
+  cam_vhs: "Captured from VHS home video camcorder, low resolution, horizontal scan lines, chromatic aberration, tape distortion, timestamp in corner, faded warm colors, 4:3 nostalgic analog look, realistic motion-era softness",
+  cam_bw: "Shot on Leica M6 with Kodak Tri-X 400, 35mm f/2, sharp organic grain, high contrast black and white, realistic skin texture and shadow detail, classic photojournalism candid moment",
+  cam_grade_teal_orange: "Modern blockbuster teal and orange grade, warm amber skin tones with real texture against deep teal shadows, strong cinematic contrast, glossy commercial polish, movie-trailer frame intensity",
+  cam_grade_dusty: "Dusty desert matte grade, lifted faded blacks with warm sand and terracotta tones, soft sun-bleached highlights, gentle film fade, natural skin texture under hazy warmth, wanderlust western mood",
+  cam_grade_pastel: "Soft Korean pastel grade, airy lifted exposure with milky whites, gentle pink-beige skin tones with fine real texture, low-contrast dreaminess, clean minimal cafe-light aesthetic",
+  cam_grade_moody: "Dark moody grade, deep charcoal shadows with desaturated forest-green and slate tones, selective warm pockets of practical light, realistic skin in low key lighting, heavy premium brooding atmosphere",
+  cam_grade_vintage70s: "Vintage 1970s film fade, warm yellow-green cast with soft magenta shadows, lowered contrast and bloomy highlights, aged print patina, natural skin texture through the fade, retro analog soul",
+  cam_grade_clean: "Bright clean commercial grade, high-key even lighting, true neutral whites with fresh accurate skin tones and visible fine texture, crisp detail with gentle contrast, premium beauty-ad polish",
+  cam_gopro: "Shot on GoPro Hero ultra-wide, action-cam fisheye perspective, punchy saturated GoPro color with high sharpening, deep focus everywhere, real skin and sweat texture up close, strapped-in POV adrenaline framing",
+  cam_dji_drone: "Shot on a DJI drone from the air, sweeping high-angle aerial perspective, crisp 4K detail with naturally graded D-Log colors, vast scale with clean horizon lines, travel-film grandeur"
+};
+const THEME_SELECT_HTML = '<option value="custom">✏️ Custom (isi sendiri)</option>'+
+'<optgroup label="🧴 SKINCARE &amp; BEAUTY">'+
+'<option value="skin_minimalist_bathroom">1. Minimalist Bathroom</option><option value="skin_vanity_dressing_table">2. Vanity &amp; Dressing Table</option><option value="skin_clean_botanical">3. Clean Botanical</option><option value="skin_the_glass_reflection">4. The Glass-Reflection Frame</option><option value="skin_pastel_aesthetic_room">5. Pastel Aesthetic Room</option><option value="skin_shower_cubicle_pov">6. Shower Cubicle POV</option><option value="skin_close_up_macro">7. Close-up Macro Skin Studio</option><option value="skin_silk_satin_bed">8. Silk/Satin Bed Sheets</option><option value="skin_bright_natural_outdoor">9. Bright Natural Outdoor</option><option value="skin_clear_acrylic_floating">10. Clear Acrylic Floating Shelves</option><option value="skin_aesthetic_spa_bed">11. Aesthetic Spa Bed</option><option value="skin_water_ripple_background">12. Water Ripple Background</option><option value="skin_fluffy_towel_head">13. Fluffy Towel Head Wrap</option><option value="skin_sunkissed_car_seat">14. Sunkissed Car Seat</option><option value="skin_minimalist_wabi_sabi">15. Minimalist Wabi-Sabi Corner</option><option value="skin_neon_rgb_glow">16. Neon / RGB Glow Studio</option><option value="skin_cafe_table_flatlay">17. Cafe Table Flatlay</option><option value="skin_zen_garden_backdrop">18. Zen Garden Backdrop</option><option value="skin_monochrome_white_on">19. Monochrome White-on-White</option><option value="skin_color_blocked_studio">20. Color-Blocked Studio</option>'+
+'</optgroup><optgroup label="👗 FASHION &amp; OOTD">'+
+'<option value="fashion_urban_industrial_street">1. Urban Industrial Street</option><option value="fashion_walk_in_closet">2. Walk-In Closet / Wardrobe</option><option value="fashion_brutalist_architecture_backdrop">3. Brutalist Architecture Backdrop</option><option value="fashion_cozy_cafe_facade">4. Cozy Cafe Facade</option><option value="fashion_monochrome_blank_wall">5. Monochrome Blank Wall</option><option value="fashion_rooftop_city_skyline">6. Rooftop City Skyline</option><option value="fashion_escalator_moving_walkway">7. Escalator / Moving Walkway</option><option value="fashion_vintage_thrift_record">8. Vintage Thrift / Record Store</option><option value="fashion_sunflower_flower_garden">9. Sunflower / Flower Garden</option><option value="fashion_minimalist_art_gallery">10. Minimalist Art Gallery</option><option value="fashion_zebra_cross_pedestrian">11. Zebra Cross / Pedestrian</option><option value="fashion_luxury_hotel_corridor">12. Luxury Hotel Corridor</option><option value="fashion_subway_mrt_station">13. Subway / MRT Station</option><option value="fashion_beach_club_poolside">14. Beach Club / Poolside</option><option value="fashion_studio_color_paper">15. Studio Color Paper Roll</option><option value="fashion_tennis_court_golf">16. Tennis Court / Golf Course</option><option value="fashion_classic_museum_staircase">17. Classic Museum Staircase</option><option value="fashion_full_length_led">18. Full-Length LED Mirror Room</option><option value="fashion_moving_convertible_car">19. Moving Convertible Car</option><option value="fashion_supermarket_aisle">20. Supermarket Aisle</option>'+
+'</optgroup><optgroup label="🍽️ F&amp;B (MAKANAN &amp; MINUMAN)">'+
+'<option value="fnb_modern_kitchen_island">1. Modern Kitchen Island</option><option value="fnb_aesthetic_cafe_window">2. Aesthetic Cafe Window</option><option value="fnb_warm_dining_setup">3. Warm Dining Setup</option><option value="fnb_outdoor_picnic_vibe">4. Outdoor Picnic Vibe</option><option value="fnb_dark_moody_studio">5. Dark Moody Studio Food</option><option value="fnb_traditional_bamboo_rattan">6. Traditional Bamboo / Rattan</option><option value="fnb_marble_countertop_splash">7. Marble Countertop Splash</option><option value="fnb_sunny_breakfast_bed">8. Sunny Breakfast Bed Tray</option><option value="fnb_street_food_night">9. Street Food Night Market</option><option value="fnb_minimalist_white_pedestal">10. Minimalist White Pedestal</option><option value="fnb_messy_baking_station">11. Messy Baking Station</option><option value="fnb_rustic_wooden_cutting">12. Rustic Wooden Cutting Board</option><option value="fnb_clear_glass_table">13. Clear Glass Table POV</option><option value="fnb_tropical_tiki_bar">14. Tropical Tiki Bar</option><option value="fnb_high_tech_smart">15. High-Tech Smart Kitchen</option><option value="fnb_office_desk_snack">16. Office Desk Snack Corner</option><option value="fnb_cinematic_fridge_view">17. Cinematic Fridge View</option><option value="fnb_outdoor_campfire_grill">18. Outdoor Campfire Grill</option><option value="fnb_pastel_korean_kitchenette">19. Pastel Korean Kitchenette</option><option value="fnb_elegant_high_tea">20. Elegant High-Tea Setup</option>'+
+'</optgroup><optgroup label="📱 GADGET &amp; TECH">'+
+'<option value="tech_rgb_gamer_desk">1. RGB Gamer Desk Setup</option><option value="tech_clean_productivity_setup">2. Clean Productivity Setup</option><option value="tech_cyberpunk_dark_mode">3. Cyberpunk / Dark Mode</option><option value="tech_on_the_go">4. On-the-Go Cafe Work</option><option value="tech_floating_shelves_backdrop">5. Floating Shelves Backdrop</option><option value="tech_minimalist_white_pegboard">6. Minimalist White Pegboard</option><option value="tech_inside_a_modern">7. Inside a Modern Smart Car</option><option value="tech_airplane_tray_table">8. Airplane Tray Table</option><option value="tech_cozy_bed_tech">9. Cozy Bed Tech Vibe</option><option value="tech_outdoor_park_bench">10. Outdoor Park Bench</option><option value="tech_high_tech_server">11. High-Tech Server Room Vibe</option><option value="tech_studio_macro_turntable">12. Studio Macro Turntable</option><option value="tech_gym_workout_setup">13. Gym / Workout Setup</option><option value="tech_water_splash_test">14. Water Splash Test Zone</option><option value="tech_living_room_tv">15. Living Room TV Couch</option><option value="tech_commuter_train_ride">16. Commuter Train Ride</option><option value="tech_concrete_asphalt_floor">17. Concrete / Asphalt Floor</option><option value="tech_futuristic_neon_tunnel">18. Futuristic Neon Tunnel</option><option value="tech_overhead_unboxing_desk">19. Overhead Unboxing Desk</option><option value="tech_pocket_sling_bag">20. Pocket / Sling Bag POV</option>'+
+'</optgroup><optgroup label="🛋️ HOME &amp; LIVING / FURNITURE">'+
+'<option value="home_japandi_living_room">1. Japandi Living Room</option><option value="home_scandinavian_cozy_bedroom">2. Scandinavian Cozy Bedroom</option><option value="home_sun_drenched_balcony">3. Sun-Drenched Balcony</option><option value="home_reading_nook">4. Reading Nook</option><option value="home_minimalist_dining_area">5. Minimalist Dining Area</option><option value="home_clean_organized_pantry">6. Clean Organized Pantry</option><option value="home_aesthetic_laundry_room">7. Aesthetic Laundry Room</option><option value="home_modern_minimalist_bathroom">8. Modern Minimalist Bathroom</option><option value="home_bohemian_lounge">9. Bohemian Lounge</option><option value="home_mid_century_modern">10. Mid-Century Modern Corner</option><option value="home_smart_home_foyer">11. Smart Home Foyer</option><option value="home_indoor_jungle_conservatory">12. Indoor Jungle / Conservatory</option><option value="home_minimalist_wardrobe_interior">13. Minimalist Wardrobe Interior</option><option value="home_kitchen_sink_with">14. Kitchen Sink with Window</option><option value="home_zen_entryway_genkan">15. Zen Entryway (Genkan)</option><option value="home_kids_playroom">16. Kids Playroom</option><option value="home_wfh_ergonomic_corner">17. WFH Ergonomic Corner</option><option value="home_cozy_fireplace_tv">18. Cozy Fireplace / TV Wall</option><option value="home_monochrome_black_white">19. Monochrome Black &amp; White Space</option><option value="home_outdoor_patio_backyard">20. Outdoor Patio / Backyard Deck</option>'+
+'</optgroup><optgroup label="🏋️ FITNESS &amp; SPORTS">'+
+'<option value="fit_home_gym_corner">1. Home Gym Corner</option><option value="fit_commercial_gym_grid">2. Commercial Gym Grid</option><option value="fit_urban_rooftop_track">3. Urban Rooftop Track</option><option value="fit_outdoor_sports_court">4. Outdoor Sports Court</option><option value="fit_nature_trail_city">5. Nature Trail / City Park</option><option value="fit_minimalist_white_pilates">6. Minimalist White Pilates</option><option value="fit_indoor_cycling_spin">7. Indoor Cycling / Spin Class</option><option value="fit_beach_sand_workout">8. Beach Sand Workout</option><option value="fit_swimming_pool_deck">9. Swimming Pool Deck</option><option value="fit_boxing_ring_punching">10. Boxing Ring / Punching Bag</option><option value="fit_mountain_hike_trail">11. Mountain Hike Trail</option><option value="fit_living_room_tv">12. Living Room TV Workout</option><option value="fit_stadium_bleachers">13. Stadium Bleachers</option><option value="fit_athletic_tartan_track">14. Athletic Tartan Track</option><option value="fit_bouldering_climbing_wall">15. Bouldering / Climbing Wall</option><option value="fit_minimalist_locker_room">16. Minimalist Locker Room</option><option value="fit_ballet_barre_studio">17. Ballet Barre Studio</option><option value="fit_garage_gym_setup">18. Garage Gym Setup</option><option value="fit_golf_driving_range">19. Golf Driving Range</option><option value="fit_snowy_mountain_ski">20. Snowy Mountain Ski Resort</option>'+
+'</optgroup><optgroup label="✈️ TRAVEL &amp; LIFESTYLE">'+
+'<option value="travel_glamping_luxury_tent">1. Glamping / Luxury Tent</option><option value="travel_infinity_pool_edge">2. Infinity Pool Edge</option><option value="travel_airport_lounge_gate">3. Airport Lounge / Gate</option><option value="travel_train_window_vibe">4. Train Window Vibe</option><option value="travel_scenic_hotel_balcony">5. Scenic Hotel Balcony</option><option value="travel_plane_window_pov">6. Plane Window POV</option><option value="travel_cozy_cabin_wooden">7. Cozy Cabin / Wooden Chalet</option><option value="travel_roadtrip_car_dashboard">8. Roadtrip Car Dashboard</option><option value="travel_campervan_rv_back">9. Campervan / RV Back POV</option><option value="travel_tropical_beach_hammock">10. Tropical Beach Hammock</option><option value="travel_ancient_architecture">11. Ancient Architecture</option><option value="travel_yacht_boat_deck">12. Yacht / Boat Deck</option><option value="travel_european_cobblestone_street">13. European Cobblestone Street</option><option value="travel_passport_ticket_flatlay">14. Passport &amp; Ticket Flatlay</option><option value="travel_snowy_winter_wonderland">15. Snowy Winter Wonderland</option><option value="travel_aerial_drone_shot">16. Aerial Drone Shot Cliff POV</option><option value="travel_night_city_walkway">17. Night City Walkway</option><option value="travel_desert_sand_dunes">18. Desert Sand Dunes</option><option value="travel_hot_air_balloon">19. Hot Air Balloon Basket</option><option value="travel_local_traditional_market">20. Local Traditional Market</option>'+
+'</optgroup><optgroup label="📚 BOOKS, STATIONERY &amp; STUDY">'+
+'<option value="book_dark_academia_study">1. Dark Academia Study Room</option><option value="book_minimalist_desk_setup">2. Minimalist Desk Setup</option><option value="book_warm_library_corner">3. Warm Library Corner</option><option value="book_aesthetic_bullet_journaling">4. Aesthetic Bullet Journaling</option><option value="book_window_facing_study">5. Window-Facing Study Space</option><option value="book_coffee_shop_window">6. Coffee Shop Window Seat</option><option value="book_cloudy_sky_nature">7. Cloudy Sky / Nature Background</option><option value="book_pastel_stationery_organizer">8. Pastel Stationery Organizer</option><option value="book_bed_desk_setup">9. Bed Desk Setup</option><option value="book_tablet_note_taking">10. Tablet Note-taking Macro</option><option value="book_stack_of_old">11. Stack of Old Books</option><option value="book_bookstore_aisle">12. Bookstore Aisle</option><option value="book_studygram_cork_board">13. Studygram Cork Board Wall</option><option value="book_messy_but_aesthetic">14. Messy but Aesthetic Desk</option><option value="book_vintage_typewriter_desk">15. Vintage Typewriter Desk</option><option value="book_plant_filled_desk">16. Plant-filled Desk Setup</option><option value="book_sunset_golden_hour">17. Sunset Golden Hour Desk</option><option value="book_backseat_study_pov">18. Backseat Study POV</option><option value="book_library_reading_room">19. Library Reading Room Table</option><option value="book_crafting_scrapbook_table">20. Crafting / Scrapbook Table</option>'+
+'</optgroup><optgroup label="🍼 BABY &amp; MOM">'+
+'<option value="baby_pastel_nursery_room">1. Pastel Nursery Room</option><option value="baby_cozy_white_bed">2. Cozy White Bed Bonding</option><option value="baby_sunny_backyard_play">3. Sunny Backyard Play Area</option><option value="baby_soft_carpet_living">4. Soft Carpet Living Space</option><option value="baby_modern_stroller_walkway">5. Modern Stroller Walkway</option><option value="baby_baby_highchair_feeding">6. Baby Highchair Feeding</option><option value="baby_baby_bath_setup">7. Baby Bath Setup</option><option value="baby_changing_table_station">8. Changing Table Station</option><option value="baby_aesthetic_car_seat">9. Aesthetic Car Seat</option><option value="baby_breastfeeding_pumping_corner">10. Breastfeeding / Pumping Corner</option><option value="baby_supermarket_trolley_pov">11. Supermarket Trolley POV</option><option value="baby_minimalist_baby_gym">12. Minimalist Baby Gym</option><option value="baby_matching_outfits_at">13. Matching Outfits at the Park</option><option value="baby_reading_bedtime_story">14. Reading Bedtime Story</option><option value="baby_organized_baby_wardrobe">15. Organized Baby Wardrobe</option><option value="baby_kitchen_helper_stool">16. Kitchen Helper Stool</option><option value="baby_messy_sensory_play">17. Messy Sensory Play Bin</option><option value="baby_welcoming_baby_hospital">18. Welcoming Baby Hospital</option><option value="baby_baby_swings_in">19. Baby Swings in Front Porch</option><option value="baby_diaper_bag_spill">20. Diaper Bag Spill Flatlay</option>'+
+'</optgroup><optgroup label="💎 LUXURY / HIGH-TICKET PRODUCT">'+
+'<option value="lux_penthouse_living_room">1. Penthouse Living Room</option><option value="lux_luxury_car_interior">2. Luxury Car Interior</option><option value="lux_marble_backdrop_gold">3. Marble Backdrop Gold Accent</option><option value="lux_high_end_hotel">4. High-End Hotel Lobby</option><option value="lux_velvet_lounge_chair">5. Velvet Lounge Chair Corner</option><option value="lux_private_jet_interior">6. Private Jet Interior</option><option value="lux_fine_dining_table">7. Fine Dining Table Set</option><option value="lux_golf_country_club">8. Golf / Country Club Balcony</option><option value="lux_luxury_boutique_fitting">9. Luxury Boutique Fitting</option><option value="lux_safe_vault_room">10. Safe / Vault Room Backdrop</option><option value="lux_yacht_deck_in">11. Yacht Deck in the Riviera</option><option value="lux_high_gloss_black">12. High-Gloss Black Pedestal</option><option value="lux_premium_cigar_whiskey">13. Premium Cigar / Whiskey Lounge</option><option value="lux_macro_detail_diamond">14. Macro Detail Diamond Reflection</option><option value="lux_luxury_jacuzzi_bathtub">15. Luxury Jacuzzi / Bathtub</option><option value="lux_red_carpet_vip">16. Red Carpet / VIP Entrance</option><option value="lux_classic_grand_piano">17. Classic Grand Piano</option><option value="lux_infinity_pool_floating">18. Infinity Pool Floating Tray</option><option value="lux_helipad_rooftop">19. Helipad Rooftop</option><option value="lux_artisan_crafting_desk">20. Artisan Crafting Desk</option>'+
+'</optgroup>';
+const CAMERA_SELECT_HTML = '<option value="custom">✏️ Custom (Tulis sendiri)</option>'+
+'<optgroup label="📱 IPHONE / SMARTPHONE — UGC Paling Natural">'+
+'<option value="cam_iphone15">1. iPhone 15 Pro Natural (Paling Believable)</option><option value="cam_iphone_cinematic">2. iPhone Cinematic Mode (Bokeh 24fps)</option><option value="cam_iphone_golden">3. iPhone Golden Hour (Backlight Hangat)</option><option value="cam_iphone_night">4. iPhone Night Mode (Moody Malam)</option><option value="cam_iphone_frontcam">5. iPhone Front Cam (Selfie Vlog POV)</option>'+
+'</optgroup><optgroup label="🎞️ FUJIFILM SIMULATION — Film Look Modern">'+
+'<option value="cam_fuji_x100vi">1. Classic Negative (Earthy Muted)</option><option value="cam_fuji_classic_chrome">2. Classic Chrome (Dokumenter Magazine)</option><option value="cam_fuji_astia">3. Astia Soft (Beauty / Skincare)</option><option value="cam_fuji_eterna">4. Eterna (Cinematic Flat Lembut)</option><option value="cam_fuji_velvia">5. Velvia (Vivid Saturated Pop)</option><option value="cam_fuji_nostalgic_neg">6. Nostalgic Neg. (Amber 70s)</option><option value="cam_fuji_acros">7. Acros (B&amp;W Halus Premium)</option>'+
+'</optgroup><optgroup label="📷 RICOH GR — Street &amp; Candid">'+
+'<option value="cam_ricoh_gr">1. GR IV Standard (Street Candid)</option><option value="cam_ricoh_positive">2. GR Positive Film (Punchy Kontras)</option><option value="cam_ricoh_hibw">3. GR Hi-Contrast B&amp;W (Grit Jalanan)</option>'+
+'</optgroup><optgroup label="📹 SONY — Pro Video Look">'+
+'<option value="cam_sony_a7">1. A7 IV Natural Skin (Close-up)</option><option value="cam_sony_slog_teal">2. FX3 S-Log3 Teal &amp; Orange (Blockbuster)</option><option value="cam_sony_a7s_night">3. A7S III Low-Light (Malam Bersih)</option>'+
+'</optgroup><optgroup label="🎬 KODAK FILM STOCK — Analog Sejati">'+
+'<option value="cam_portra">1. Portra 400 (Warm Film Klasik)</option><option value="cam_portra160">2. Portra 160 (Pastel Skin Lembut)</option><option value="cam_kodak_gold">3. Gold 200 (Nostalgia Hangat 90s)</option><option value="cam_ektar">4. Ektar 100 (Vivid Maksimal)</option><option value="cam_ektachrome">5. Ektachrome E100 (Slide Retro Bersih)</option><option value="cam_vision3">6. Vision3 500T (Motion Picture Halation)</option><option value="cam_trix">7. Tri-X 400 (B&amp;W Gritty Jurnalistik)</option>'+
+'</optgroup><optgroup label="🌃 CINESTILL — Neon &amp; Cinematic">'+
+'<option value="cam_cinestill">1. 800T (Night Neon Halation)</option><option value="cam_cinestill50d">2. 50D (Daylight Cinematic Halus)</option>'+
+'</optgroup><optgroup label="💎 MEDIUM FORMAT &amp; LEICA — Luxury">'+
+'<option value="cam_hasselblad">1. Hasselblad MF (Luxury Editorial)</option><option value="cam_xpan">2. Hasselblad XPan (Panorama Sinematik)</option><option value="cam_leica_q3">3. Leica Q3 (Premium Bokeh)</option><option value="cam_noctilux">4. Leica Noctilux f/0.95 (Dreamy Swirl)</option>'+
+'</optgroup><optgroup label="📼 RETRO &amp; LO-FI — Tren Gen-Z">'+
+'<option value="cam_disposable">1. Disposable Flash (Party Gen-Z)</option><option value="cam_ccd_y2k">2. Digicam CCD Y2K (Flash 2000s)</option><option value="cam_polaroid">3. Polaroid SX-70 (Vintage Soft)</option><option value="cam_polaroid600">4. Polaroid 600 Flash (Party Instan)</option><option value="cam_super8">5. Super 8mm (Home Movie Vintage)</option><option value="cam_16mm">6. 16mm Film (Dokumenter Indie)</option><option value="cam_vhs">7. VHS Camcorder (90s)</option><option value="cam_bw">8. B&amp;W Documentary (Leica M6)</option>'+
+'</optgroup><optgroup label="🎨 COLOR GRADE / MOOD PRESET">'+
+'<option value="cam_grade_teal_orange">1. Teal &amp; Orange (Hollywood)</option><option value="cam_grade_dusty">2. Dusty Warm Matte (Desert Faded)</option><option value="cam_grade_pastel">3. Soft Pastel Korean (Airy)</option><option value="cam_grade_moody">4. Dark Moody (Forest / Charcoal)</option><option value="cam_grade_vintage70s">5. Vintage 70s Fade (Retro Film)</option><option value="cam_grade_clean">6. Clean Commercial (Bright Beauty)</option>'+
+'</optgroup><optgroup label="🚁 ACTION &amp; AERIAL">'+
+'<option value="cam_gopro">1. GoPro Hero Ultra-Wide (Action POV)</option><option value="cam_dji_drone">2. DJI Drone Aerial (Travel Cinematic)</option>'+
+'</optgroup>';
+
+/* ---------------- AI providers ---------------- */
+const PROVIDERS=[
+  {id:'builtin', name:'Claude · bawaan', desc:'Tanpa API key. Hanya jalan di dalam Claude.ai (Artifacts).'},
+  {id:'claude', name:'Claude API', desc:'Pakai API key Anthropic milikmu.'},
+  {id:'gemini', name:'Google Gemini', desc:'Pakai API key Google AI Studio.'},
+  {id:'groq', name:'Groq', desc:'Sangat cepat, ada tier gratis. Key dari console.groq.com.'},
+  {id:'openrouter', name:'OpenRouter', desc:'Satu key untuk ratusan model (GPT, Claude, Gemini, Llama…).'},
+  {id:'custom', name:'OpenAI-compatible', desc:'OpenAI, DeepSeek, Together, atau endpoint lain.'}
+];
+
+/* Semua provider memakai loop kontinuasi: kalau balasan berhenti karena batas
+   token, potongan yang sudah ada dikirim balik sebagai pesan assistant dan AI
+   melanjutkan dari titik terakhir, sampai output benar-benar selesai.
+   postJSON menangani error transien (server penuh / high demand / rate limit)
+   dengan mencoba ulang otomatis sampai 3x sebelum menyerah. */
+const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|exhausted|too many|unavailable|failed to fetch|quota/i;
+async function postJSON(url, opts, label){
+  let lastMsg='';
+  for(let att=0; att<3; att++){
+    if(att){
+      setBusy(true,'Server AI sibuk — mencoba ulang ('+att+'/2)…');
+      await new Promise(r=>setTimeout(r, att===1?2500:6000));
+    }
+    let status=0, d=null;
+    try{
+      const r=await fetch(url,opts); status=r.status;
+      try{ d=await r.json(); }catch(_){ d=null; }
+    }catch(e){ lastMsg=e.message||'gagal terhubung'; continue; }
+    const errMsg=(d&&d.error)?(d.error.message||JSON.stringify(d.error)):'';
+    if(status>=200&&status<300&&!errMsg) return d;
+    lastMsg=errMsg||('HTTP '+status);
+    if(!(status===429||status>=500||TRANSIENT.test(lastMsg))) throw new Error(label+': '+lastMsg);
+  }
+  throw new Error(label+': '+lastMsg+' — server sedang penuh. Tunggu 1–2 menit, atau pindah provider (mis. Groq) lewat ⚙ API.');
+}
+const OA_PRESETS={
+  groq:{name:'Groq', base:'https://api.groq.com/openai/v1', key:a=>a.groqKey, model:a=>a.groqModel||'llama-3.3-70b-versatile'},
+  openrouter:{name:'OpenRouter', base:'https://openrouter.ai/api/v1', key:a=>a.orKey, model:a=>a.orModel||'openai/gpt-4o-mini'},
+  custom:{name:'API custom', base:null, key:a=>a.customKey, model:a=>a.customModel}
+};
+async function callAI(prompt, maxTokens=1600, images){
+  const a=state.api, MAX_CHUNK=6;
+  if(a.provider==='builtin'||a.provider==='claude'){
+    const own=a.provider==='claude';
+    if(own&&!a.claudeKey) throw new Error('API key Claude belum diisi (tombol ⚙ API).');
+    const headers=own
+      ? {'Content-Type':'application/json','x-api-key':a.claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}
+      : {'Content-Type':'application/json'};
+    const model=own?(a.claudeModel||'claude-sonnet-4-6'):'claude-sonnet-4-6';
+    const budget=own?Math.max(maxTokens,2048):1000;
+    const label=own?'Claude API':'Claude bawaan (hanya jalan di dalam Claude.ai)';
+    const firstContent=(images&&images.length)
+      ? [{type:'text',text:prompt}, ...images.map(img=>({type:'image',source:{type:'base64',media_type:img.mimeType,data:img.data}}))]
+      : prompt;
+    let full='';
+    for(let g=0; g<MAX_CHUNK; g++){
+      /* BUGFIX: API Anthropic menolak prefill assistant yang diakhiri whitespace (HTTP 400).
+         Tanpa trim ini, lanjutan output panjang (mis. JSON scene 5 baris timeline) gagal
+         di tengah jalan → genScene melempar error → loop scene berhenti sebelum selesai. */
+      const pre=full.replace(/\s+$/,'');
+      const messages=pre?[{role:'user',content:firstContent},{role:'assistant',content:pre}]:[{role:'user',content:firstContent}];
+      const d=await postJSON('https://api.anthropic.com/v1/messages',
+        {method:'POST', headers, body:JSON.stringify({model, max_tokens:budget, messages})}, label);
+      full=pre+(d.content||[]).map(b=>b.text||'').join('');
+      if(d.stop_reason!=='max_tokens') break;
+    }
+    return full;
+  }
+  if(a.provider==='gemini'){
+    if(!a.geminiKey) throw new Error('API key Gemini belum diisi (tombol ⚙ API).');
+    const model=a.geminiModel||'gemini-2.5-flash';
+    const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(a.geminiKey);
+    const firstParts=(images&&images.length)
+      ? [{text:prompt}, ...images.map(img=>({inlineData:{mimeType:img.mimeType,data:img.data}}))]
+      : [{text:prompt}];
+    let full='';
+    for(let g=0; g<MAX_CHUNK; g++){
+      const contents=full
+        ? [{role:'user',parts:firstParts},{role:'model',parts:[{text:full}]}]
+        : [{role:'user',parts:firstParts}];
+      const d=await postJSON(url,{method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contents, generationConfig:{maxOutputTokens:Math.max(maxTokens,3000)}})}, 'Gemini');
+      const cand=d.candidates?.[0];
+      full+=(cand?.content?.parts||[]).map(p=>p.text||'').join('');
+      if(cand?.finishReason!=='MAX_TOKENS') break;
+    }
+    if(!full) throw new Error('Gemini tidak mengembalikan teks. Coba model lain di ⚙ API.');
+    return full;
+  }
+  if(OA_PRESETS[a.provider]){
+    const P=OA_PRESETS[a.provider];
+    const key=P.key(a);
+    if(!key) throw new Error('API key '+P.name+' belum diisi (tombol ⚙ API).');
+    const base=(P.base||a.customBase||'').replace(/\/+$/,'');
+    if(!base) throw new Error('Base URL belum diisi (tombol ⚙ API).');
+    const headers={'Content-Type':'application/json','Authorization':'Bearer '+key};
+    if(a.provider==='openrouter'){ headers['X-Title']='Framework Brain Director'; }
+    let full='';
+    for(let g=0; g<MAX_CHUNK; g++){
+      const messages=full?[{role:'user',content:prompt},{role:'assistant',content:full}]:[{role:'user',content:prompt}];
+      const d=await postJSON(base+'/chat/completions',
+        {method:'POST', headers, body:JSON.stringify({model:P.model(a), max_tokens:Math.max(maxTokens,2048), messages})}, P.name);
+      const ch=d.choices?.[0];
+      full+=ch?.message?.content||'';
+      if(ch?.finish_reason!=='length') break;
+    }
+    if(!full) throw new Error('Balasan kosong dari '+P.name+'. Cek nama model di ⚙ API.');
+    return full;
+  }
+  throw new Error('Provider tidak dikenal.');
+}
+
+/* ---------------- tema visual resolver + real-time location research ---------------- */
+function resolveTema(){
+  const t=state.input;
+  if((t.temaVisual||'custom')==='custom') return (t.temaVisualResearched||t.temaVisualCustom||'').trim();
+  return (THEME_DATA[t.temaVisual]||{}).description||'';
+}
+function resolveKamera(){
+  const t=state.input;
+  if((t.gayaKamera||'cam_iphone15')==='custom') return (t.gayaKameraCustom||'').trim();
+  return CAMERA_DATA[t.gayaKamera]||'';
+}
+async function searchGroundedTheme(userInput){
+  const searchPrompt='You are a professional cinematography location scout. Research the following location or visual theme for a UGC video shoot:\n\n"'+userInput+'"\n\nSearch for this location online and find:\n1. What the interior/exterior actually looks like (colors, materials, architecture, decor style)\n2. The lighting conditions (natural light, artificial, warm/cool, shadows)\n3. Signature visual elements that make it recognizable and unique\n4. The overall mood and atmosphere\n\nThen write a PRECISE cinematic setting description for an AI image generator to recreate this location accurately.\n\nFORMAT YOUR RESPONSE AS:\n[SUMMARY]\n(2-3 sentences about what you found about this place online)\n\n[VISUAL DESCRIPTION FOR IMAGE GENERATOR]\n(1 paragraph, English only, ultra-specific visual details. Do NOT mention venue name or people or products. Max 4 sentences.)\n\n[SOURCES]\n(list any website/article titles you referenced, or "general knowledge" if none)';
+  const url='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key='+encodeURIComponent(state.api.geminiKey);
+  const payload={ contents:[{parts:[{text:searchPrompt}]}], tools:[{google_search:{}}], generationConfig:{temperature:0.3,maxOutputTokens:1024} };
+  const d=await postJSON(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)},'Gemini Location Research');
+  const rawText=(d.candidates?.[0]?.content?.parts||[]).filter(p=>p.text).map(p=>p.text).join('');
+  if(!rawText) throw new Error('Balasan riset lokasi kosong.');
+  const visualMatch=rawText.match(/\[VISUAL DESCRIPTION FOR IMAGE GENERATOR\]([\s\S]*?)(?=\[SOURCES\]|$)/i);
+  const summaryMatch=rawText.match(/\[SUMMARY\]([\s\S]*?)(?=\[VISUAL DESCRIPTION|$)/i);
+  const sourcesMatch=rawText.match(/\[SOURCES\]([\s\S]*?)$/i);
+  const visualDesc=(visualMatch?visualMatch[1]:rawText).trim();
+  const rawSummary=summaryMatch?summaryMatch[1].trim():'';
+  const groundingMeta=d.candidates?.[0]?.groundingMetadata;
+  const sources=[];
+  (groundingMeta?.groundingChunks||[]).forEach(c=>{ if(c.web?.uri) sources.push({title:c.web.title||c.web.uri,url:c.web.uri}); });
+  if(!sources.length && sourcesMatch) sourcesMatch[1].trim().split('\n').filter(l=>l.trim()).forEach(l=>sources.push({title:l.trim(),url:null}));
+  return {visualDesc, rawSummary, sources};
+}
+async function runLocationResearch(){
+  if(busy) return;
+  const userInput=(state.input.temaVisualCustom||'').trim();
+  if(!userInput){ toast('Tulis dulu nama tempat / deskripsi tema di kolom custom.','err'); return; }
+  try{
+    if(state.api.geminiKey){
+      setBusy(true,'🔍 AI browsing lokasi secara real-time…');
+      const r=await searchGroundedTheme(userInput);
+      state.input.temaVisualResearched=r.visualDesc;
+      state.input.temaVisualSources=r.sources||[];
+      toast('Data visual tempat ditemukan (real-time via Gemini + Google Search).','ok');
+    } else {
+      setBusy(true,'AI menerka deskripsi lokasi (tanpa browsing — isi Gemini key di ⚙ API untuk riset real-time)…');
+      const fallbackPrompt='You are a professional film set designer. The user wants to shoot a UGC video at this location:\n\n"'+userInput+'"\n\nBased on your knowledge of this type of place, write a precise cinematic setting description an AI image generator can use. Be ultra-specific about: wall/floor colors and materials, furniture/decor style, lighting type and color temperature, atmosphere. English only. Do NOT mention the venue name, people, or products. Max 3 sentences.\n\nOutput ONLY the description.';
+      const res=(await callAI(fallbackPrompt,400)).trim();
+      state.input.temaVisualResearched=res;
+      state.input.temaVisualSources=[];
+      toast('Deskripsi lokasi dibuat tanpa browsing (isi Gemini key di ⚙ API kalau mau riset real-time).','ok');
+    }
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); renderThemeResearchBox(); }
+}
+function renderThemeResearchBox(){
+  const box=$('#temaVisualResearchBox'); if(!box) return;
+  const desc=state.input.temaVisualResearched, sources=state.input.temaVisualSources||[];
+  if(!desc){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="hint" style="margin-top:8px;border:1px dashed var(--line);border-radius:8px;padding:9px 11px">'+
+    '<b style="color:var(--teal)">Hasil riset lokasi:</b> '+esc(desc)+
+    (sources.length?('<br><b>Sumber:</b> '+sources.map(s=>esc(s.title)).join(' · ')):'')+
+    '</div>';
+}
+
+/* ---------------- upload gambar talent & produk ---------------- */
+function getBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve({mimeType:file.type, data:reader.result.split(',')[1], url:URL.createObjectURL(file)});
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function handleTalentUpload(e){
+  const file=e.target.files[0]; if(!file) return;
+  try{ state.uploads.talentImage=await getBase64(file); renderUploadThumbs(); }
+  catch(err){ toast('Gagal memuat foto talent.','err'); }
+  e.target.value='';
+}
+async function handleProductUpload(e){
+  const files=Array.from(e.target.files||[]); if(!files.length) return;
+  for(const file of files){
+    if(state.uploads.productImages.length>=5){ toast('Maksimal 5 foto produk.','err'); break; }
+    try{ state.uploads.productImages.push(await getBase64(file)); }catch(err){ toast('Gagal memuat salah satu foto produk.','err'); }
+  }
+  renderUploadThumbs();
+  e.target.value='';
+}
+function removeTalentImage(){ state.uploads.talentImage=null; renderUploadThumbs(); }
+function removeProductImage(idx){ state.uploads.productImages.splice(idx,1); renderUploadThumbs(); }
+function renderUploadThumbs(){
+  const tt=$('#talentImageThumb');
+  if(tt) tt.innerHTML=state.uploads.talentImage
+    ? '<div style="position:relative;display:inline-block;margin-top:8px"><img src="'+state.uploads.talentImage.url+'" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-rmtalent="1" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer">×</button></div>'
+    : '';
+  const pt=$('#productImageThumbs');
+  if(pt) pt.innerHTML=state.uploads.productImages.map((img,idx)=>
+    '<div style="position:relative;display:inline-block;margin:8px 6px 0 0"><img src="'+img.url+'" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid var(--line)"><button data-rmproduct="'+idx+'" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer">×</button></div>'
+  ).join('');
+  const cnt=$('#productImgCount'); if(cnt) cnt.textContent='('+state.uploads.productImages.length+'/5)';
+}
+function visionCapableImages(){
+  const p=state.api.provider;
+  if(p!=='claude'&&p!=='builtin'&&p!=='gemini') return undefined;
+  const imgs=[];
+  if(state.uploads.talentImage) imgs.push(state.uploads.talentImage);
+  state.uploads.productImages.slice(0,2).forEach(img=>imgs.push(img));
+  return imgs.length?imgs:undefined;
+}
+
+function repairJSON(t){
+  /* 1) escape karakter kontrol mentah di dalam string */
+  let out='', inStr=false, escN=false;
+  for(const ch of t){
+    if(inStr){
+      if(escN){ out+=ch; escN=false; continue; }
+      if(ch==='\\'){ out+=ch; escN=true; continue; }
+      if(ch==='"'){ inStr=false; out+=ch; continue; }
+      if(ch==='\n'){ out+='\\n'; continue; }
+      if(ch==='\r'){ continue; }
+      if(ch==='\t'){ out+='\\t'; continue; }
+      out+=ch;
+    }else{
+      if(ch==='"') inStr=true;
+      out+=ch;
+    }
+  }
+  if(inStr) out+='"';               /* 2) tutup string yang menggantung */
+  out=out.replace(/,\s*([}\]])/g,'$1').replace(/,\s*$/,'');
+  /* 3) seimbangkan {} dan [] yang belum tertutup */
+  let c=0,b=0,s=false,e=false;
+  for(const ch of out){
+    if(s){ if(e){e=false;continue;} if(ch==='\\'){e=true;continue;} if(ch==='"')s=false; continue; }
+    if(ch==='"')s=true; else if(ch==='{')c++; else if(ch==='}')c--;
+    else if(ch==='[')b++; else if(ch===']')b--;
+  }
+  while(b-->0) out+=']';
+  while(c-->0) out+='}';
+  return out;
+}
+function parseJSONLoose(text){
+  let t=String(text||'').trim().replace(/^```(?:json)?/i,'').replace(/```\s*$/,'').trim();
+  const a=t.indexOf('{');
+  if(a>-1) t=t.slice(a);
+  const b=t.lastIndexOf('}');
+  if(b>0){ try{ return JSON.parse(t.slice(0,b+1)); }catch(e){} }
+  try{ return JSON.parse(repairJSON(t)); }
+  catch(e){ throw new Error('Balasan AI bukan JSON valid. Coba generate ulang. Cuplikan: '+t.slice(0,120)); }
+}
+/* Panggil AI + parse JSON; kalau gagal, coba ulang sekali dengan instruksi lebih ketat */
+async function callJSON(prompt, maxTokens, images){
+  try{ return parseJSONLoose(await callAI(prompt, maxTokens, images)); }
+  catch(err){
+    return parseJSONLoose(await callAI(prompt+'\nPENTING: keluarkan HANYA satu objek JSON valid dalam SATU baris. Escape newline di dalam string sebagai \\n. Jangan ada teks lain.', maxTokens, images));
+  }
+}
+const stripText=t=>String(t||'').trim().replace(/^```[a-z]*\s*/i,'').replace(/```\s*$/,'').replace(/^(video prompt|image prompt|prompt)\s*[:\-]\s*/i,'').trim();
+
+/* ---------------- context + prompt builders ---------------- */
+const kvText=(fields,obj)=>fields.filter(f=>obj[f.k]).map(f=>'- '+f.l+': '+obj[f.k]).join('\n');
+function buildContext(){
+  const s=state, lines=[];
+  lines.push('=== KONTEKS PROJECT ===');
+  lines.push('Setup: nama="'+s.setup.nama+'", mode='+s.setup.mode+', gaya suara='+s.setup.suara+', bahasa='+s.setup.bahasa+', platform='+s.setup.platform+', jumlah scene='+s.setup.jumlahScene+', durasi/scene='+s.setup.durasi+' detik.');
+  if(s.input.deskripsi) lines.push('Deskripsi produk: '+s.input.deskripsi);
+  if(s.input.link) lines.push('Link marketplace: '+s.input.link);
+  if(s.input.talent) lines.push('Catatan talent & outfit (ATURAN MUTLAK): '+s.input.talent+
+    '\n→ Deskripsi talent di SEMUA output WAJIB mengikuti catatan di atas kata demi kata. DILARANG KERAS menambahkan pakaian/aksesori/atribut yang TIDAK disebut user (termasuk hijab, kerudung, kacamata, topi, dll). Jika user menulis "tanpa X" / "bukan X" / "no X", tulis ulang secara POSITIF dan eksplisit (contoh: "tanpa hijab" → "rambut terlihat terurai, kepala tanpa penutup apa pun") DAN masukkan atribut terlarang itu ke negative prompt.');
+  if(s.input.catatan) lines.push('Catatan tambahan: '+s.input.catatan);
+  const temaFix=resolveTema(); if(temaFix) lines.push('Tema Visual / Lokasi (FIXED — wajib dipakai apa adanya untuk field background/style_visual, JANGAN mengarang tema baru): '+temaFix);
+  const kameraFix=resolveKamera(); if(kameraFix) lines.push('Gaya Kamera (FIXED — wajib dipakai di setiap baris "camera" pada timeline & di video prompt): '+kameraFix);
+  if(s.uploads.talentImage||s.uploads.productImages.length) lines.push('Reference image: user SUDAH upload foto talent dan/atau produk asli — WAJIB anggap sebagai acuan wajah/outfit/produk yang tidak boleh diubah, JANGAN mengarang wajah atau produk baru.');
+  const kt=kvText(F.knowledge,s.knowledge); if(kt) lines.push('\n[Analisis Produk]\n'+kt);
+  const mt=kvText(F.marketing,s.marketing); if(mt) lines.push('\n[Analisis Marketing]\n'+mt);
+  const at=kvText(F.angle,s.angle); if(at) lines.push('\n[Content Angle]\n'+at);
+  const bt=kvText(F.brief,s.brief); if(bt) lines.push('\n[Creative Brief]\n'+bt);
+  return lines.join('\n');
+}
+const HEADER='Kamu adalah AI Creative Director spesialis konten video affiliate pendek (framework Brain Director). Penalaranmu tajam, adaptif, dan konsisten dengan seluruh konteks project. Semua output berbahasa Indonesia natural gaya kreator, spesifik ke produk ini (bukan generik).';
+const JSON_RULE='Balas HANYA dengan satu objek JSON valid. Tanpa markdown, tanpa penjelasan, tanpa teks lain.';
+function fbLine(fb){ return fb?('\nPERMINTAAN REVISI DARI USER (prioritas tertinggi, wajib diakomodasi): "'+fb+'"'):''; }
+
+/* =====  MODE SUARA — DEFINISI PERILAKU EKSPLISIT  =====
+   BUGFIX: dulu setup.suara hanya dikirim sebagai label mentah ("gaya suara=Voice Over")
+   tanpa arti perilaku, sehingga model video tetap membuat talent berbicara/lipsync.
+   Sekarang tiap mode punya aturan tegas yang ditanam di prompt storyboard, video, dan image. */
+function voiceDirective(){
+  const v=String(state.setup.suara||'').toLowerCase();
+  if(v.includes('voice')) return 'MODE SUARA: VOICE OVER — talent TIDAK berbicara di kamera sama sekali. Mulut tertutup atau senyum natural, TANPA gerakan bibir berbicara, TANPA lipsync. Kolom "dialog" = narasi voice over (audio dari luar layar, bukan ucapan talent). Kolom "action" WAJIB berisi gerakan non-bicara: memegang/menunjuk produk, mencoba produk, ekspresi wajah, gestur tangan.';
+  if(v.includes('lip')) return 'MODE SUARA: LIPSYNC — talent berbicara langsung ke kamera; gerakan bibir sinkron persis dengan kolom "dialog".';
+  if(v.includes('text')) return 'MODE SUARA: TEXT ONLY — tidak ada suara bicara dan talent TIDAK berbicara (tanpa gerakan bibir). Kolom "dialog" = teks overlay singkat di layar. Audio hanya musik/SFX.';
+  return '';
+}
+const isSpeakingMode=()=>String(state.setup.suara||'').toLowerCase().includes('lip');
+
+function schemaOf(fields){ return '{'+fields.map(f=>'"'+f.k+'":""').join(',')+'}'; }
+
+function promptStage(id, fb){
+  const ctx=buildContext();
+  if(id==='knowledge') return HEADER+'\n'+ctx+'\n\nTAHAP: KNOWLEDGE EXTRACTION — pahami produknya dulu, belum membuat konten. Isi setiap field dengan spesifik dan ringkas (maks 20 kata per field).'+(visionCapableImages()?' Foto talent/produk terlampir di pesan ini — amati langsung warna, material, dan detail visual asli dari foto tersebut, jangan menerka.':'')+fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.knowledge);
+  if(id==='marketing') return HEADER+'\n'+ctx+'\n\nTAHAP: MARKETING ANALYSIS. Turunkan dari analisis produk: audiens nyata, pain point emosional, desire, objection realistis, emotional trigger, buying motivation konkret. Ringkas (maks 22 kata per field).'+fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.marketing);
+  if(id==='angle') return HEADER+'\n'+ctx+'\n\nTAHAP: CONTENT ANGLE. Pilih angle paling kuat (transformasi OOTD / problem-solution / testimoni / tutorial / unboxing / dll). Hook harus scroll-stopping dalam bahasa '+state.setup.bahasa+'. ATURAN: CTA hanya akan dipakai di scene terakhir — tulis CTA soft-selling.'+fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.angle);
+  if(id==='brief') return HEADER+'\n'+ctx+'\n\nTAHAP: CREATIVE BRIEF FINAL. Rangkum semua tahap sebelumnya jadi brief siap produksi. Struktur narasi storyboard: '+sceneStructure(totalScenes())+'. jumlah_scene="'+totalScenes()+'", durasi_per_scene="'+state.setup.durasi+' detik", platform="'+state.setup.platform+'", mode="'+state.setup.mode+'". continuity_lock: satu paragraf padat berisi wajah talent, rambut/penutup kepala & outfit PERSIS mengikuti Catatan Talent & Outfit user di konteks (JANGAN menambah atribut yang tidak diminta user — jika user tidak menyebut hijab, talent TIDAK berhijab; jika user menulis "tanpa X", tulis bentuk positifnya secara eksplisit), produk (warna/model/tekstur), inner-celana-sepatu-tas, background, lighting, lensa 35mm eye level, rasio 9:16 — yang wajib identik di semua scene.'+(resolveTema()?' Field "background" WAJIB menurunkan dari Tema Visual/Lokasi FIXED di atas, jangan mengarang tema baru.':'')+(resolveKamera()?' Field "style_visual" WAJIB menurunkan dari Gaya Kamera FIXED di atas.':'')+fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.brief);
+  if(id==='caption') return HEADER+'\n'+ctx+'\n\nTAHAP: CAPTION. Struktur wajib: Hook → Experience → Benefit → CTA soft-selling. Gaya natural kreator '+state.setup.platform+', 2–4 kalimat, boleh 1–2 emoji. Buat 2 versi: "utama" (lebih personal/storytelling) dan "alternatif" (lebih to-the-point).'+fbLine(fb)+'\n'+JSON_RULE+'\nSkema: {"utama":"","alternatif":""}';
+  if(id==='hashtag') return HEADER+'\n'+ctx+'\n\nTAHAP: HASHTAG SEO. Kerangka: Brand + Kategori + Audiens/gaya + Platform + FYP. Buat 2 set berbeda: "tiktok" (sertakan #fyp #fypindonesia dan tag platform TikTok) dan "shopee" (sertakan #ShopeeVideo #ShopeeAffiliate). Masing-masing 10–14 hashtag, semua diawali #, tanpa spasi di dalam tag.'+fbLine(fb)+'\n'+JSON_RULE+'\nSkema: {"tiktok":["#..."],"shopee":["#..."]}';
+  return '';
+}
+
+/* =====  ARSITEKTUR NARASI PER JUMLAH SCENE (2–5)  =====
+   Dulu hanya ada 3 peran (HOOK / DEMO / CLOSING) — untuk 4–5 scene semua scene
+   tengah mendapat instruksi "DEMO" identik, hasilnya repetitif dan tidak berjenjang.
+   Sekarang tiap jumlah scene punya busur cerita eksplisit; scene tengah dibedakan
+   perannya: PROBLEM → SOLUTION+DEMO → PROOF. */
+const SCENE_ARCS={
+  2:[ 'HOOK + DEMO — tarik perhatian di 2 detik pertama, langsung tunjukkan produk dipakai dalam use case nyata',
+      'BENEFIT + CLOSING — rangkum benefit utama, lalu tutup dengan CTA soft-selling di detik-detik terakhir' ],
+  3:[ 'HOOK — perkenalan produk, bangun curiosity, tarik perhatian di 2 detik pertama, JANGAN jelaskan solusi dulu',
+      'DEMO — penggunaan produk, use case nyata, visual proof; lanjutkan momentum dari hook',
+      'BENEFIT + CLOSING — rangkum benefit, lalu tutup dengan CTA soft-selling di detik-detik terakhir' ],
+  4:[ 'HOOK — tarik perhatian di 2 detik pertama, bangun curiosity, JANGAN jelaskan solusi dulu',
+      'PROBLEM — dramatisasi masalah/pain point audiens secara relatable; produk boleh terlihat tapi belum jadi jawaban',
+      'SOLUTION + DEMO — produk masuk sebagai jawaban; tunjukkan cara pakai dan use case nyata',
+      'BENEFIT + CLOSING — rangkum benefit, lalu tutup dengan CTA soft-selling di detik-detik terakhir' ],
+  5:[ 'HOOK — tarik perhatian di 2 detik pertama, bangun curiosity, JANGAN jelaskan solusi dulu',
+      'PROBLEM — dramatisasi masalah/pain point audiens secara relatable; JANGAN tunjukkan solusi dulu',
+      'SOLUTION + DEMO — produk masuk sebagai jawaban; tunjukkan cara pakai dan use case nyata',
+      'PROOF — bukti hasil: detail/tekstur close-up, before-after, atau social proof gaya testimoni; perdalam, JANGAN mengulang demo scene sebelumnya',
+      'BENEFIT + CLOSING — rangkum benefit, lalu tutup dengan CTA soft-selling di detik-detik terakhir' ]
+};
+function sceneRole(i,total){
+  const arc=SCENE_ARCS[Math.max(2,Math.min(5,total))]||SCENE_ARCS[3];
+  return arc[Math.max(0,Math.min(arc.length-1,i-1))];
+}
+/* Peta struktur lengkap — ditanam di prompt supaya AI paham posisi scene dalam keseluruhan alur */
+function sceneStructure(total){
+  const arc=SCENE_ARCS[Math.max(2,Math.min(5,total))]||SCENE_ARCS[3];
+  return arc.map((r,idx)=>'Scene '+(idx+1)+': '+r.split(' — ')[0]).join(' → ');
+}
+function promptScene(i, fb){
+  const total=totalScenes(), dur=+state.setup.durasi||10, rows=Math.max(2,Math.round(dur/2));
+  const lock=state.scenes[0]?.continuity_lock || state.brief.continuity_lock || '';
+  const tlRow='{"waktu":"","visual":"","action":"","audio":"","dialog":"","camera":"","transisi":""}';
+  const times=Array.from({length:rows},(_,r)=>(r*2)+'-'+((r+1)*2)+' dtk');
+  return HEADER+'\n'+buildContext()+
+  '\n\nTAHAP: STORYBOARD — Scene '+i+' dari '+total+', durasi '+dur+' detik, timeline per 2 detik ('+rows+' baris, waktu: '+times.join(', ')+').'+
+  '\nSTRUKTUR NARASI KESELURUHAN ('+total+' scene): '+sceneStructure(total)+'.'+
+  '\nPeran scene ini (Scene '+i+'): '+sceneRole(i,total)+'.'+
+  (i>1?'\nRINGKASAN SCENE SEBELUMNYA (jangan ulangi isinya, lanjutkan alurnya): '+
+    state.scenes.slice(0,i-1).map((sc,idx)=>'[Scene '+(idx+1)+'] fokus: '+(sc?.fokus||'-')+'; visual: '+String(sc?.visual_utama||'-').slice(0,100)).join(' | ').slice(0,900)+
+    '\n- DILARANG mengulang visual utama, dialog, atau aksi yang sudah dipakai scene sebelumnya. Scene ini harus melanjutkan cerita, bukan mengulang.':'')+
+  '\nATURAN KRITIS (pelanggaran = gagal):'+
+  '\n- CTA HANYA boleh muncul di Scene '+total+'. '+(i<total
+    ? 'Scene ini DILARANG KERAS mengandung CTA/ajakan beli/checkout/keranjang/klik link dalam bentuk apa pun. Field "cta" WAJIB berisi "-".'
+    : 'Letakkan CTA soft-selling hanya di baris timeline terakhir. Isi field "cta" dengan kalimat CTA-nya.')+
+  '\n- '+voiceDirective()+' Dialog/narasi/teks bahasa '+state.setup.bahasa+' natural gaya kreator, maksimal 12 kata per baris.'+
+  '\n- Continuity Lock wajib identik di semua scene.'+(lock?(' Gunakan lock ini persis: "'+lock+'"'):' Tulis lock lengkap (talent, outfit, produk, background, lighting, lensa 35mm eye level, 9:16).')+
+  '\n- Dilarang menambah karakter, properti, atau background baru.'+
+  '\n- Setiap sel timeline ringkas (maks 12 kata).'+
+  (resolveKamera()?'\n- Kolom "camera" di SETIAP baris timeline WAJIB konsisten dengan Gaya Kamera FIXED di konteks di atas — jangan mengarang gaya kamera lain.':'')+
+  (resolveTema()?'\n- Field "background" WAJIB konsisten dengan Tema Visual/Lokasi FIXED di konteks di atas.':'')+
+  fbLine(fb)+'\n'+JSON_RULE+
+  '\nSkema: {"fokus":"","visual_utama":"","mood":"","background":"","cta":"-","timeline":['+Array(rows).fill(tlRow).join(',')+'],"detail_produk":["",""],"continuity_lock":""}';
+}
+function promptVideoText(i, fb){
+  const sc=state.scenes[i-1]||{}; const total=totalScenes();
+  const lock=sc.continuity_lock||state.scenes[0]?.continuity_lock||state.brief.continuity_lock||'';
+  const hasUploads=!!(state.uploads.talentImage||state.uploads.productImages.length);
+  const kamera=resolveKamera();
+  return HEADER+'\n'+buildContext()+
+  '\n\nTAHAP: VIDEO PROMPT BUILDER — Scene '+i+' dari '+total+'. Peran naratif scene ini: '+sceneRole(i,total)+'. Data scene: '+JSON.stringify(sc).slice(0,2400)+
+  '\nSusun SATU prompt produksi video AI yang padat (±120–180 kata) dengan urutan:'+
+  '\n1) Instruksi Reference Image: '+(hasUploads
+    ? 'user SUDAH upload foto talent + foto produk asli — pakai sebagai reference image, outfit/wajah/produk mengikuti upload user, TIDAK boleh diubah.'
+    : 'user BELUM upload reference image — jelaskan wajah/outfit/produk berdasarkan Continuity Lock & deskripsi teks saja, jangan mengklaim ada file reference.')+
+  '\n2) Continuity Lock ditulis ulang lengkap'+(lock?(': "'+lock+'"'):' (talent, outfit, produk, background, lighting, lensa 35mm eye level)')+'.'+
+  '\n3) Timeline per 2 detik: action, camera movement, audio/SFX, voice over, transisi.'+
+  '\n3a) '+voiceDirective()+(isSpeakingMode()?'':' Tulis eksplisit di prompt video bahwa talent TIDAK berbicara — no talking, mouth closed or natural smile.')+
+  (kamera?'\n3b) Spesifikasi kamera/lensa/film WAJIB persis: "'+kamera+'".':'')+
+  '\n4) Negative Prompt menyatu di akhir: no extra person, no new background, no new props, no distorted face/hands, no watermark'+
+  (String(state.setup.suara||'').toLowerCase().includes('text')?'':', no text overlay')+
+  (isSpeakingMode()?'':', no lip-sync, no talking, no mouth movement while narration plays')+
+  '. Tambahkan juga ke negative prompt setiap atribut yang user tolak di Catatan Talent & Outfit (contoh: user menulis "tanpa hijab" → tambahkan "no hijab, no headscarf, no head covering").'+
+  '\nDurasi maksimal '+(+state.setup.durasi||10)+' detik, rasio 9:16 vertikal 1080x1920.'+
+  (i<total?' DILARANG ada CTA/ajakan beli/checkout/keranjang dalam bentuk apa pun.':' Sertakan CTA soft-selling hanya di 2 detik terakhir.')+
+  fbLine(fb)+
+  '\nBalas HANYA teks prompt finalnya. TANPA JSON, tanpa markdown, tanpa judul, tanpa penjelasan.';
+}
+function promptImageText(i, fb){
+  const sc=state.scenes[i-1]||{}; const panels=Math.max(2,Math.round((+state.setup.durasi||10)/2));
+  const beats=(sc.timeline||[]).map((r,ri)=>'Panel '+(ri+1)+': '+(r.visual||r.action||'')).join('; ');
+  return HEADER+
+  '\nProject: '+(state.setup.nama||'')+'. Style visual: '+(state.brief.style_visual||resolveKamera()||'TikTok Creator Style, natural, hyper realistic')+'.'+
+  '\nBuat SATU image prompt (±60–100 kata) untuk gambar storyboard Scene '+i+': satu frame vertikal 9:16 berisi split-frame '+panels+' panel berurutan. Isi panel: '+beats.slice(0,900)+'.'+
+  '\nKonsistensi wajib: '+String(sc.continuity_lock||state.brief.continuity_lock||'').slice(0,350)+
+  (state.input.talent?'\nTalent WAJIB persis sesuai catatan user: "'+String(state.input.talent).slice(0,220)+'" — jangan menambah atribut (hijab/aksesori) yang tidak disebut; atribut yang ditolak user ditulis sebagai bentuk positif + negative ("no ...").':'')+
+  (isSpeakingMode()?'':'\nTalent TIDAK sedang berbicara di semua panel — mulut tertutup atau senyum natural, bukan pose bicara.')+
+  '\nTanpa teks/watermark di dalam gambar.'+
+  fbLine(fb)+
+  '\nBalas HANYA teks prompt finalnya. Tanpa JSON, tanpa markdown, tanpa penjelasan.';
+}
+
+/* ---------------- generators ---------------- */
+function setBusy(b, text){
+  busy=b; $('#statusline').classList.toggle('busy',b);
+  $('#statustext').textContent = b ? (text||'Memproses…') : 'Siaga';
+  document.querySelectorAll('.needidle').forEach(el=>el.disabled=b);
+  /* BUGFIX: saat AI bekerja, panel di-render ulang per scene — edit user yang sedang
+     diketik akan tertimpa. Semua input di panel dinonaktifkan selama proses. */
+  document.querySelectorAll('#main input,#main textarea,#main select').forEach(el=>el.disabled=b);
+}
+async function genStage(id, fb){
+  const map={knowledge:F.knowledge,marketing:F.marketing,angle:F.angle,brief:F.brief};
+  const images=id==='knowledge'?visionCapableImages():undefined;
+  const data=await callJSON(promptStage(id, fb), 1400, images);
+  const clean={}; map[id].forEach(f=>clean[f.k]=String(data[f.k]??''));
+  state[id]=clean; state.done[id]=true; delete state.dirty[id]; markDownstream(id);
+}
+async function genScene(i, fb){
+  const dur=+state.setup.durasi||10, rows=Math.max(2,Math.round(dur/2)); const total=totalScenes();
+  const d=await callJSON(promptScene(i, fb), 1800);
+  const tl=Array.from({length:rows},(_,r)=>{
+    const src=(d.timeline||[])[r]||{};
+    return { waktu:(r*2)+'–'+((r+1)*2)+' dtk', visual:String(src.visual||''), action:String(src.action||''),
+      audio:String(src.audio||''), dialog:String(src.dialog||''), camera:String(src.camera||''), transisi:String(src.transisi||'') };
+  });
+  state.scenes[i-1]={
+    fokus:String(d.fokus||sceneRole(i,total).split(' — ')[0]),
+    visual_utama:String(d.visual_utama||''), mood:String(d.mood||''), background:String(d.background||''),
+    cta:String(d.cta||(i<total?'-':'')), timeline:tl,
+    detail_produk:Array.isArray(d.detail_produk)?d.detail_produk.map(String):[],
+    continuity_lock:String(d.continuity_lock||state.scenes[0]?.continuity_lock||state.brief.continuity_lock||'')
+  };
+}
+function emptyScene(){
+  const rows=Math.max(2,Math.round((+state.setup.durasi||10)/2));
+  return {fokus:'',visual_utama:'',mood:'',background:'',cta:'-',
+    timeline:Array.from({length:rows},(_,r)=>({waktu:(r*2)+'–'+((r+1)*2)+' dtk',visual:'',action:'',audio:'',dialog:'',camera:'',transisi:''})),
+    detail_produk:[],continuity_lock:state.scenes[0]?.continuity_lock||state.brief.continuity_lock||''};
+}
+async function genAllScenes(fb){
+  const total=totalScenes();
+  state.scenes=state.scenes.slice(0,total);
+  /* BUGFIX: dulu tanpa try/catch per scene — kalau scene ke-N gagal (JSON tidak valid /
+     server penuh), loop langsung berhenti dan user hanya mendapat N-1 scene, padahal
+     toast error mudah terlewat. Sekarang: scene gagal diisi kerangka kosong, scene
+     berikutnya tetap digenerate, dan errornya dilaporkan eksplisit di akhir. */
+  const failed=[];
+  for(let i=1;i<=total;i++){
+    try{
+      setBusy(true,'Storyboard · Scene '+i+'/'+total+'…');
+      await genScene(i, fb);
+    }catch(e){
+      failed.push(i);
+      if(!state.scenes[i-1]) state.scenes[i-1]=emptyScene();
+    }
+    if(currentStep==='storyboard') renderPanel();
+  }
+  if(failed.length){
+    state.dirty.storyboard=true;
+    throw new Error('Scene '+failed.join(', ')+' gagal digenerate ('+(total-failed.length)+'/'+total+' berhasil). Scene yang gagal dibuatkan kerangka kosong — klik "↻ Regenerasi scene" pada scene tersebut, atau generate ulang semuanya.');
+  }
+  state.done.storyboard=true; delete state.dirty.storyboard; markDownstream('storyboard');
+}
+async function genAllPrompts(fb){
+  const total=state.scenes.length;
+  if(!total) throw new Error('Buat storyboard dulu sebelum video prompt.');
+  state.prompts=state.prompts.slice(0,total);
+  const failed=[];
+  for(let i=1;i<=total;i++){
+    try{
+      setBusy(true,'Video prompt · Scene '+i+'/'+total+'…');
+      const video=stripText(await callAI(promptVideoText(i, fb), 2000));
+      setBusy(true,'Image prompt · Scene '+i+'/'+total+'…');
+      const image=stripText(await callAI(promptImageText(i, fb), 900));
+      state.prompts[i-1]={video, image};
+    }catch(e){ failed.push(i); state.prompts[i-1]=state.prompts[i-1]||{video:'',image:''}; }
+    if(currentStep==='prompts') renderPanel();
+  }
+  if(failed.length){ state.dirty.prompts=true;
+    throw new Error('Scene '+failed.join(', ')+' gagal dibuat promptnya — scene lain aman. Klik generate lagi untuk mengulang yang gagal, atau cek koneksi/provider di ⚙ API.'); }
+  state.done.prompts=true; delete state.dirty.prompts;
+}
+async function genCapHash(fb){
+  setBusy(true,'Caption…');
+  const c=await callJSON(promptStage('caption',fb),900);
+  state.caption={utama:String(c.utama||''), alternatif:String(c.alternatif||'')};
+  setBusy(true,'Hashtag…');
+  const h=await callJSON(promptStage('hashtag',fb),700);
+  state.hashtag={ tiktok:(Array.isArray(h.tiktok)?h.tiktok:[]).join(' '), shopee:(Array.isArray(h.shopee)?h.shopee:[]).join(' ') };
+  state.done.caphash=true; delete state.dirty.caphash;
+}
+async function runStage(id, fb){
+  if(busy) return;
+  try{
+    if(!state.input.deskripsi.trim() && !state.setup.nama.trim()) throw new Error('Isi dulu nama project atau deskripsi produk di tahap 00–01.');
+    setBusy(true,'AI menyusun '+(STAGE_LABEL[id]||id)+'…');
+    if(id==='storyboard') await genAllScenes(fb);
+    else if(id==='prompts') await genAllPrompts(fb);
+    else if(id==='caphash') await genCapHash(fb);
+    else await genStage(id, fb);
+    toast(STAGE_LABEL[id]+' selesai dibuat.','ok');
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); render(); }
+}
+async function runAll(){
+  if(busy) return;
+  if(!state.input.deskripsi.trim()){ toast('Isi deskripsi produk dulu (tahap 01) supaya AI punya bahan.','err'); go('input'); return; }
+  const fb=state.pendingFeedback||'';
+  try{
+    for(const id of REGEN_ORDER){
+      go(id); setBusy(true,'Pipeline · '+STAGE_LABEL[id]+'…');
+      if(id==='storyboard') await genAllScenes(fb);
+      else if(id==='prompts') await genAllPrompts(fb);
+      else if(id==='caphash') await genCapHash(fb);
+      else await genStage(id, fb);
+      renderRail();
+    }
+    state.pendingFeedback='';
+    go('export'); toast('Pipeline lengkap. Cek validasi & ekspor hasilnya.','ok');
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); render(); }
+}
+
+/* ---------------- adaptive assistant ---------------- */
+async function adaptRequest(){
+  const instr=$('#assistInput').value.trim();
+  if(!instr||busy) return;
+  try{
+    setBusy(true,'Menganalisis permintaan perubahan…');
+    const prompt=HEADER+'\n'+buildContext()+
+      '\n\nUSER MEMINTA PERUBAHAN: "'+instr+'"'+
+      '\nTahap pipeline (berurutan hulu→hilir): knowledge, marketing, angle, brief, storyboard, prompts, caphash. Perubahan di hulu biasanya berdampak ke semua tahap hilirnya.'+
+      '\nTugasmu: (1) tentukan tahap mana saja yang perlu diregenerasi agar seluruh output konsisten dengan permintaan; (2) jika permintaan mengubah data dasar, isi "updates" dengan path yang diizinkan saja: setup.nama, setup.mode, setup.suara, setup.bahasa, setup.platform, setup.jumlahScene (integer 2–5, aplikasi mendukung maksimal 5 scene), input.deskripsi, input.talent, input.catatan.'+
+      '\n'+JSON_RULE+'\nSkema: {"stages":["..."],"updates":{},"ringkasan":"1 kalimat rencana adaptasi"}'+
+      '\nPENTING: key di "updates" WAJIB path datar bertitik, contoh benar: {"setup.jumlahScene":3,"setup.platform":"TikTok"} — BUKAN objek bersarang seperti {"setup":{"jumlahScene":3}}.';
+    const d=await callJSON(prompt, 600);
+    const allowed=['setup.nama','setup.mode','setup.suara','setup.bahasa','setup.platform','setup.jumlahScene','input.deskripsi','input.talent','input.catatan'];
+    /* BUGFIX: model sering membalas updates sebagai objek bersarang {"setup":{"jumlahScene":3}}.
+       Dulu key seperti itu tidak lolos cek `allowed.includes(p)` dan DIBUANG DIAM-DIAM —
+       akibatnya "buatkan 3 scene" tetap regenerasi dengan jumlah scene lama. Sekarang
+       updates diratakan dulu jadi path bertitik sebelum dicek. */
+    const flat={};
+    (function flatten(o,pre){ Object.entries(o||{}).forEach(([k,v])=>{ const p=pre?pre+'.'+k:k;
+      if(v&&typeof v==='object'&&!Array.isArray(v)) flatten(v,p); else flat[p]=v; }); })(d.updates,'');
+    Object.entries(flat).forEach(([p,v])=>{ if(allowed.includes(p)) setPath(state,p,p==='setup.jumlahScene'?(Math.max(2,Math.min(5,Math.round(+v)))||3):String(v)); });
+    const stages=(d.stages||[]).filter(s=>REGEN_ORDER.includes(s));
+    /* BUGFIX: kalau jumlah scene berubah tapi model lupa memasukkan "storyboard" ke stages,
+       storyboard & prompts wajib ikut diregenerasi agar jumlah scene benar-benar berubah. */
+    if('setup.jumlahScene' in flat && totalScenes()!==state.scenes.length){
+      if(!stages.includes('storyboard')) stages.push('storyboard');
+      if(!stages.includes('prompts')) stages.push('prompts');
+    }
+    stages.forEach(s=>state.dirty[s]=true);
+    state.pendingFeedback=instr;
+    const plan=$('#assistPlan');
+    plan.style.display='flex';
+    plan.innerHTML='<span>◆ '+esc(d.ringkasan||'Rencana adaptasi siap.')+' Tahap terdampak: <b style="color:var(--amber)">'+
+      (stages.map(s=>STAGE_LABEL[s]).join(', ')||'—')+'</b></span>'+
+      '<button class="btn small primary needidle" id="applyRegen">Regenerasi otomatis ('+stages.length+')</button>'+
+      '<button class="btn small ghost" id="dismissPlan">Nanti saja</button>';
+    $('#applyRegen').onclick=()=>applyRegen(stages);
+    $('#dismissPlan').onclick=()=>{plan.style.display='none';};
+    render();
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function applyRegen(stages){
+  if(busy) return;
+  const fb=state.pendingFeedback;
+  try{
+    for(const id of REGEN_ORDER){
+      if(!stages.includes(id)) continue;
+      go(id); setBusy(true,'Adaptasi · '+STAGE_LABEL[id]+'…');
+      if(id==='storyboard') await genAllScenes(fb);
+      else if(id==='prompts') await genAllPrompts(fb);
+      else if(id==='caphash') await genCapHash(fb);
+      else await genStage(id, fb);
+      renderRail();
+    }
+    state.pendingFeedback=''; $('#assistInput').value=''; $('#assistPlan').style.display='none';
+    toast('Adaptasi selesai — semua tahap terdampak sudah disesuaikan.','ok');
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); render(); }
+}
+
+/* ---------------- validation ---------------- */
+const CTA_WORDS=['beli','checkout','check out','keranjang','order sekarang','klik link','link di bio','link dibio','cek keranjang','borong','buruan','swipe up','co sekarang','beli sekarang','add to cart'];
+function validate(){
+  const out=[]; const total=state.scenes.length;
+  const add=(level,msg)=>out.push({level,msg});
+  if(!state.setup.nama) add('warn','Nama project belum diisi (tahap 00).');
+  if(!state.input.deskripsi) add('warn','Deskripsi produk kosong — AI butuh ini sebagai bahan utama.');
+  ['knowledge','marketing','angle','brief'].forEach(id=>{
+    const filled=F[id].some(f=>String(state[id][f.k]||'').trim());
+    add(filled?'ok':'warn', STAGE_LABEL[id]+(filled?' terisi.':' belum dibuat.'));
+  });
+  if(!total){ add('err','Storyboard belum dibuat.'); }
+  else{
+    if(total!==totalScenes()) add('warn','Jumlah scene ('+total+') beda dengan setup ('+totalScenes()+'). Regenerasi storyboard agar sinkron.');
+    if(total<2||total>5) add('err','Jumlah scene di luar rentang resmi 2–5 — hapus/tambah scene atau regenerasi.');
+    /* Deteksi scene berulang — jaring pengaman akurasi untuk storyboard 4–5 scene */
+    const sig=sc=>((sc.fokus||'')+' '+(sc.visual_utama||'')).toLowerCase().replace(/\s+/g,' ').trim();
+    for(let a=0;a<total;a++)for(let b=a+1;b<total;b++){
+      const sa=sig(state.scenes[a]), sb=sig(state.scenes[b]);
+      if(sa && sa===sb) add('warn','Scene '+(a+1)+' dan Scene '+(b+1)+' punya fokus/visual utama identik — regenerasi salah satunya agar alur tidak berulang.');
+    }
+    let ctaViolation=false;
+    state.scenes.forEach((sc,idx)=>{
+      const isLast=idx===total-1;
+      const texts=[sc.cta,...(sc.timeline||[]).map(r=>r.dialog||'')].join(' ').toLowerCase();
+      const hit=CTA_WORDS.find(w=>texts.includes(w));
+      if(!isLast && ((sc.cta||'').trim()&&(sc.cta||'').trim()!=='-')){ add('err','Scene '+(idx+1)+': kolom CTA terisi padahal bukan scene terakhir. WAJIB "-".'); ctaViolation=true; }
+      else if(!isLast && hit){ add('err','Scene '+(idx+1)+': terdeteksi kata CTA "'+hit+'" — CTA hanya boleh di scene terakhir.'); ctaViolation=true; }
+      if(isLast && !hit && !(sc.cta||'').replace('-','').trim()) add('warn','Scene terakhir belum memuat CTA yang jelas.');
+    });
+    if(!ctaViolation) add('ok','Aturan utama aman: CTA hanya ada di scene terakhir.');
+    const lock0=(state.scenes[0]?.continuity_lock||'').trim();
+    const lockSame=state.scenes.every(sc=>(sc.continuity_lock||'').trim()===lock0 && lock0);
+    add(lockSame?'ok':'warn', lockSame?'Continuity Lock identik di semua scene.':'Continuity Lock antar scene berbeda / kosong — samakan agar visual konsisten.');
+    const empty=state.scenes.some(sc=>(sc.timeline||[]).some(r=>!r.visual&&!r.dialog&&!r.action));
+    if(empty) add('warn','Ada baris timeline yang masih kosong.');
+    /* IDE BARU: dialog >12 kata tidak akan muat dibaca dalam 2 detik */
+    const longD=new Set(); state.scenes.forEach((sc,idx)=>(sc.timeline||[]).forEach(r=>{ if(String(r.dialog||'').trim().split(/\s+/).filter(Boolean).length>12) longD.add(idx+1); }));
+    if(longD.size) add('warn','Dialog/VO lebih dari 12 kata di Scene '+[...longD].join(', ')+' — persingkat agar muat di slot 2 detik.');
+    /* BUGFIX-GUARD 1: atribut yang user tolak ("tanpa hijab" dll) tidak boleh muncul positif di lock/prompt */
+    const rejected=[...String(state.input.talent||'').matchAll(/(?:tanpa|bukan|no|without)\s+([a-zA-Z\u00C0-\u024F]+)/gi)].map(m=>m[1].toLowerCase());
+    if(rejected.length){
+      const hay=[state.brief.continuity_lock||'', ...state.scenes.map(sc=>[sc.continuity_lock,sc.visual_utama,(sc.timeline||[]).map(r=>r.visual).join(' ')].join(' ')), ...state.prompts.map(pr=>(pr.video||'')+' '+(pr.image||''))].join(' || ').toLowerCase();
+      rejected.forEach(w=>{
+        const re=new RegExp('(?:^|[^a-z])'+w,'g'); let m, bad=false;
+        while((m=re.exec(hay))){ const before=hay.slice(Math.max(0,m.index-12),m.index); if(!/\b(no|tanpa|bukan|without)\s*$/.test(before)) { bad=true; break; } }
+        if(bad) add('err','User menulis "tanpa '+w+'" di Catatan Talent, tapi "'+w+'" masih muncul positif di lock/scene/prompt — regenerasi Brief lalu Storyboard & Prompts agar bersih.');
+      });
+    }
+    /* BUGFIX-GUARD 2: mode Voice Over / Text Only wajib menegaskan talent tidak berbicara di prompt video */
+    if(state.prompts.length && !isSpeakingMode()){
+      const loose=state.prompts.map((pr,idx)=>((pr.video||'').toLowerCase().includes('lip')||(pr.video||'').toLowerCase().includes('bicara')||(pr.video||'').toLowerCase().includes('talking'))?null:idx+1).filter(Boolean);
+      if(loose.length) add('warn','Mode '+state.setup.suara+': prompt video Scene '+loose.join(', ')+' belum menegaskan talent tidak berbicara (no lip-sync) — regenerasi prompt scene tersebut.');
+      else add('ok','Mode '+state.setup.suara+': semua prompt video sudah mengunci talent tidak berbicara.');
+    }
+  }
+  add(state.prompts.length===total&&total?'ok':'warn', state.prompts.length? 'Video prompt: '+state.prompts.length+' scene.':'Video prompt belum dibuat.');
+  add(state.caption.utama?'ok':'warn', state.caption.utama?'Caption siap (2 versi).':'Caption belum dibuat.');
+  add(state.hashtag.tiktok?'ok':'warn', state.hashtag.tiktok?'Hashtag siap (TikTok + Shopee).':'Hashtag belum dibuat.');
+  return out;
+}
+
+/* ---------------- markdown export ---------------- */
+function md(){
+  const s=state, L=[];
+  const kvT=(fields,obj)=>fields.map(f=>'| '+f.l+' | '+String(obj[f.k]||'').replace(/\n/g,' ')+' |').join('\n');
+  L.push('# Storyboard Affiliate — '+(s.setup.nama||'Tanpa Nama'));
+  L.push('_Framework Brain Director V0.2 · '+new Date().toLocaleDateString('id-ID')+'_\n');
+  L.push('> **Aturan utama:** CTA hanya di scene TERAKHIR. Scene sebelumnya murni Hook/Demo.\n');
+  L.push('## 0. Setup Project\n| Field | Isi |\n|---|---|');
+  L.push('| Nama Project | '+s.setup.nama+' |\n| Mode | '+s.setup.mode+' |\n| Gaya Suara | '+s.setup.suara+' |\n| Bahasa | '+s.setup.bahasa+' |\n| Platform | '+s.setup.platform+' |\n| Jumlah Scene | '+s.setup.jumlahScene+' |\n| Durasi/Scene | '+s.setup.durasi+' detik |\n');
+  L.push('## 1. Input Layer\n- Deskripsi Produk: '+(s.input.deskripsi||'-').replace(/\n/g,' ')+'\n- Link Referensi: '+(s.input.link||'-')+'\n- Catatan Talent & Outfit: '+(s.input.talent||'-').replace(/\n/g,' ')+'\n- Catatan Tambahan: '+(s.input.catatan||'-').replace(/\n/g,' ')+'\n');
+  L.push('## 2. Knowledge Extraction\n| Aspek | Isi |\n|---|---|\n'+kvT(F.knowledge,s.knowledge)+'\n');
+  L.push('## 3. Marketing Analysis\n| Aspek | Isi |\n|---|---|\n'+kvT(F.marketing,s.marketing)+'\n');
+  L.push('## 4. Content Angle\n| Elemen | Isi |\n|---|---|\n'+kvT(F.angle,s.angle)+'\n');
+  L.push('## 5. Creative Brief\n```\n'+F.brief.map(f=>(f.l+' ').padEnd(19,' ')+': '+String(s.brief[f.k]||'')).join('\n')+'\n```\n');
+  L.push('## 6. Story Structure\n```\n'+sceneStructure(s.scenes.length||totalScenes())+' (CTA hanya di scene terakhir)\n```\n');
+  L.push('## 7–9. Storyboard per Scene');
+  s.scenes.forEach((sc,idx)=>{
+    const n=idx+1, last=idx===s.scenes.length-1;
+    L.push('\n### Scene '+n+' — '+(sc.fokus||'')+' — '+s.setup.durasi+' Detik\n');
+    L.push('| Visual Utama | Mood | Background | CTA | Durasi |\n|---|---|---|---|---|');
+    L.push('| '+[sc.visual_utama,sc.mood,sc.background,(last?(sc.cta||'-'):'-'),s.setup.durasi+' dtk'].map(x=>String(x||'').replace(/\n/g,' ')).join(' | ')+' |\n');
+    L.push('| Timeline | Visual | Action | Audio/SFX | VO / Dialog | Camera | Transisi |\n|---|---|---|---|---|---|---|');
+    (sc.timeline||[]).forEach(r=>L.push('| '+[r.waktu,r.visual,r.action,r.audio,'"'+(r.dialog||'')+'"',r.camera,r.transisi].map(x=>String(x||'').replace(/\n/g,' ').replace(/\|/g,'/')).join(' | ')+' |'));
+    if((sc.detail_produk||[]).length) L.push('\n**Detail Produk**\n'+sc.detail_produk.map(d=>'- '+d).join('\n'));
+    L.push('\n**Continuity Lock:** '+(sc.continuity_lock||'-').replace(/\n/g,' '));
+  });
+  if(s.prompts.length){
+    L.push('\n## 10. Video Prompt Builder');
+    s.prompts.forEach((p,idx)=>{
+      L.push('\n### Prompt Scene '+(idx+1)+' — Video\n```\n'+(p.video||'')+'\n```');
+      if(p.image) L.push('\n### Prompt Scene '+(idx+1)+' — Image (storyboard split-frame)\n```\n'+p.image+'\n```');
+    });
+  }
+  L.push('\n## 11. Caption\n**Versi utama:**\n> '+(s.caption.utama||'-')+'\n\n**Versi alternatif:**\n> '+(s.caption.alternatif||'-')+'\n');
+  L.push('## 12. Hashtag\n**TikTok:** '+(s.hashtag.tiktok||'-')+'\n\n**Shopee Video:** '+(s.hashtag.shopee||'-')+'\n');
+  const v=validate();
+  L.push('## 13. Output Checklist\n'+['Creative Brief|'+!!Object.values(s.brief).some(x=>x),'Storyboard teks|'+!!s.scenes.length,'Video Prompt per scene|'+!!s.prompts.length,'Caption 2 versi|'+!!s.caption.utama,'Hashtag TikTok + Shopee|'+!!s.hashtag.tiktok].map(x=>{const[a,b]=x.split('|');return '- ['+(b==='true'?'x':' ')+'] '+a;}).join('\n'));
+  L.push('\n_Validasi: '+v.filter(x=>x.level==='ok').length+' ok · '+v.filter(x=>x.level==='warn').length+' peringatan · '+v.filter(x=>x.level==='err').length+' pelanggaran._');
+  return L.join('\n');
+}
+
+/* ---------------- rendering ---------------- */
+/* IDE BARU: kaskade konsistensi — kalau tahap hulu berubah/diregenerasi, semua tahap
+   hilir yang sudah berisi otomatis dicap "PERLU REGENERASI" agar tidak ada output basi. */
+function hasContent(id){
+  if(id==='storyboard') return !!state.scenes.length;
+  if(id==='prompts') return !!state.prompts.length;
+  if(id==='caphash') return !!(state.caption.utama||state.hashtag.tiktok);
+  return F[id]?F[id].some(f=>String(state[id][f.k]||'').trim()):false;
+}
+function markDownstream(fromId){
+  const idx=REGEN_ORDER.indexOf(fromId); if(idx<0) return;
+  REGEN_ORDER.forEach((id,i)=>{ if(i>idx && hasContent(id)) state.dirty[id]=true; });
+}
+function stageStatus(id){
+  if(state.dirty[id]) return 'dirty';
+  if(id==='setup') return state.setup.nama?'done':'';
+  if(id==='input') return state.input.deskripsi?'done':'';
+  if(id==='storyboard') return state.scenes.length?'done':'';
+  if(id==='prompts') return state.prompts.length?'done':'';
+  if(id==='caphash') return (state.caption.utama||state.hashtag.tiktok)?'done':'';
+  if(id==='export') return '';
+  if(F[id]) return F[id].some(f=>String(state[id][f.k]||'').trim())?'done':'';
+  return '';
+}
+function renderRail(){
+  $('#rail').innerHTML='<div class="railtitle">Master Flow</div>'+STEPS.map(st=>
+    '<button class="step '+(st.id===currentStep?'active':'')+'" data-go="'+st.id+'">'+
+    '<span class="no">'+st.no+'</span><span class="lbl">'+st.label+'</span>'+
+    '<span class="led '+stageStatus(st.id)+'"></span></button>'
+  ).join('')+
+  '<div class="railnote">Aturan #1: CTA hanya di scene <b>terakhir</b>. Studio ini memvalidasinya otomatis di tahap 09.</div>';
+}
+function go(id){ currentStep=id; renderRail(); renderPanel(); $('#main').scrollTop=0; }
+
+function head(no,title,desc){ return '<div class="panelhead"><div class="eyebrow">Tahap '+no+'</div><h2>'+title+'</h2>'+(desc?'<p>'+desc+'</p>':'')+'</div>'; }
+function kvGrid(fields, base, obj){
+  return '<div class="kvgrid">'+fields.map(f=>{
+    const v=esc(obj[f.k]||'');
+    const inner=f.long?'<textarea data-path="'+base+'.'+f.k+'">'+v+'</textarea>':'<input data-path="'+base+'.'+f.k+'" value="'+v+'">';
+    return '<div class="kv'+(f.long?' full':'')+'"><label>'+f.l+'</label>'+inner+'</div>';
+  }).join('')+'</div>';
+}
+function aiToolbar(id, genLabel){
+  const st=stageStatus(id);
+  return '<div class="toolbar">'+
+    '<button class="btn primary needidle" data-gen="'+id+'">✨ '+(genLabel||'Buat dengan AI')+'</button>'+
+    (st? '<span class="stamp '+st+'">'+(st==='dirty'?'PERLU REGENERASI':'TERISI')+'</span>':'')+
+    '<span class="spacer"></span></div>';
+}
+function reviseBox(id){
+  return '<div class="revise"><textarea id="rev-'+id+'" placeholder="Feedback revisi untuk AI, mis. \u201cbikin lebih santai, target Gen Z\u201d"></textarea>'+
+  '<button class="btn needidle" data-rev="'+id+'">↻ Revisi dengan AI</button></div>';
+}
+
+const PANELS={
+  setup(){ 
+    const s=state.setup;
+    const sel=(path,opts,cur)=>'<select data-path="'+path+'">'+opts.map(o=>'<option '+(o==cur?'selected':'')+'>'+o+'</option>').join('')+'</select>';
+    return head('00','Setup Project','Fondasi project — semua tahap berikutnya membaca pengaturan ini dan otomatis beradaptasi kalau kamu mengubahnya.')+
+    '<div class="card"><div class="kvgrid">'+
+    '<div class="kv"><label>Nama Project</label><input data-path="setup.nama" value="'+esc(s.nama)+'" placeholder="mis. Jaket Oversized Jiniso"></div>'+
+    '<div class="kv"><label>Mode</label>'+sel('setup.mode',['Model Talent','ASMR Faceless','Podcast','Motion'],s.mode)+'</div>'+
+    '<div class="kv"><label>Gaya Suara</label>'+sel('setup.suara',['Lipsync','Voice Over','Text Only'],s.suara)+'</div>'+
+    '<div class="kv"><label>Bahasa</label><input data-path="setup.bahasa" value="'+esc(s.bahasa)+'"></div>'+
+    '<div class="kv"><label>Platform</label>'+sel('setup.platform',['TikTok','Reels','Shopee Video','YouTube Shorts'],s.platform)+'</div>'+
+    '<div class="kv"><label>Jumlah Scene</label><input type="number" min="2" max="5" data-path="setup.jumlahScene" value="'+esc(s.jumlahScene)+'"><div class="hint">2–5 scene (default 3). Struktur narasi otomatis menyesuaikan jumlah scene; CTA selalu dikunci hanya di scene terakhir.</div></div>'+
+    '<div class="kv"><label>Durasi per Scene (detik)</label>'+sel('setup.durasi',[6,8,10],s.durasi)+'<div class="hint">Timeline otomatis menyesuaikan (per 2 detik: 6dtk=3 baris, 8dtk=4, 10dtk=5).</div></div>'+
+    '</div></div>'+
+    '<div class="card"><h3>Langkah berikutnya</h3><p style="color:var(--muted);font-size:13px">Isi tahap 01 (Input Produk), lalu tekan <b>⚡ Generate semua</b> di pojok atas — AI akan menjalankan seluruh pipeline: analisis → angle → brief → storyboard → prompt → caption → hashtag.</p></div>';
+  },
+  input(){
+    const i=state.input;
+    return head('01','Input Layer','Aset dan informasi mentah. Makin kaya deskripsinya, makin tajam penalaran AI di semua tahap.')+
+    '<div class="card"><div class="kvgrid">'+
+    '<div class="kv full"><label>Deskripsi Produk (wajib)</label><textarea data-path="input.deskripsi" style="min-height:110px" placeholder="Nama produk, bahan, warna, ukuran, keunggulan, harga, untuk siapa…">'+esc(i.deskripsi)+'</textarea></div>'+
+    '<div class="kv full"><label>Link Referensi Produk (marketplace)</label><input data-path="input.link" value="'+esc(i.link)+'" placeholder="https://…"></div>'+
+    '<div class="kv full"><label>Catatan Talent &amp; Outfit</label><textarea data-path="input.talent" placeholder="Ciri talent & outfit persis seperti yang kamu mau — contoh: wanita 25th rambut panjang terurai tanpa hijab, kaos putih, jeans. Ditulis di sini = dikunci konsisten di semua scene…">'+esc(i.talent)+'</textarea><div class="hint">Foto talent &amp; produk dipakai sebagai reference image saat menjalankan video prompt di tool video AI-mu.</div></div>'+
+    '<div class="kv full"><label>Catatan Tambahan (opsional)</label><textarea data-path="input.catatan" placeholder="Background yang diinginkan, mood, larangan tertentu, gaya kompetitor yang disukai…">'+esc(i.catatan)+'</textarea></div>'+
+    '</div></div>'+
+    '<div class="card"><h3>Tema Visual &amp; Gaya Kamera</h3>'+
+    '<div class="kvgrid">'+
+    '<div class="kv full"><label>Tema Visual / Lokasi Latar</label>'+
+    '<select id="temaVisualSelect" data-path="input.temaVisual">'+THEME_SELECT_HTML+'</select>'+
+    '<input id="temaVisualCustomInput" data-path="input.temaVisualCustom" value="'+esc(i.temaVisualCustom)+'" placeholder="Tulis nama tempat / deskripsi tema (mis. Dos Hermanos Coffee &amp; Cigar Jakarta, studio pastel Korea)…" style="margin-top:8px">'+
+    '<div id="temaVisualHint" class="hint" style="margin-top:6px">🔍 <b>Real-Time Location Research</b> — saat kamu klik tombol di bawah, AI browsing internet (Gemini + Google Search) untuk mencari deskripsi visual asli tempat ini. Butuh Gemini API key di ⚙ API (boleh beda dari provider utama pipeline-mu). Tanpa key itu, tetap jalan pakai interpretasi AI biasa (tanpa browsing).</div>'+
+    '<button class="btn small needidle" id="btnRisetLokasi" style="margin-top:8px">🔍 Riset lokasi sekarang</button>'+
+    '<div id="temaVisualResearchBox"></div>'+
+    '</div>'+
+    '<div class="kv full"><label>Gaya Kamera (Lensa &amp; Film)</label>'+
+    '<select id="gayaKameraSelect" data-path="input.gayaKamera">'+CAMERA_SELECT_HTML+'</select>'+
+    '<input id="gayaKameraCustomInput" data-path="input.gayaKameraCustom" value="'+esc(i.gayaKameraCustom)+'" placeholder="Tulis gaya kamera custom…" style="margin-top:8px">'+
+    '</div>'+
+    '</div></div>'+
+    '<div class="card"><h3>Referensi Visual AI (opsional)</h3>'+
+    '<div class="kvgrid">'+
+    '<div class="kv full"><label>Foto Talent / Model</label><input type="file" id="talentImageInput" accept="image/*"><div id="talentImageThumb"></div></div>'+
+    '<div class="kv full"><label>Foto Produk (maks 5) <span id="productImgCount" class="hint" style="display:inline"></span></label><input type="file" id="productImageInput" accept="image/*" multiple><div id="productImageThumbs"></div></div>'+
+    '</div>'+
+    '<div class="hint">Kalau provider AI-mu Claude atau Gemini, foto ini dipakai AI untuk mempertajam Knowledge Extraction &amp; continuity lock. Foto talent &amp; produk ini juga yang dimaksud sebagai "reference image" di instruksi Video Prompt (tahap 07) — bawa file ini saat kamu tempel prompt ke tool video AI-mu.</div>'+
+    '</div>'+
+    '<div class="card"><div class="toolbar" style="margin-bottom:0">'+
+    '<button class="btn primary needidle" id="btnPipelineHere">⚡ Jalankan seluruh pipeline dari sini</button>'+
+    '<span style="color:var(--muted);font-size:12.5px">atau kerjakan per tahap lewat menu kiri.</span></div></div>';
+  },
+  knowledge(){ return head('02','Knowledge Extraction','Pahami produk dulu — belum bikin konten. Semua field bisa diedit manual; AI hanya mengisi draf.')+'<div class="card">'+aiToolbar('knowledge')+kvGrid(F.knowledge,'knowledge',state.knowledge)+reviseBox('knowledge')+'</div>'; },
+  marketing(){ return head('03','Marketing Analysis','Audiens → pain point → desire → objection → trigger → motivasi beli.')+'<div class="card">'+aiToolbar('marketing')+kvGrid(F.marketing,'marketing',state.marketing)+reviseBox('marketing')+'</div>'; },
+  angle(){ return head('04','Content Angle','Problem → Angle → Hook → Solution → Benefit → CTA. CTA di sini hanya disiapkan untuk scene terakhir.')+'<div class="card">'+aiToolbar('angle')+kvGrid(F.angle,'angle',state.angle)+reviseBox('angle')+'</div>'; },
+  brief(){ return head('05','Creative Brief','Rangkuman final sebelum storyboard. Review dan revisi di sini dulu — lebih murah memperbaiki brief daripada memperbaiki storyboard.')+'<div class="card">'+aiToolbar('brief')+kvGrid(F.brief,'brief',state.brief)+reviseBox('brief')+'</div>'; },
+  storyboard(){
+    const total=totalScenes();
+    let html=head('06','Storyboard','Struktur '+total+' scene: '+sceneStructure(total)+'. Timeline per 2 detik.')+
+    '<div class="rulebanner"><span class="sym">⚠ ATURAN #1</span><div>CTA <b>hanya</b> boleh muncul di scene terakhir. Lampu merah di scene = CTA dilarang; lampu hijau = CTA wajib di akhir. Validator otomatis mengecek pelanggaran.</div></div>'+
+    '<div class="toolbar"><button class="btn primary needidle" data-gen="storyboard">✨ Buat semua scene ('+total+') dengan AI</button>'+
+    '<button class="btn needidle" id="btnAddScene">＋ Scene kosong</button><span class="spacer"></span>'+
+    (stageStatus('storyboard')?'<span class="stamp '+stageStatus('storyboard')+'">'+(stageStatus('storyboard')==='dirty'?'PERLU REGENERASI':state.scenes.length+' SCENE')+'</span>':'')+'</div>';
+    if(!state.scenes.length){
+      html+='<div class="empty"><div class="big">Belum ada scene</div><p>Jalankan AI untuk menyusun '+total+' scene lengkap — info utama, timeline per 2 detik, detail produk, dan continuity lock yang identik.</p></div>';
+    }
+    state.scenes.forEach((sc,idx)=>{
+      const n=idx+1, last=idx===state.scenes.length-1;
+      html+='<div class="scene"><div class="clapper"></div><div class="scenehead">'+
+      '<span class="sceneno">SCENE '+String(n).padStart(2,'0')+'</span>'+
+      '<input data-path="scenes.'+idx+'.fokus" value="'+esc(sc.fokus)+'" style="max-width:220px" placeholder="Fokus scene">'+
+      '<span class="lamp '+(last?'yes':'no')+'"><span class="dotd"></span>'+(last?'CTA DI SINI':'TANPA CTA')+'</span></div>'+
+      '<div class="scenebody">'+
+      '<div class="subgrid">'+
+      '<div><label>Visual Utama</label><textarea data-path="scenes.'+idx+'.visual_utama">'+esc(sc.visual_utama)+'</textarea></div>'+
+      '<div><label>Mood</label><input data-path="scenes.'+idx+'.mood" value="'+esc(sc.mood)+'"></div>'+
+      '<div><label>Background</label><input data-path="scenes.'+idx+'.background" value="'+esc(sc.background)+'"></div>'+
+      '<div><label>CTA '+(last?'(wajib)':'(harus "-")')+'</label><input data-path="scenes.'+idx+'.cta" value="'+esc(sc.cta)+'"></div>'+
+      '</div>'+
+      '<div class="mini">Timeline · per 2 detik</div>'+
+      '<div class="scroll-x"><table class="tl"><thead><tr><th>Waktu</th>'+TL_COLS.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr></thead><tbody>'+
+      (sc.timeline||[]).map((r,ri)=>'<tr><td>'+esc(r.waktu)+'</td>'+TL_COLS.map(c=>'<td><textarea data-path="scenes.'+idx+'.timeline.'+ri+'.'+c[0]+'">'+esc(r[c[0]])+'</textarea></td>').join('')+'</tr>').join('')+
+      '</tbody></table></div>'+
+      '<div class="mini">Detail Produk (1 baris = 1 poin)</div>'+
+      '<textarea data-path="scenes.'+idx+'._detail" data-detail="'+idx+'">'+esc((sc.detail_produk||[]).join('\n'))+'</textarea>'+
+      '<div class="mini">Continuity Lock (wajib identik semua scene)</div>'+
+      '<textarea data-path="scenes.'+idx+'.continuity_lock">'+esc(sc.continuity_lock)+'</textarea>'+
+      '<div class="toolbar" style="margin:12px 0 0">'+
+      '<button class="btn small needidle" data-regenscene="'+n+'">↻ Regenerasi scene '+n+'</button>'+
+      '<button class="btn small danger needidle" data-delscene="'+idx+'">Hapus</button></div>'+
+      '</div></div>';
+    });
+    html+='<div class="card">'+reviseBox('storyboard')+'</div>';
+    return html;
+  },
+  prompts(){
+    let html=head('07','Video Prompt Builder','1 scene = 1 prompt, maks 10 detik, continuity lock ditulis ulang, negative prompt menyatu. Plus prompt gambar storyboard split-frame per scene.')+
+    '<div class="card">'+aiToolbar('prompts','Buat prompt semua scene')+
+    (state.prompts.length?'<div class="toolbar" style="margin-top:0"><button class="btn small" id="btnCopyAllPrompts">📋 Salin SEMUA prompt ('+state.prompts.length+' scene, video + image)</button></div>':'')+'';
+    if(!state.prompts.length) html+='<div class="empty"><div class="big">Belum ada prompt</div><p>Buat storyboard dulu (tahap 06), lalu AI menerjemahkan tiap scene jadi prompt siap tempel ke tool video AI (Veo, Kling, Runway, dll.).</p></div>';
+    state.prompts.forEach((p,idx)=>{
+      html+='<div class="mini">Scene '+(idx+1)+' · Video Prompt</div>'+
+      '<textarea class="promptbox" data-path="prompts.'+idx+'.video">'+esc(p.video)+'</textarea>'+
+      '<div class="toolbar" style="margin:6px 0 14px"><button class="btn small" data-copy="prompts.'+idx+'.video">📋 Salin video prompt</button>'+
+      '<button class="btn small" data-copy="prompts.'+idx+'.image">📋 Salin image prompt</button></div>'+
+      '<div class="mini">Scene '+(idx+1)+' · Image Prompt (storyboard split-frame)</div>'+
+      '<textarea class="promptbox" style="min-height:90px" data-path="prompts.'+idx+'.image">'+esc(p.image)+'</textarea>';
+    });
+    html+=reviseBox('prompts')+'</div>';
+    return html;
+  },
+  caphash(){
+    return head('08','Caption & Hashtag','Caption: Hook → Experience → Benefit → CTA (2 versi). Hashtag: set terpisah TikTok vs Shopee Video.')+
+    '<div class="card">'+aiToolbar('caphash','Buat caption + hashtag')+
+    '<label>Caption — versi utama</label><textarea data-path="caption.utama" style="min-height:90px">'+esc(state.caption.utama)+'</textarea>'+
+    '<div class="toolbar" style="margin:6px 0 12px"><button class="btn small" data-copy="caption.utama">📋 Salin caption utama</button></div>'+
+    '<label>Caption — versi alternatif</label><textarea data-path="caption.alternatif" style="min-height:90px">'+esc(state.caption.alternatif)+'</textarea>'+
+    '<div class="toolbar" style="margin:6px 0 12px"><button class="btn small" data-copy="caption.alternatif">📋 Salin caption alternatif</button></div>'+
+    '<div class="mini">Hashtag TikTok</div><textarea class="tagbox" data-path="hashtag.tiktok">'+esc(state.hashtag.tiktok)+'</textarea>'+
+    '<div class="toolbar" style="margin:6px 0 12px"><button class="btn small" data-copy="hashtag.tiktok">📋 Salin tag TikTok</button></div>'+
+    '<div class="mini">Hashtag Shopee Video</div><textarea class="tagbox" data-path="hashtag.shopee">'+esc(state.hashtag.shopee)+'</textarea>'+
+    '<div class="toolbar" style="margin:6px 0 0"><button class="btn small" data-copy="hashtag.shopee">📋 Salin tag Shopee</button></div>'+
+    reviseBox('caphash')+'</div>';
+  },
+  export(){
+    const checks=validate();
+    return head('09','Validasi & Ekspor','Quality control otomatis terhadap aturan framework, lalu ekspor seluruh dokumen kerja.')+
+    '<div class="card"><h3>Hasil validasi</h3>'+checks.map(c=>'<div class="check '+c.level+'"><span class="sym">'+(c.level==='ok'?'✓':c.level==='warn'?'!':'✕')+'</span><span>'+esc(c.msg)+'</span></div>').join('')+'</div>'+
+    '<div class="card"><h3>Ekspor</h3><div class="toolbar" style="margin-bottom:0">'+
+    '<button class="btn primary" id="btnMdDown">⬇ Unduh Markdown (.md)</button>'+
+    '<button class="btn" id="btnMdCopy">📋 Salin Markdown</button>'+
+    '<button class="btn" id="btnJsonDown">💾 Simpan project (.json)</button>'+
+    '</div><div class="hint" style="margin-top:10px">File .json bisa dipindah ke device/browser lain lewat tombol 📂 Buka di atas — ini cadangan permanen di luar browser ini.</div></div>'+
+    '<div class="card"><h3>Penyimpanan Browser (Local Storage)</h3>'+
+    '<div class="hint" style="margin-top:0">Project ini otomatis tersimpan di local storage browser yang kamu pakai sekarang — tetap ada walau tab ditutup atau ke-refresh, baik dibuka di Claude.ai maupun browser biasa (kalau local storage didukung/tidak diblokir mode privat). API key TIDAK ikut tersimpan di sini, tetap hanya di memori sesi ini — pakai .json di atas untuk memindahkan project ke device/browser lain.</div>'+
+    '<div class="toolbar" style="margin-top:10px"><button class="btn small danger" id="btnClearLocal">🗑 Hapus data lokal</button></div></div>';
+  }
+};
+function renderPanel(){
+  $('#main').innerHTML=(PANELS[currentStep]||PANELS.setup)();
+  if(busy) document.querySelectorAll('.needidle').forEach(el=>el.disabled=true);
+  const b=$('#btnPipelineHere'); if(b) b.onclick=runAll;
+  if(currentStep==='export'){
+    $('#btnMdDown').onclick=()=>download((state.setup.nama||'storyboard').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-').toLowerCase()+'-brain-director.md', md(),'text/markdown');
+    $('#btnMdCopy').onclick=async()=>{ try{ await navigator.clipboard.writeText(md()); toast('Markdown tersalin.','ok'); }catch(e){ toast('Gagal menyalin — unduh saja filenya.','err'); } };
+    $('#btnJsonDown').onclick=saveProject;
+    $('#btnClearLocal').onclick=()=>{
+      if(!confirm('Hapus data project yang tersimpan otomatis di browser ini? File .json yang sudah kamu unduh tidak akan terpengaruh.')) return;
+      try{ localStorage.removeItem(LS_KEY); toast('Data lokal dihapus.','ok'); }
+      catch(e){ toast('Tidak bisa mengakses local storage di browser ini.','err'); }
+    };
+  }
+  const cab=$('#btnCopyAllPrompts');
+  if(cab) cab.onclick=async()=>{
+    const txt=state.prompts.map((p,i)=>'=== SCENE '+(i+1)+' — VIDEO PROMPT ===\n'+(p.video||'')+'\n\n=== SCENE '+(i+1)+' — IMAGE PROMPT ===\n'+(p.image||'')).join('\n\n');
+    try{ await navigator.clipboard.writeText(txt); toast('Semua prompt tersalin ke clipboard.','ok'); }
+    catch(e){ toast('Clipboard diblokir browser — salin per scene saja.','err'); }
+  };
+  const add=$('#btnAddScene');
+  if(add) add.onclick=()=>{
+    if(state.scenes.length>=5){ toast('Maksimal 5 scene — hapus salah satu dulu kalau mau menambah.','err'); return; }
+    const rows=Math.max(2,Math.round((+state.setup.durasi||10)/2));
+    state.scenes.push({fokus:'',visual_utama:'',mood:'',background:'',cta:'-',
+      timeline:Array.from({length:rows},(_,r)=>({waktu:(r*2)+'–'+((r+1)*2)+' dtk',visual:'',action:'',audio:'',dialog:'',camera:'',transisi:''})),
+      detail_produk:[],continuity_lock:state.scenes[0]?.continuity_lock||''});
+    /* BUGFIX: tambah scene kosong manual tidak menandai storyboard/prompts stale,
+       padahal hapus scene (delscene) sudah — disamakan agar konsisten. */
+    state.dirty.storyboard=true; if(state.prompts.length) state.dirty.prompts=true;
+    renderPanel(); renderRail();
+  };
+  if(currentStep==='input') setupInputPanel();
+}
+function setupInputPanel(){
+  const ts=$('#temaVisualSelect'); if(ts) ts.value=state.input.temaVisual||'custom';
+  const cs=$('#gayaKameraSelect'); if(cs) cs.value=state.input.gayaKamera||'cam_iphone15';
+  syncCustomVisibility();
+  const ti=$('#talentImageInput'); if(ti) ti.onchange=handleTalentUpload;
+  const pi=$('#productImageInput'); if(pi) pi.onchange=handleProductUpload;
+  const rb=$('#btnRisetLokasi'); if(rb) rb.onclick=runLocationResearch;
+  renderUploadThumbs();
+  renderThemeResearchBox();
+}
+function syncCustomVisibility(){
+  const temaCustom=$('#temaVisualCustomInput'), temaHint=$('#temaVisualHint'), risetBtn=$('#btnRisetLokasi');
+  const isTemaCustom=(state.input.temaVisual||'custom')==='custom';
+  if(temaCustom) temaCustom.hidden=!isTemaCustom;
+  if(temaHint) temaHint.hidden=!isTemaCustom;
+  if(risetBtn) risetBtn.hidden=!isTemaCustom;
+  const kamCustom=$('#gayaKameraCustomInput');
+  if(kamCustom) kamCustom.hidden=(state.input.gayaKamera||'cam_iphone15')!=='custom';
+}
+function render(){ renderRail(); renderPanel(); persistState(); }
+
+/* ---------------- project save/load ---------------- */
+const LS_KEY='brainDirectorProject_v1';
+/* IDE BARU: penyimpanan otomatis via localStorage — supaya aplikasi ini tidak cuma jalan
+   di dalam Claude.ai (provider "builtin"), tapi juga aman dipakai standalone di browser
+   biasa / GitHub Pages tanpa kehilangan progres tiap kali tab ditutup atau ke-refresh.
+   API key SENGAJA tetap tidak ikut tersimpan di sini — sama seperti .json — hanya konten
+   project (setup, input, hasil AI, scene, prompt, caption, hashtag) yang di-autosave. */
+function snapshotForStorage(){
+  const snap=JSON.parse(JSON.stringify(state));
+  snap.api={...snap.api, claudeKey:'',geminiKey:'',groqKey:'',orKey:'',customKey:''};
+  return snap;
+}
+let persistTimer=null;
+function persistState(){
+  clearTimeout(persistTimer);
+  persistTimer=setTimeout(()=>{
+    try{ localStorage.setItem(LS_KEY, JSON.stringify(snapshotForStorage())); }
+    catch(e){ /* localStorage tidak tersedia/diblokir (mode privat, sandbox tertentu, dll)
+                 — diamkan saja, ekspor .json tetap jadi cara simpan cadangan yang selalu ada */ }
+  }, 400);
+}
+function mergeLoadedState(d, restoreApi){
+  const keepApi=state.api;
+  /* BUGFIX: merge di atas struktur default, bukan timpa mentah — file/data versi lama
+     yang tidak punya field baru (tema visual, uploads, dll) tidak lagi merusak state. */
+  ['setup','input','caption','hashtag','done','dirty'].forEach(k=>{ if(d[k]&&typeof d[k]==='object') state[k]={...state[k],...d[k]}; });
+  ['knowledge','marketing','angle','brief'].forEach(k=>{ if(d[k]&&typeof d[k]==='object') state[k]=d[k]; });
+  ['scenes','prompts'].forEach(k=>{ if(Array.isArray(d[k])) state[k]=d[k]; });
+  if(d.uploads&&typeof d.uploads==='object') state.uploads={talentImage:d.uploads.talentImage||null, productImages:Array.isArray(d.uploads.productImages)?d.uploads.productImages:[]};
+  state.setup.jumlahScene=Math.max(2,Math.min(5,Math.round(+state.setup.jumlahScene)||3));
+  state.api=(restoreApi&&d.api&&typeof d.api==='object')?{...keepApi,...d.api}:keepApi;
+  if(state.uploads?.talentImage) state.uploads.talentImage.url='data:'+state.uploads.talentImage.mimeType+';base64,'+state.uploads.talentImage.data;
+  (state.uploads?.productImages||[]).forEach(img=>{ img.url='data:'+img.mimeType+';base64,'+img.data; });
+}
+function tryRestoreLocal(){
+  try{
+    const raw=localStorage.getItem(LS_KEY);
+    if(!raw) return false;
+    const d=JSON.parse(raw);
+    mergeLoadedState(d, true);
+    return !!(d.setup?.nama || d.input?.deskripsi || (d.scenes&&d.scenes.length) || (d.prompts&&d.prompts.length) || d.caption?.utama);
+  }catch(e){ return false; }
+}
+function saveProject(){
+  const snap=snapshotForStorage();
+  download((state.setup.nama||'project').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-').toLowerCase()+'-brain-director.json', JSON.stringify(snap,null,2),'application/json');
+  toast('Project disimpan sebagai .json (API key tidak ikut disimpan).','ok');
+}
+function loadProject(file){
+  const rd=new FileReader();
+  rd.onload=()=>{ try{
+    const d=JSON.parse(rd.result);
+    mergeLoadedState(d, false);
+    toast('Project dimuat.','ok'); go('setup');
+  }catch(e){ toast('File project tidak valid.','err'); } };
+  rd.readAsText(file);
+}
+
+/* ---------------- API modal ---------------- */
+function renderApiModal(){
+  $('#provGrid').innerHTML=PROVIDERS.map(p=>'<button class="prov '+(state.api.provider===p.id?'sel':'')+'" data-prov="'+p.id+'"><b>'+p.name+'</b><span>'+p.desc+'</span></button>').join('');
+  const a=state.api; let f='';
+  if(a.provider==='claude') f=
+    '<div class="field"><label>Anthropic API Key</label><input type="password" data-path="api.claudeKey" value="'+esc(a.claudeKey)+'" placeholder="sk-ant-…"></div>'+
+    '<div class="field"><label>Model</label><input data-path="api.claudeModel" value="'+esc(a.claudeModel)+'"></div>';
+  if(a.provider==='gemini') f=
+    '<div class="field"><label>Gemini API Key</label><input type="password" data-path="api.geminiKey" value="'+esc(a.geminiKey)+'" placeholder="AIza…"></div>'+
+    '<div class="field"><label>Model</label><input data-path="api.geminiModel" value="'+esc(a.geminiModel)+'" placeholder="gemini-2.5-flash / gemini-2.5-pro"></div>';
+  if(a.provider==='groq') f=
+    '<div class="field"><label>Groq API Key</label><input type="password" data-path="api.groqKey" value="'+esc(a.groqKey)+'" placeholder="gsk_…"></div>'+
+    '<div class="field"><label>Model</label><input data-path="api.groqModel" value="'+esc(a.groqModel)+'" placeholder="llama-3.3-70b-versatile · llama-3.1-8b-instant"></div>';
+  if(a.provider==='openrouter') f=
+    '<div class="field"><label>OpenRouter API Key</label><input type="password" data-path="api.orKey" value="'+esc(a.orKey)+'" placeholder="sk-or-…"></div>'+
+    '<div class="field"><label>Model</label><input data-path="api.orModel" value="'+esc(a.orModel)+'" placeholder="openai/gpt-4o-mini · anthropic/claude-sonnet-4.5 · google/gemini-2.5-flash"></div>';
+  if(a.provider==='custom') f=
+    '<div class="field"><label>Base URL</label><input data-path="api.customBase" value="'+esc(a.customBase)+'" placeholder="https://api.openai.com/v1 · https://api.groq.com/openai/v1 · https://openrouter.ai/api/v1"></div>'+
+    '<div class="field"><label>API Key</label><input type="password" data-path="api.customKey" value="'+esc(a.customKey)+'"></div>'+
+    '<div class="field"><label>Model</label><input data-path="api.customModel" value="'+esc(a.customModel)+'"></div>';
+  $('#provFields').innerHTML=f;
+  const common='Key hanya hidup di memori tab ini (tidak disimpan di mana pun, tidak ikut file .json) dan dikirim langsung ke endpoint resmi provider dari browser-mu. Semua provider punya retry otomatis kalau server sibuk.';
+  const notes={
+    builtin:'Mode bawaan memakai Claude langsung dari lingkungan Claude.ai — tanpa API key. Kalau kamu mengunduh file HTML ini dan membukanya di luar Claude.ai, pilih salah satu provider ber-key.',
+    groq:'Key gratis bisa dibuat di console.groq.com/keys (login lalu Create API Key). Groq sangat cepat dan cocok saat provider lain sedang penuh. '+common,
+    openrouter:'Key dibuat di openrouter.ai/keys — satu key untuk ratusan model dari berbagai vendor, tinggal ganti nama model. '+common
+  };
+  $('#provNote').textContent = notes[a.provider]||common;
+}
+async function testApi(){
+  try{ setBusy(true,'Tes koneksi AI…');
+    const r=await callAI('Balas HANYA JSON: {"ok":true}',60);
+    parseJSONLoose(r); toast('Koneksi AI berhasil ✓','ok');
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+
+/* ---------------- events ---------------- */
+document.addEventListener('input', e=>{
+  if(busy) return; /* BUGFIX: cegah edit tertelan/tertimpa saat AI sedang menulis state */
+  const p=e.target.dataset.path; if(!p) return;
+  let v=e.target.value; if(e.target.type==='number') v=+v;
+  if(e.target.dataset.detail!=null){
+    setPath(state,'scenes.'+e.target.dataset.detail+'.detail_produk', v.split('\n').map(x=>x.trim()).filter(Boolean));
+  } else setPath(state,p,v);
+  /* BUGFIX: perubahan jumlah scene kini menandai storyboard & prompts "PERLU REGENERASI",
+     supaya jumlah scene di setup dan hasil generate tidak diam-diam berbeda. */
+  if(p==='setup.jumlahScene' && state.scenes.length && totalScenes()!==state.scenes.length){
+    state.dirty.storyboard=true; state.dirty.prompts=true;
+  }
+  /* IDE BARU: perubahan bahan dasar (deskripsi, talent, tema, gaya suara, dll) otomatis
+     mencap semua tahap AI yang sudah berisi sebagai "PERLU REGENERASI". */
+  if(p.startsWith('input.')||['setup.mode','setup.suara','setup.bahasa','setup.platform','setup.durasi'].includes(p)){
+    REGEN_ORDER.forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
+  }
+  if(p.startsWith('setup.')||p.startsWith('input.')) renderRail();
+  if(p==='input.temaVisual'||p==='input.gayaKamera') syncCustomVisibility();
+  persistState();
+});
+document.addEventListener('click', async e=>{
+  const t=e.target.closest('button'); if(!t) return;
+  if(t.dataset.go){ go(t.dataset.go); return; }
+  if(t.dataset.gen){ runStage(t.dataset.gen,''); return; }
+  if(t.dataset.rev){ const id=t.dataset.rev; const fb=($('#rev-'+id)?.value||'').trim(); if(!fb){toast('Tulis dulu feedback revisinya.','err');return;} runStage(id,fb); return; }
+  if(t.dataset.regenscene){ if(busy) return; const n=+t.dataset.regenscene;
+    try{ setBusy(true,'Regenerasi scene '+n+'…'); await genScene(n,'');
+      if(state.prompts[n-1]){ state.dirty.prompts=true; toast('Scene '+n+' diperbarui — prompt video/image scene ini kedaluwarsa, regenerasi di tahap 07.','ok'); }
+      else toast('Scene '+n+' diperbarui.','ok'); }
+    catch(err){ toast(err.message,'err'); } finally{ setBusy(false); render(); } return; }
+  if(t.dataset.delscene!=null){ state.scenes.splice(+t.dataset.delscene,1); state.prompts.splice(+t.dataset.delscene,1);
+    if(state.prompts.length) state.dirty.prompts=true; if(state.scenes.length) state.dirty.storyboard=true; render(); return; }
+  if(t.dataset.copy){ const v=getPath(state,t.dataset.copy)||''; try{ await navigator.clipboard.writeText(v); toast('Tersalin.','ok'); }catch(err){ toast('Clipboard diblokir browser.','err'); } return; }
+  if(t.dataset.prov){ state.api.provider=t.dataset.prov; renderApiModal(); return; }
+  if(t.dataset.rmtalent){ removeTalentImage(); return; }
+  if(t.dataset.rmproduct!=null){ removeProductImage(+t.dataset.rmproduct); return; }
+});
+/* Normalisasi angka jumlah scene saat user selesai mengetik (blur/change) — nilai kosong/di luar 2–5 dirapikan */
+document.addEventListener('change', e=>{
+  if(e.target?.dataset?.path==='setup.jumlahScene'){ state.setup.jumlahScene=totalScenes(); e.target.value=state.setup.jumlahScene; renderRail(); }
+});
+/* IDE BARU: pelindung kerja — ingatkan sebelum menutup tab kalau ada hasil yang belum diekspor */
+window.addEventListener('beforeunload', e=>{
+  if(!busy && (state.scenes.length||state.prompts.length||state.caption.utama)){ e.preventDefault(); e.returnValue=''; }
+});
+$('#btnGenAll').onclick=runAll; $('#btnGenAll').classList.add('needidle');
+$('#btnApi').onclick=()=>{ renderApiModal(); $('#apiOverlay').classList.add('open'); };
+$('#btnCloseApi').onclick=()=>$('#apiOverlay').classList.remove('open');
+$('#apiOverlay').addEventListener('click',e=>{ if(e.target.id==='apiOverlay') $('#apiOverlay').classList.remove('open'); });
+$('#btnTestApi').onclick=testApi;
+$('#btnSave').onclick=saveProject;
+$('#btnLoad').onclick=()=>$('#fileInput').click();
+$('#fileInput').addEventListener('change',e=>{ if(e.target.files[0]) loadProject(e.target.files[0]); e.target.value=''; });
+$('#assistBtn').onclick=adaptRequest; $('#assistBtn').classList.add('needidle');
+$('#assistInput').addEventListener('keydown',e=>{ if(e.key==='Enter') adaptRequest(); });
+
+if(tryRestoreLocal()) toast('Sesi sebelumnya dipulihkan dari penyimpanan browser ini.','ok');
+render();
+</script>
+</body>
+</html>
