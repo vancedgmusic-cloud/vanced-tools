@@ -264,8 +264,13 @@ const state = {
     realisme:'UGC realistis (kamera HP)', rasio:'9:16', jumlahScene:6, durasi:8
   },
   input:{ niche:'', produk:'', audiens:'', arketipe:'auto', referensi:'', catatan:'' },
-  uploads:{ faceRefs:[] },
-  persona:{}, dna:{}, wardrobe:{}, voice:{}, content:{}, compliance:{},
+  uploads:{ refs:[] },
+  refmode:'komposit',
+  realism:{
+    tekstur:'detail', garis:'normal', imperfeksi:'ringan', kilap:'natural',
+    kamera:'iphone', cahaya:'jendela', grain:'halus', tubuh:'natural'
+  },
+  refs:{}, persona:{}, dna:{}, wardrobe:{}, voice:{}, content:{}, compliance:{},
   sheet:[], scenes:[],
   done:{}, dirty:{}
 };
@@ -275,21 +280,37 @@ let currentStep='setup', busy=false;
 const STEPS=[
   {id:'setup',      no:'00', label:'Setup Talent',      group:'Fondasi'},
   {id:'input',      no:'01', label:'Brief & Niche',     group:'Fondasi'},
-  {id:'persona',    no:'02', label:'Persona Core',      group:'Karakter', ai:true},
-  {id:'dna',        no:'03', label:'Character DNA',     group:'Karakter', ai:true},
-  {id:'wardrobe',   no:'04', label:'Wardrobe & Style',  group:'Karakter', ai:true},
-  {id:'voice',      no:'05', label:'Voice & Speech',    group:'Karakter', ai:true},
-  {id:'sheet',      no:'06', label:'Reference Sheet',   group:'Produksi', ai:true},
-  {id:'scenes',     no:'07', label:'Scene Pack',        group:'Produksi', ai:true},
-  {id:'content',    no:'08', label:'Content Engine',    group:'Distribusi', ai:true},
-  {id:'compliance', no:'09', label:'Compliance',        group:'Distribusi', ai:true},
-  {id:'export',     no:'10', label:'Audit & Ekspor',    group:'Distribusi'}
+  {id:'refs',       no:'02', label:'Referensi Visual',  group:'Fondasi', ai:true},
+  {id:'persona',    no:'03', label:'Persona Core',      group:'Karakter', ai:true},
+  {id:'dna',        no:'04', label:'Character DNA',     group:'Karakter', ai:true},
+  {id:'realism',    no:'05', label:'Realisme',          group:'Karakter'},
+  {id:'wardrobe',   no:'06', label:'Wardrobe & Style',  group:'Karakter', ai:true},
+  {id:'voice',      no:'07', label:'Voice & Speech',    group:'Karakter', ai:true},
+  {id:'sheet',      no:'08', label:'Reference Sheet',   group:'Produksi', ai:true},
+  {id:'scenes',     no:'09', label:'Scene Pack',        group:'Produksi', ai:true},
+  {id:'content',    no:'10', label:'Content Engine',    group:'Distribusi', ai:true},
+  {id:'compliance', no:'11', label:'Compliance',        group:'Distribusi', ai:true},
+  {id:'export',     no:'12', label:'Audit & Ekspor',    group:'Distribusi'}
 ];
+/* refs sengaja tidak masuk AI_ORDER: tahap itu hanya jalan kalau ada gambar
+   referensi yang diunggah, jadi "Generate Semua" tidak boleh menggagalkannya. */
 const AI_ORDER=['persona','dna','wardrobe','voice','sheet','scenes','content','compliance'];
-const STAGE_LABEL={persona:'Persona Core',dna:'Character DNA',wardrobe:'Wardrobe & Style',voice:'Voice & Speech',sheet:'Reference Sheet',scenes:'Scene Pack',content:'Content Engine',compliance:'Compliance'};
+const STAGE_LABEL={refs:'Bacaan Referensi',persona:'Persona Core',dna:'Character DNA',wardrobe:'Wardrobe & Style',voice:'Voice & Speech',sheet:'Reference Sheet',scenes:'Scene Pack',content:'Content Engine',compliance:'Compliance'};
 
 /* ---------------- definisi field ---------------- */
 const F = {
+  refs:[
+    {k:'wajah',l:'Struktur Wajah yang Terbaca',long:1},
+    {k:'kulit',l:'Kulit, Tekstur & Warna',long:1},
+    {k:'mata',l:'Mata & Alis',long:1},
+    {k:'hidung_bibir',l:'Hidung & Bibir',long:1},
+    {k:'rambut',l:'Rambut',long:1},
+    {k:'tubuh',l:'Tubuh & Postur',long:1},
+    {k:'gaya',l:'Gaya, Wardrobe & Makeup',long:1},
+    {k:'cahaya',l:'Lighting & Mood Foto Referensi',long:1},
+    {k:'vibe',l:'Vibe Keseluruhan',long:1},
+    {k:'pembeda',l:'⚖ Pembeda yang Disarankan',long:1,lock:1}
+  ],
   persona:[
     {k:'nama_lengkap',l:'Nama Lengkap'},
     {k:'handle',l:'Handle / Username'},
@@ -389,6 +410,144 @@ const VID_ENGINES={
   wan:{name:'Wan 2.5 (open source)', audio:true, syntax:'Kalimat natural bahasa Inggris, deskriptif.', ref:'Open source, bisa jalan lokal / RunPod.'},
   hailuo:{name:'Hailuo / MiniMax', audio:false, syntax:'Kalimat natural bahasa Inggris, ringkas dan fokus pada satu aksi utama.', ref:'Gerakan halus, bagus untuk b-roll.'}
 };
+
+/* ---------------- pustaka realisme (anti AI-slop) ----------------
+   Kenapa kulit hasil AI terlihat plastik: detail halus seperti pori,
+   bulu vellus, dan variasi pigmen secara statistik mirip noise, jadi
+   ikut terbuang di tahap awal diffusion. Ditambah lagi model banyak
+   belajar dari foto fashion/stok yang sudah diretouch, sehingga model
+   menganggap "kulit bagus" = mulus dan tanpa pori.
+   Konsekuensinya: tekstur nyata TIDAK muncul sendiri — harus diminta
+   eksplisit, dan lawannya harus ditolak lewat negative prompt. */
+const REALISM={
+  tekstur:{
+    label:'Tekstur Kulit',
+    opt:{
+      halus:{l:'Halus natural', en:'natural skin texture with faintly visible pores across the nose and cheeks'},
+      detail:{l:'Detail tinggi (disarankan)', en:'highly detailed skin with clearly visible pores across the cheeks, nose and forehead, fine vellus hair catching the light along the jawline and upper lip, visible subsurface scattering, uneven natural pigment distribution'},
+      ekstrem:{l:'Ekstrem (untuk close-up)', en:'extreme skin detail: individually resolved pores, dense vellus peach fuzz along the cheek and jaw rim-lit by the key light, fine capillaries visible at the nostrils and eyelids, strong subsurface scattering through the earlobes and nose tip, unretouched pigment unevenness and natural blotchiness'}
+    }
+  },
+  garis:{
+    label:'Garis & Kerutan',
+    opt:{
+      muda:{l:'Muda, minim garis', en:'young skin showing only faint expression lines at the outer eye corners when smiling'},
+      normal:{l:'Garis ekspresi normal (disarankan)', en:"natural expression lines: faint crow's feet at the eye corners, soft nasolabial folds, subtle forehead creases when the brow lifts, natural under-eye texture with slight darkness and fine crepey skin"},
+      matang:{l:'Matang, garis jelas', en:"mature skin with well-defined crow's feet, pronounced nasolabial folds, horizontal forehead lines, visible neck lines and slight laxity along the jawline"}
+    }
+  },
+  imperfeksi:{
+    label:'Ketidaksempurnaan',
+    opt:{
+      bersih:{l:'Bersih', en:'clear skin with a scattering of faint freckles'},
+      ringan:{l:'Ringan (disarankan)', en:'realistic minor imperfections: one or two small blemishes, faint acne scarring on one cheek, mild redness around the nostrils and chin, uneven under-eye tone, a small mole off-centre'},
+      nyata:{l:'Sangat nyata', en:'unretouched imperfections: a few active small blemishes, visible pigmentation patches, diffuse redness across the cheeks and nose, a dry flaking patch, faint old scarring, asymmetric features'}
+    }
+  },
+  kilap:{
+    label:'Kilap Kulit',
+    opt:{
+      matte:{l:'Matte', en:'matte skin finish with no specular shine'},
+      natural:{l:'Natural (disarankan)', en:'natural skin sheen with slight oil on the T-zone across the forehead and nose bridge'},
+      berminyak:{l:'Berminyak / berkeringat', en:'noticeably oily T-zone with small specular highlights on the forehead, nose and chin, faint sweat sheen at the temples'}
+    }
+  },
+  tubuh:{
+    label:'Realisme Tubuh',
+    opt:{
+      natural:{l:'Proporsi natural (disarankan)', en:'realistic body proportions with natural soft tissue: skin folds where the torso bends, natural left-right asymmetry, relaxed untensed posture, no idealised physique'},
+      atletis:{l:'Atletis realistis', en:'athletic but realistic build, muscle definition softened by a natural fat layer, skin creasing at the joints when bending, natural asymmetry'},
+      berisi:{l:'Berisi realistis', en:'fuller realistic build with natural soft tissue, visible skin folds at the waist when seated, stretch mark texture and natural dimpling on the thighs and upper arms'}
+    }
+  },
+  kamera:{
+    label:'Kamera & Lensa',
+    opt:{
+      iphone:{l:'Selfie iPhone (UGC)', en:'shot on an iPhone 15 Pro front camera held at arm\'s length, mild wide-angle facial distortion, handheld, casual off-centre snapshot framing', mjs:'100', fluxg:'1.6', extra:'IMG_4821.HEIC'},
+      dslr85:{l:'DSLR 85mm potret', en:'shot on a Canon EOS R5 with an 85mm f/1.4 lens, shallow depth of field with natural bokeh falloff, focus locked on the near eye', mjs:'150', fluxg:'2.0', extra:''},
+      film35:{l:'Film 35mm', en:'shot on Kodak Portra 400 35mm film, organic film grain, gentle halation blooming in the highlights, slightly muted warm colour', mjs:'180', fluxg:'1.8', extra:''},
+      webcam:{l:'Webcam / kamera depan laptop', en:'low-grade webcam capture, soft focus, visible compression artefacts, flat unflattering top-down framing', mjs:'50', fluxg:'1.5', extra:''},
+      vlog:{l:'Kamera vlog handheld', en:'shot on a Sony ZV-1 vlogging camera held at arm\'s length, slight handheld sway, occasional autofocus breathing', mjs:'120', fluxg:'1.7', extra:''},
+      cctv:{l:'Kamera pengawas / candid', en:'candid unposed capture from a fixed vantage point, subject unaware of the camera, imperfect framing', mjs:'80', fluxg:'1.5', extra:''}
+    }
+  },
+  cahaya:{
+    label:'Pencahayaan',
+    opt:{
+      jendela:{l:'Cahaya jendela (disarankan)', en:'soft directional daylight from a window to camera-left, realistic falloff with soft shadows on the far cheek and under the jaw'},
+      golden:{l:'Golden hour', en:'low golden-hour sun from behind the subject, warm rim light along the hair and shoulders, lifted open shadows'},
+      indoor:{l:'Lampu ruangan campur', en:'mixed indoor lighting: warm tungsten lamp on one side and cool daylight from a window on the other, uneven colour temperature across the face'},
+      ring:{l:'Ring light', en:'frontal ring light, flat even fill with a distinct circular catchlight in both eyes and a soft shadow halo behind'},
+      neon:{l:'Neon / malam kota', en:'night-time mixed neon lighting with magenta and cyan colour spill across the skin, high contrast and deep shadows'},
+      mendung:{l:'Mendung / teduh', en:'flat overcast daylight, very soft wraparound shadows, cool neutral colour'}
+    }
+  },
+  grain:{
+    label:'Grain & Artefak',
+    opt:{
+      bersih:{l:'Bersih', en:'clean capture with no added grain'},
+      halus:{l:'Grain halus (disarankan)', en:'faint sensor noise and fine grain, slight chromatic aberration toward the frame edges'},
+      kasar:{l:'Grain kasar', en:'visible grain and sensor noise, mild motion blur on the moving hand, slight lens flare and dust on the lens'}
+    }
+  }
+};
+
+/* Detail yang paling sering gagal di hasil AI, jadi selalu diminta eksplisit. */
+const EYE_DETAIL='eyes with crisp iris fibre detail and a visible limbal ring, fine sclera vascularity, a wet corneal reflection, catchlights that match the shape and direction of the key light, pupil dilation consistent with the ambient level, individually separated lower lashes';
+const HAIR_DETAIL='individual flyaway hairs breaking the silhouette, a natural parting with visible scalp, slight frizz and irregular strand clumping rather than uniform styled hair';
+const TEETH_DETAIL='teeth with natural enamel translucency and slight irregularity in shape and alignment, not uniformly white';
+
+/* Negative prompt anti-slop. Catatan penting: JANGAN memasukkan kata bertema
+   tekstur (mis. "detailed skin") ke sini — itu justru membuang tekstur yang
+   susah payah kita minta. */
+const ANTI_SLOP_NEG='plastic skin, airbrushed, poreless, waxy skin, over-smoothed, beauty filter, instagram filter, heavily retouched, CGI, 3d render, digital painting, illustration, doll-like, mannequin, wax figure, perfectly symmetrical face, glossy skin, uncanny valley, blown-out highlights, oversaturated, HDR look, plastic hair, uniform hair strands, dead eyes, blurry, deformed hands, extra fingers, watermark, text, logo';
+
+/* Kata-kata yang justru MENARIK model ke arah hasil slop — dilarang dipakai. */
+const SLOP_WORDS=['flawless','perfect skin','perfect face','beautiful','stunning','gorgeous','masterpiece','best quality','8k','4k','ultra hd','hyperrealistic','ultra realistic','highly detailed face','glamorous','magazine cover','supermodel','instagram model'];
+
+/* Bentuk ringkas tiap opsi. Midjourney dan SDXL memberi bobot per frasa,
+   jadi prompt panjang justru mengencerkan sinyal — di sana hanya frasa
+   paling menentukan yang dipakai. */
+const REALISM_SHORT={
+  tekstur:{halus:'natural skin texture with faint pores', detail:'visible skin pores, fine vellus hair', ekstrem:'individually visible pores, dense peach fuzz, subsurface scattering'},
+  garis:{muda:'', normal:'natural expression lines', matang:"deep crow's feet and nasolabial folds"},
+  imperfeksi:{bersih:'faint freckles', ringan:'small blemishes, uneven skin tone', nyata:'visible blemishes, redness, pigmentation patches'},
+  kilap:{matte:'matte skin', natural:'slight T-zone shine', berminyak:'oily T-zone, sweat sheen'},
+  tubuh:{natural:'realistic body proportions', atletis:'athletic realistic build', berisi:'fuller realistic build, natural skin folds'},
+  kamera:{iphone:'shot on iPhone front camera, casual snapshot', dslr85:'85mm f/1.4 portrait lens, shallow depth of field', film35:'Kodak Portra 400 35mm film', webcam:'low-grade webcam, soft focus', vlog:'handheld vlogging camera', cctv:'candid unposed capture'},
+  cahaya:{jendela:'soft window daylight from camera-left', golden:'golden hour backlight, warm rim light', indoor:'mixed tungsten and daylight', ring:'ring light with circular catchlights', neon:'neon magenta and cyan night lighting', mendung:'flat overcast daylight'},
+  grain:{bersih:'', halus:'fine grain', kasar:'visible grain and sensor noise'}
+};
+function rcfg(){ return state.realism; }
+function rpick(group){ const g=REALISM[group]; return g.opt[rcfg()[group]]||Object.values(g.opt)[0]; }
+
+/* Blok realisme yang ditempel ke setiap prompt. Versi "short" dipakai untuk
+   engine bergaya tag/parameter (Midjourney, SDXL) karena prompt panjang di
+   sana justru mengencerkan bobot tiap frasa. */
+function realismLock(mode){
+  if(mode==='short'){
+    const g=k=>REALISM_SHORT[k][rcfg()[k]]||'';
+    return [
+      ...['tekstur','imperfeksi','garis','kilap'].map(g),
+      'detailed iris with accurate catchlights', 'individual flyaway hairs',
+      ...['tubuh','kamera','cahaya','grain'].map(g),
+      'unretouched raw photo'
+    ].filter(Boolean).join(', ')+'.';
+  }
+  return [
+    rpick('tekstur').en, rpick('garis').en, rpick('imperfeksi').en, rpick('kilap').en,
+    EYE_DETAIL, HAIR_DETAIL, TEETH_DETAIL, rpick('tubuh').en,
+    rpick('kamera').en, rpick('cahaya').en, rpick('grain').en,
+    'unretouched raw photograph of a real person, not a render and not a beauty-filtered image'
+  ].join('; ')+'.';
+}
+function engineParams(){
+  const k=rpick('kamera'), e=state.setup.imgEngine;
+  if(e==='midjourney') return '--ar '+ratio()+' --style raw --s '+k.mjs+' --v 7';
+  if(e==='flux') return 'guidance '+k.fluxg+(k.extra?' · sisipkan nama file "'+k.extra+'" di prompt agar Flux meniru foto ponsel':'');
+  if(e==='sdxl') return 'CFG 3.5–5 · pakai skin/detail LoRA + ADetailer untuk wajah · upscaler yang mempertahankan detail';
+  return 'Sertakan negative/larangan anti-slop di prompt karena engine ini tidak punya field negative terpisah.';
+}
 
 const ARKETIPE=[
   'auto','Bestie yang jujur','Ahli / Educator','Girl-next-door','Pemula yang belajar bareng',
@@ -554,20 +713,47 @@ const stripText=t=>String(t||'').trim().replace(/^```[a-z]*\s*/i,'').replace(/``
 const schemaOf=fields=>'{'+fields.map(f=>'"'+f.k+'":""').join(',')+'}';
 const kvText=(fields,obj)=>fields.filter(f=>obj&&obj[f.k]).map(f=>'- '+f.l.replace(/^[🔒🎙]\s*/,'')+': '+obj[f.k]).join('\n');
 
-/* ---------------- upload gambar referensi ---------------- */
-function getBase64(file){
+/* ---------------- upload gambar referensi ----------------
+   Gambar dikecilkan dulu sebelum masuk state. 768px sisi terpanjang sudah
+   lebih dari cukup untuk model vision membaca wajah, tapi ukurannya turun
+   dari belasan MB ke ratusan KB — cukup kecil untuk ikut tersimpan di
+   localStorage dan file project tanpa menjebol kuota. */
+const REF_ROLES=[
+  {id:'wajah', l:'Wajah'},
+  {id:'tubuh', l:'Tubuh & Postur'},
+  {id:'gaya',  l:'Gaya & Wardrobe'},
+  {id:'mood',  l:'Lighting & Mood'}
+];
+function downscaleImage(file, maxEdge=768, quality=0.82){
   return new Promise((res,rej)=>{
     const r=new FileReader();
-    r.onload=()=>{ const s=String(r.result); const i=s.indexOf(','); res({mimeType:file.type||'image/jpeg', data:s.slice(i+1)}); };
-    r.onerror=rej; r.readAsDataURL(file);
+    r.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        let w=img.naturalWidth, h=img.naturalHeight;
+        const scale=Math.min(1, maxEdge/Math.max(w,h));
+        w=Math.max(1,Math.round(w*scale)); h=Math.max(1,Math.round(h*scale));
+        const c=document.createElement('canvas'); c.width=w; c.height=h;
+        const ctx=c.getContext('2d');
+        ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h); /* jaga-jaga PNG transparan */
+        ctx.drawImage(img,0,0,w,h);
+        const url=c.toDataURL('image/jpeg',quality);
+        res({mimeType:'image/jpeg', data:url.slice(url.indexOf(',')+1)});
+      };
+      img.onerror=()=>rej(new Error('Gambar tidak bisa dibaca.'));
+      img.src=String(r.result);
+    };
+    r.onerror=()=>rej(new Error('Gagal membaca file.'));
+    r.readAsDataURL(file);
   });
 }
 function visionCapableImages(){
   const p=state.api.provider;
-  if(!state.uploads.faceRefs.length) return null;
-  if(p==='groq') return null;
-  return state.uploads.faceRefs.slice(0,3);
+  if(!state.uploads.refs.length) return null;
+  if(p==='groq') return null; /* Groq belum membaca gambar */
+  return state.uploads.refs.slice(0,4).map(r=>({mimeType:r.mimeType,data:r.data}));
 }
+function hasRefs(){ return state.uploads.refs.length>0; }
 
 /* ---------------- konteks & prompt builder ---------------- */
 const HEADER='Kamu adalah AI Character Director spesialis pembuatan AI influencer / virtual talent untuk konten UGC, affiliate, dan YouTube. Kamu paham betul cara menjaga konsistensi wajah dan identitas karakter lintas ratusan generasi gambar dan video. Penalaranmu tajam, spesifik, dan tidak pernah generik. Semua output berbahasa Indonesia natural, KECUALI field prompt gambar/video/voice-design yang wajib bahasa Inggris karena dipakai langsung di engine generatif.';
@@ -607,6 +793,7 @@ function buildContext(){
   if(i.referensi) c+='- Referensi gaya: '+i.referensi+'\n';
   if(i.catatan) c+='- Catatan khusus: '+i.catatan+'\n';
 
+  if(state.refs.wajah) c+='\nBACAAN GAMBAR REFERENSI\n'+kvText(F.refs,state.refs)+'\n';
   if(state.persona.nama_lengkap) c+='\nPERSONA CORE\n'+kvText(F.persona,state.persona)+'\n';
   if(state.dna.identity_lock) c+='\nCHARACTER DNA\n'+kvText(F.dna,state.dna)+'\n';
   if(state.wardrobe.signature_look) c+='\nWARDROBE\n'+kvText(F.wardrobe,state.wardrobe)+'\n';
@@ -615,7 +802,31 @@ function buildContext(){
 }
 function fbLine(fb){ return fb?('\nPERMINTAAN REVISI DARI USER (prioritas tertinggi, wajib diakomodasi): "'+fb+'"'):''; }
 
+/* Instruksi realisme yang ditempel ke setiap tahap penghasil prompt. */
+function realismBrief(){
+  const short = ['midjourney','sdxl'].includes(state.setup.imgEngine);
+  return 'ATURAN REALISME (WAJIB — ini pembeda hasil nyata vs hasil AI murahan)\n'+
+    'Detail halus kulit secara statistik mirip noise, jadi engine membuangnya kalau tidak diminta eksplisit. Karena itu:\n'+
+    '- SETIAP prompt gambar dan video WAJIB memuat blok realisme berikut, disalin apa adanya:\n'+
+    '"""\n'+realismLock(short?'short':'full')+'\n"""\n'+
+    '- DILARANG memakai kata-kata ini karena justru menarik hasil ke arah plastik/filter: '+SLOP_WORDS.join(', ')+'.\n'+
+    '- Jangan menulis "cantik", "sempurna", atau "mulus". Ganti dengan deskripsi fisik yang netral dan spesifik.\n'+
+    '- Wajah harus asimetris wajar, bukan cermin kiri-kanan.\n'+
+    '- Parameter engine yang disarankan: '+engineParams();
+}
+
 const STAGE_TASK={
+  refs:()=>
+    'TUGAS: Baca gambar referensi yang dilampirkan, lalu terjemahkan menjadi deskripsi fisik terstruktur yang bisa dipakai membangun karakter.\n'+
+    'Aturan:\n'+
+    '- Deskripsikan APA YANG KAMU LIHAT secara spesifik dan terukur. Hindari kata umum seperti "cantik" atau "menarik".\n'+
+    '- Jangan menebak atau menyebut nama orang di gambar. Perlakukan gambar sebagai acuan bentuk semata.\n'+
+    '- Kalau ada beberapa gambar, sebutkan ciri yang KONSISTEN muncul di semuanya — itu yang paling layak dipertahankan.\n'+
+    '- Perhatikan detail yang biasanya luput: tekstur kulit, arah cahaya, bentuk kelopak mata, garis rahang, tekstur rambut.\n'+
+    (state.refmode==='inspirasi'
+      ? '- MODE: INSPIRASI. Ambil hanya vibe, gaya, palet, dan mood. JANGAN menurunkan struktur wajah secara detail.\n'
+      : '- MODE: KOMPOSIT. Turunkan ciri fisik, tapi hasil akhirnya harus jadi orang BARU — bukan salinan orang di foto.\n')+
+    '- FIELD pembeda: WAJIB DIISI. Usulkan 4–6 perubahan konkret dan spesifik (mis. ubah bentuk hidung, geser posisi tahi lalat, ganti bentuk rahang, ubah warna mata, ubah tekstur rambut) supaya karakter final jelas berbeda dari orang di foto referensi. Ini melindungi dari masalah hak atas potret dan penangguhan akun.',
   persona:()=>
     'TUGAS: Rancang Persona Core untuk AI influencer ini — manusia digital yang kredibel, spesifik, dan enak diikuti audiens '+state.setup.pasar+'.\n'+
     'Aturan:\n'+
@@ -635,7 +846,15 @@ const STAGE_TASK={
     '- Umur tampak harus konsisten dengan rentang '+state.setup.rentangUsia+' tahun.\n'+
     '- FIELD identity_lock: tulis dalam BAHASA INGGRIS sebagai SATU baris padat berisi ciri paling mengunci, siap disalin ke depan setiap prompt. Format: "<nama>, <usia>yo <etnis> <gender>, <bentuk wajah>, <kulit>, <mata>, <rambut>, <tanda unik>, <tubuh>". Maksimal 60 kata.\n'+
     '- FIELD negative_lock: tulis dalam BAHASA INGGRIS, daftar hal yang tidak boleh berubah, format "do not change: ...". Ini akan dipakai sebagai pengingat anti-drift.\n'+
-    (state.uploads.faceRefs.length?'- Ada gambar referensi wajah yang dilampirkan. Turunkan Character DNA dari wajah di gambar itu, jangan mengarang wajah baru.\n':''),
+    '- Deskripsi kulit WAJIB menyebut tekstur nyata: pori terlihat, bulu vellus halus, variasi pigmen, sedikit kemerahan. Jangan sekali-kali menulis kulit "mulus", "sempurna", atau "flawless" — itu yang bikin hasil akhir terlihat plastik.\n'+
+    '- Deskripsi mata WAJIB menyebut detail iris, limbal ring, dan pantulan cahaya.\n'+
+    (state.refs.wajah
+      ? '- Sudah ada BACAAN GAMBAR REFERENSI di konteks. Turunkan Character DNA dari bacaan itu, JANGAN mengarang wajah baru dari nol.\n'+
+        (state.refs.pembeda ? '- WAJIB menerapkan seluruh Pembeda yang disarankan di bacaan referensi, supaya hasilnya orang baru dan bukan salinan orang di foto.\n' : '')
+      : (state.uploads.refs.length
+          ? '- Ada gambar referensi terlampir. Turunkan Character DNA dari wajah di gambar itu, jangan mengarang wajah baru.\n'
+          : ''))+
+    '- Semua deskripsi fisik ditulis netral dan spesifik supaya bisa langsung dipakai di prompt.\n',
   wardrobe:()=>
     'TUGAS: Susun sistem wardrobe & styling supaya talent ini punya identitas visual yang konsisten tapi tetap variatif.\n'+
     'Aturan:\n'+
@@ -699,7 +918,7 @@ const SHEET_SHOTS=[
 ];
 function promptSheet(fb){
   const ie=imgEngine();
-  return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+
+  return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+realismBrief()+'\n\n'+
     'TUGAS: Buat Reference Sheet Pack — kumpulan prompt gambar siap pakai untuk membangun aset identitas talent ini di '+ie.name+'.\n'+
     'Kamu harus menghasilkan tepat '+SHEET_SHOTS.length+' prompt, satu untuk setiap shot berikut:\n'+
     SHEET_SHOTS.map((s,n)=>(n+1)+'. '+s.label+' — '+s.brief).join('\n')+'\n\n'+
@@ -708,9 +927,8 @@ function promptSheet(fb){
     '- Setiap prompt WAJIB menyebut ulang seluruh tanda unik permanen secara eksplisit.\n'+
     '- Prompt ditulis dalam BAHASA INGGRIS mengikuti sintaks engine di atas.\n'+
     '- Shot turnaround (1–4) wajib memakai pencahayaan, latar, jarak kamera, dan lensa yang IDENTIK satu sama lain — hanya sudut yang berubah. Sebutkan itu di prompt.\n'+
-    '- Sertakan arahan kamera/lensa yang realistis (mis. 85mm portrait lens, f/2.8) supaya hasil tidak terasa AI.\n'+
-    '- Hindari kulit terlalu mulus: minta tekstur kulit natural, pori terlihat, sedikit ketidaksempurnaan.\n'+
-    '- Field "negative": untuk engine bergaya tag isi dengan negative prompt lengkap; untuk engine natural isi dengan kalimat larangan singkat.\n'+
+    '- Field "negative": WAJIB memuat seluruh daftar anti-slop berikut, boleh ditambah yang relevan dengan shot-nya:\n  '+ANTI_SLOP_NEG+'\n'+
+    '- Shot close-up wajah dan lembar ekspresi WAJIB memakai tingkat detail kulit paling tinggi — di jarak itu kulit plastik paling ketahuan.\n'+
     '- Field "catatan": 1 kalimat bahasa Indonesia berisi tips praktis memakai shot ini (kapan dipakai, apa yang harus dicek).\n'+
     fbLine(fb)+'\n\n'+
     JSON_RULE+'\nSkema wajib:\n'+
@@ -730,7 +948,7 @@ const SCENE_USECASE=[
 function sceneCount(){ return Math.max(3,Math.min(10,Math.round(+state.setup.jumlahScene)||6)); }
 function promptScenes(fb){
   const ie=imgEngine(), ve=vidEngine(), n=sceneCount();
-  return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+
+  return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+realismBrief()+'\n\n'+
     'TUGAS: Buat Scene Pack — '+n+' scene siap produksi untuk konten UGC / affiliate memakai talent ini.\n'+
     'Gunakan use case berikut sebagai acuan, ambil '+n+' pertama dan sesuaikan dengan niche:\n'+
     SCENE_USECASE.slice(0,n).map((u,i)=>(i+1)+'. '+u).join('\n')+'\n\n'+
@@ -757,6 +975,9 @@ function hasContent(id){
   const o=state[id]; return !!(o&&Object.keys(o).some(k=>String(o[k]||'').trim()));
 }
 function markDownstream(fromId){
+  /* refs berada di luar AI_ORDER tapi menjadi bahan dasar semuanya, jadi
+     perubahannya menandai seluruh tahap AI sebagai perlu regenerasi. */
+  if(fromId==='refs'){ AI_ORDER.forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; }); return; }
   const i=AI_ORDER.indexOf(fromId); if(i<0) return;
   AI_ORDER.slice(i+1).forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
 }
@@ -785,8 +1006,12 @@ function warnShort(got, want, satuan){
 async function runStage(id, fb){
   if(busy) return;
   try{
+    if(id==='refs'){
+      if(!hasRefs()) throw new Error('Belum ada gambar referensi yang diunggah.');
+      if(state.api.provider==='groq') throw new Error('Groq belum bisa membaca gambar. Pindah ke Claude, Gemini, OpenRouter, atau OpenAI-compatible lewat ⚙ API.');
+    }
     setBusy(true, 'Menyusun '+(STAGE_LABEL[id]||id)+'…');
-    const imgs = (id==='dna'||id==='persona') ? visionCapableImages() : null;
+    const imgs = (id==='refs'||id==='dna'||id==='persona') ? visionCapableImages() : null;
     if(id==='sheet'){
       const raw=await callAI(promptSheet(fb), 4200, null);
       const d=parseJSONLoose(raw);
@@ -872,6 +1097,21 @@ function audit(){
   push(!!state.wardrobe.wardrobe_lock,'Wardrobe Lock sudah ditentukan');
   push(!!state.voice.voice_design_prompt,'Voice Design Prompt siap dipakai');
 
+  /* Realisme: cek prompt benar-benar membawa penanda tekstur, bukan cuma
+     mengandalkan setelan di panel. */
+  const allPrompts=[...state.sheet.map(s=>s.prompt||''), ...state.scenes.map(s=>s.prompt_image||'')];
+  const texRe=/\bpore|vellus|peach fuzz|subsurface|skin texture|unretouched\b/i;
+  const eyeRe=/\biris|limbal|catchlight|sclera\b/i;
+  const withTex=allPrompts.filter(t=>texRe.test(t)).length;
+  const withEye=allPrompts.filter(t=>eyeRe.test(t)).length;
+  push(allPrompts.length>0&&withTex===allPrompts.length,'Semua prompt memuat penanda tekstur kulit (pori / vellus / subsurface)'+(allPrompts.length?' — '+withTex+'/'+allPrompts.length:''), true);
+  push(allPrompts.length>0&&withEye>=Math.ceil(allPrompts.length*0.5),'Mayoritas prompt memuat detail mata (iris / catchlight)'+(allPrompts.length?' — '+withEye+'/'+allPrompts.length:''), true);
+  const slopHits=[...new Set(SLOP_WORDS.filter(w=>allPrompts.some(t=>new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i').test(t))))];
+  push(slopHits.length===0,slopHits.length?'Ada kata pemicu slop di prompt: '+slopHits.join(', '):'Tidak ada kata pemicu slop di prompt', true);
+  const negOK=state.sheet.length&&state.sheet.every(s=>/plastic|airbrush|poreless|waxy/i.test(s.negative||''));
+  push(!!negOK,'Semua shot punya negative anti-slop', true);
+  if(hasRefs()) push(!!state.refs.pembeda,'Referensi sudah dibaca dan pembeda sudah diusulkan', true);
+
   push(state.sheet.length>=8,'Reference Sheet lengkap (minimal 8 shot)');
   const sheetLocked=state.sheet.length&&state.sheet.every(s=>lock&&s.prompt&&s.prompt.toLowerCase().includes(lock.slice(0,24).toLowerCase()));
   push(!!sheetLocked,'Semua prompt Reference Sheet memuat Identity Lock', true);
@@ -905,8 +1145,18 @@ function mdDoc(){
     fields.forEach(f=>{ if(obj[f.k]) t+='**'+f.l.replace(/^[🔒🎙]\s*/,'')+'**\n\n'+obj[f.k]+'\n\n'; });
     return t;
   };
+  m+=sec('Bacaan Referensi',F.refs,state.refs);
   m+=sec('Persona Core',F.persona,state.persona);
   m+=sec('Character DNA',F.dna,state.dna);
+
+  const short=['midjourney','sdxl'].includes(s.imgEngine);
+  m+='## Realisme (Anti-Slop)\n\n';
+  m+='Setelan: '+['tekstur','garis','imperfeksi','kilap','tubuh','kamera','cahaya','grain']
+      .map(g=>REALISM[g].label+' = '+rpick(g).l).join(' · ')+'\n\n';
+  m+='**Realism Lock (versi '+(short?'ringkas':'penuh')+', ditempel ke setiap prompt)**\n\n```\n'+realismLock(short?'short':'full')+'\n```\n\n';
+  m+='**Negative anti-slop**\n\n```\n'+ANTI_SLOP_NEG+'\n```\n\n';
+  m+='**Parameter engine ('+ie.name+')**\n\n```\n'+engineParams()+'\n```\n\n';
+  m+='**Kata terlarang:** '+SLOP_WORDS.join(', ')+'\n\n';
   m+=sec('Wardrobe & Style',F.wardrobe,state.wardrobe);
   m+=sec('Voice & Speech',F.voice,state.voice);
 
@@ -962,12 +1212,13 @@ function talentBlock(){
 }
 
 /* Salinan project untuk disimpan. api dibuang supaya key tidak pernah
-   tertulis ke disk. uploads dibuang karena base64 wajah bisa mencapai
-   belasan MB — cukup untuk menembus kuota localStorage, dan begitu
-   kuota jebol SELURUH autosave ikut gagal tanpa suara. */
+   tertulis ke disk. uploads ikut disimpan karena gambar sudah dikecilkan
+   ke 768px saat diunggah (ratusan KB, bukan belasan MB) — kalau tidak
+   dikecilkan, base64-nya cukup untuk menembus kuota localStorage, dan
+   begitu kuota jebol SELURUH autosave ikut gagal tanpa suara. */
 function serializableState(){
   const c=JSON.parse(JSON.stringify(state));
-  delete c.api; delete c.uploads;
+  delete c.api;
   return c;
 }
 let persistWarned=false;
@@ -989,12 +1240,15 @@ function tryRestoreLocal(){
 }
 function mergeLoadedState(d){
   if(!d||typeof d!=='object') return;
-  ['setup','input','persona','dna','wardrobe','voice','content','compliance','done','dirty','uploads'].forEach(k=>{
+  ['setup','input','refs','realism','persona','dna','wardrobe','voice','content','compliance','done','dirty','uploads'].forEach(k=>{
     if(d[k]&&typeof d[k]==='object') Object.assign(state[k], d[k]);
   });
+  if(typeof d.refmode==='string') state.refmode=d.refmode;
   if(Array.isArray(d.sheet)) state.sheet=d.sheet;
   if(Array.isArray(d.scenes)) state.scenes=d.scenes;
-  if(!Array.isArray(state.uploads.faceRefs)) state.uploads.faceRefs=[];
+  if(!Array.isArray(state.uploads.refs)) state.uploads.refs=[];
+  /* setelan realisme lama / rusak dikembalikan ke opsi yang valid */
+  Object.keys(REALISM).forEach(g=>{ if(!REALISM[g].opt[state.realism[g]]) state.realism[g]=Object.keys(REALISM[g].opt)[0]; });
 }
 function saveProject(){
   const nm=(state.persona.nama_lengkap||state.setup.namaProject||'ai-talent').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
@@ -1117,26 +1371,101 @@ function renderPanel(){
       '<div class="field"><label>Referensi Gaya</label><input data-path="input.referensi" value="'+esc(i.referensi)+'" placeholder="mis. gaya konten ala clean-girl, warna netral"></div>'+
       '<div class="field full"><label>Catatan Khusus</label><textarea data-path="input.catatan" placeholder="Hal yang wajib ada atau wajib dihindari.">'+esc(i.catatan)+'</textarea></div>'+
     '</div></div>'+
-    '<div class="card"><h3>Wajah Referensi <span class="tag">opsional · maks 3</span></h3>'+
-      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Kalau diunggah, tahap Character DNA akan membaca wajah ini dan menurunkan deskripsi darinya — bukan mengarang wajah baru. Gambar hanya dikirim ke provider AI yang kamu pilih; tidak ikut tersimpan di file project maupun di penyimpanan browser, jadi perlu diunggah lagi setelah halaman dimuat ulang. Yang permanen adalah Character DNA hasil bacaannya.</p>'+
-      '<input type="file" id="faceInput" accept="image/*" multiple>'+
-      '<div class="thumbs" id="faceThumbs"></div>'+
-      (state.api.provider==='groq'?'<div class="pill warn" style="margin-top:10px">⚠ Groq tidak membaca gambar — pindah provider bila ingin memakai wajah referensi</div>':'')+
-    '</div>'+
-    '<div class="rowbtns"><button class="btn primary" data-gen="persona">⚡ Mulai: Generate Persona Core</button>'+
+    '<div class="rowbtns"><button class="btn primary" data-go="refs">Lanjut ke Referensi Visual →</button>'+
     '<button class="btn" id="btnGenAll2">⚡ Generate Semua Tahap</button></div>';
-    renderFaceThumbs();
   }
 
-  else if(currentStep==='persona') p.innerHTML=stageAIPanel('persona','02','Persona Core','Siapa talent ini sebagai manusia: nama, latar, kepribadian, dan cara dia bicara. Ini yang bikin audiens merasa kenal.');
-  else if(currentStep==='dna')     p.innerHTML=stageAIPanel('dna','03','Character DNA','Cetak biru fisik yang mengunci wajah. Tahap paling penting — Identity Lock dari sini dipakai di setiap prompt gambar dan video.');
-  else if(currentStep==='wardrobe')p.innerHTML=stageAIPanel('wardrobe','04','Wardrobe & Style','Sistem pakaian agar tampilan tetap khas tapi tidak monoton. Wardrobe Lock jadi penanda kedua setelah wajah.');
-  else if(currentStep==='voice')   p.innerHTML=stageAIPanel('voice','05','Voice & Speech','Identitas suara untuk voice over dan lipsync, lengkap dengan prompt siap tempel ke tool voice design.');
-  else if(currentStep==='content') p.innerHTML=stageAIPanel('content','08','Content Engine','Positioning, pilar konten, dan bank ide Shorts serta longform supaya talent ini punya bahan produksi berkelanjutan.');
-  else if(currentStep==='compliance') p.innerHTML=stageAIPanel('compliance','09','Compliance','Aturan pengungkapan AI dan afiliasi. Talent ini bukan manusia nyata — pengungkapan yang jelas melindungi kamu dan akunmu.');
+  else if(currentStep==='refs'){
+    const n=state.uploads.refs.length;
+    let h=head('02','Referensi Visual','Punya model acuan dari Pinterest, Instagram, atau foto lain? Unggah di sini. AI akan membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol.');
+    h+='<div class="card"><h3>Unggah Referensi <span class="tag">opsional · maks 4</span></h3>'+
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Gambar dikecilkan otomatis ke 768px sebelum disimpan, jadi ikut tersimpan di project dan tidak hilang saat halaman dimuat ulang. Karena ikut ke file <code>.json</code>, hati-hati kalau file project mau dibagikan ke orang lain.</p>'+
+      '<input type="file" id="refInput" accept="image/*" multiple>'+
+      '<div class="thumbs" id="refThumbs"></div>'+
+      (state.api.provider==='groq'?'<div class="pill warn" style="margin-top:10px">⚠ Groq belum membaca gambar — pindah provider lewat ⚙ API</div>':'')+
+      '</div>';
+
+    h+='<div class="card"><h3>Cara Referensi Dipakai</h3><div class="grid two">'+
+      '<div class="field"><label>Mode Referensi</label><select data-path="refmode">'+
+        '<option value="komposit"'+(state.refmode==='komposit'?' selected':'')+'>Komposit — jadi orang baru (disarankan)</option>'+
+        '<option value="inspirasi"'+(state.refmode==='inspirasi'?' selected':'')+'>Inspirasi — ambil vibe & gaya saja</option>'+
+      '</select><div class="hint">'+(state.refmode==='komposit'
+        ? 'Ciri fisik diturunkan, tapi AI wajib mengusulkan pembeda supaya hasilnya bukan salinan orang di foto.'
+        : 'Hanya vibe, palet, dan gaya yang diambil. Struktur wajah tidak diturunkan detail.')+'</div></div>'+
+      '<div class="field"><label>Referensi Terpasang</label><input value="'+n+' gambar" readonly></div>'+
+      '</div>'+
+      '<div class="note" style="margin-top:12px">Meniru wajah orang nyata yang bisa dikenali menyentuh hak atas potret, dan platform bisa menangguhkan akun karenanya. Mode Komposit memang dibuat untuk itu: pakai 2–3 referensi berbeda sebagai bahan, lalu terapkan pembeda yang diusulkan AI, sehingga hasil akhirnya orang baru yang tidak tertelusur ke satu orang tertentu.</div>'+
+      '</div>';
+
+    if(!n){
+      h+='<div class="card"><div class="empty"><p>Belum ada gambar. Kamu tetap bisa lanjut tanpa referensi — AI akan merancang wajah dari brief di tahap 01.</p>'+
+         '<button class="btn primary" data-go="persona">Lewati, rancang dari brief →</button></div></div>';
+    } else if(!hasContent('refs')){
+      h+='<div class="card"><div class="empty"><p>Gambar siap dibaca. Klik untuk menerjemahkannya jadi deskripsi fisik terstruktur.</p>'+
+         '<button class="btn primary" data-gen="refs">⚡ Baca Referensi</button></div></div>';
+    } else {
+      const pb=state.refs.pembeda||'';
+      if(pb) h+='<div class="lock"><h4>⚖ Pembeda yang Disarankan</h4>'+
+        '<p>Terapkan perubahan ini supaya karakter final jelas berbeda dari orang di foto referensi.</p>'+
+        '<div class="lockbox">'+esc(pb)+'</div>'+
+        '<div class="rowbtns"><button class="btn sm" data-copy="refs.pembeda">⧉ Salin</button></div></div>';
+      h+='<div class="card"><h3>Bacaan Referensi <span class="tag">'+F.refs.length+' field</span></h3>'+
+         kvGrid(F.refs,'refs',state.refs)+genBar('refs')+'</div>';
+      h+='<div class="rowbtns"><button class="btn primary" data-go="persona">Lanjut ke Persona Core →</button></div>';
+    }
+    p.innerHTML=h;
+    renderRefThumbs();
+  }
+
+  else if(currentStep==='realism'){
+    const short=['midjourney','sdxl'].includes(state.setup.imgEngine);
+    let h=head('05','Realisme & Anti-Slop','Detail halus kulit — pori, bulu vellus, variasi pigmen — secara statistik mirip noise, jadi engine membuangnya kalau tidak diminta eksplisit. Panel ini menyusun blok realisme yang ditempel ke setiap prompt gambar dan video.');
+    h+='<div class="card"><h3>Kulit &amp; Tubuh</h3><div class="grid two">'+
+      ['tekstur','garis','imperfeksi','kilap','tubuh'].map(g=>
+        '<div class="field"><label>'+esc(REALISM[g].label)+'</label><select data-path="realism.'+g+'">'+
+        Object.keys(REALISM[g].opt).map(k=>'<option value="'+k+'"'+(rcfg()[g]===k?' selected':'')+'>'+esc(REALISM[g].opt[k].l)+'</option>').join('')+
+        '</select></div>').join('')+
+      '</div></div>';
+    h+='<div class="card"><h3>Kamera &amp; Cahaya</h3><div class="grid two">'+
+      ['kamera','cahaya','grain'].map(g=>
+        '<div class="field"><label>'+esc(REALISM[g].label)+'</label><select data-path="realism.'+g+'">'+
+        Object.keys(REALISM[g].opt).map(k=>'<option value="'+k+'"'+(rcfg()[g]===k?' selected':'')+'>'+esc(REALISM[g].opt[k].l)+'</option>').join('')+
+        '</select></div>').join('')+
+      '</div></div>';
+
+    h+='<div class="lock"><h4>🧬 Realism Lock</h4>'+
+      '<p>Blok ini ditempel ke setiap prompt gambar dan video, bersama Identity Lock. Versi '+(short?'ringkas':'penuh')+' dipakai karena engine gambarmu '+esc(imgEngine().name)+'.'+
+      (short?' Engine bergaya tag/parameter jadi encer kalau promptnya terlalu panjang.':' Engine bahasa natural justru makin patuh dengan deskripsi panjang.')+'</p>'+
+      '<div class="lockbox">'+esc(realismLock(short?'short':'full'))+'</div>'+
+      '<div class="rowbtns"><button class="btn sm" id="btnCopyRealism">⧉ Salin Realism Lock</button>'+
+      '<button class="btn sm" id="btnCopyRealismAlt">⧉ Salin versi '+(short?'penuh':'ringkas')+'</button></div></div>';
+
+    h+='<div class="card"><h3>Negative Prompt Anti-Slop</h3>'+
+      '<div class="promptbox" style="max-height:140px">'+esc(ANTI_SLOP_NEG)+'</div>'+
+      '<div class="rowbtns"><button class="btn sm" id="btnCopyNeg">⧉ Salin Negative</button></div>'+
+      '<div class="hint" style="margin-top:9px">Jangan menambahkan kata bertema tekstur (mis. <code>detailed skin</code>) ke daftar ini — itu justru membuang tekstur yang susah payah diminta.</div></div>';
+
+    h+='<div class="card"><h3>Parameter Engine <span class="tag">'+esc(imgEngine().name)+'</span></h3>'+
+      '<div class="lockbox">'+esc(engineParams())+'</div>'+
+      '<div class="hint" style="margin-top:9px">Prompt saja tidak cukup — parameter ini yang menentukan seberapa "mentah" hasilnya. Di Midjourney <code>--style raw</code> wajib, tanpa itu gaya bawaan membuat orang terlihat seperti lukisan.</div></div>';
+
+    h+='<div class="card"><h3>Kata Terlarang</h3>'+
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Kata-kata ini terdengar seperti pujian, tapi justru menarik hasil ke arah kulit plastik dan wajah filter. AI diinstruksikan tidak memakainya.</p>'+
+      '<div class="promptbox" style="max-height:110px">'+esc(SLOP_WORDS.join(' · '))+'</div></div>';
+
+    h+='<div class="rowbtns"><button class="btn primary" data-go="wardrobe">Lanjut ke Wardrobe →</button></div>';
+    p.innerHTML=h;
+  }
+
+  else if(currentStep==='persona') p.innerHTML=stageAIPanel('persona','03','Persona Core','Siapa talent ini sebagai manusia: nama, latar, kepribadian, dan cara dia bicara. Ini yang bikin audiens merasa kenal.');
+  else if(currentStep==='dna')     p.innerHTML=stageAIPanel('dna','04','Character DNA','Cetak biru fisik yang mengunci wajah. Tahap paling penting — Identity Lock dari sini dipakai di setiap prompt gambar dan video.');
+  else if(currentStep==='wardrobe')p.innerHTML=stageAIPanel('wardrobe','06','Wardrobe & Style','Sistem pakaian agar tampilan tetap khas tapi tidak monoton. Wardrobe Lock jadi penanda kedua setelah wajah.');
+  else if(currentStep==='voice')   p.innerHTML=stageAIPanel('voice','07','Voice & Speech','Identitas suara untuk voice over dan lipsync, lengkap dengan prompt siap tempel ke tool voice design.');
+  else if(currentStep==='content') p.innerHTML=stageAIPanel('content','10','Content Engine','Positioning, pilar konten, dan bank ide Shorts serta longform supaya talent ini punya bahan produksi berkelanjutan.');
+  else if(currentStep==='compliance') p.innerHTML=stageAIPanel('compliance','11','Compliance','Aturan pengungkapan AI dan afiliasi. Talent ini bukan manusia nyata — pengungkapan yang jelas melindungi kamu dan akunmu.');
 
   else if(currentStep==='sheet'){
-    let h=head('06','Reference Sheet','Paket prompt untuk membangun aset identitas: turnaround, ekspresi, full body, tangan. Hasil dari sini dipakai sebagai reference image atau dataset LoRA.');
+    let h=head('08','Reference Sheet','Paket prompt untuk membangun aset identitas: turnaround, ekspresi, full body, tangan. Hasil dari sini dipakai sebagai reference image atau dataset LoRA.');
     if(!state.dna.identity_lock){
       h+='<div class="card"><div class="empty"><p>Character DNA belum ada. Reference Sheet butuh Identity Lock supaya wajah bisa dikunci.</p>'+
          '<button class="btn primary" data-go="dna">← Ke Character DNA</button></div></div>';
@@ -1161,7 +1490,7 @@ function renderPanel(){
   }
 
   else if(currentStep==='scenes'){
-    let h=head('07','Scene Pack','Scene siap produksi untuk UGC dan affiliate. Setiap scene punya prompt gambar, prompt video, dan dialog yang sudah cocok dengan gaya bicara talent.');
+    let h=head('09','Scene Pack','Scene siap produksi untuk UGC dan affiliate. Setiap scene punya prompt gambar, prompt video, dan dialog yang sudah cocok dengan gaya bicara talent.');
     if(!state.dna.identity_lock){
       h+='<div class="card"><div class="empty"><p>Character DNA belum ada. Scene Pack butuh Identity Lock.</p>'+
          '<button class="btn primary" data-go="dna">← Ke Character DNA</button></div></div>';
@@ -1193,7 +1522,7 @@ function renderPanel(){
 
   else if(currentStep==='export'){
     const a=audit(), fail=a.filter(x=>!x.ok);
-    let h=head('10','Audit & Ekspor','Periksa kelengkapan, lalu ekspor. Talent Block di bawah dirancang untuk ditempel langsung ke field talent di Framework Brain Director.');
+    let h=head('12','Audit & Ekspor','Periksa kelengkapan, lalu ekspor. Talent Block di bawah dirancang untuk ditempel langsung ke field talent di Framework Brain Director.');
     h+='<div class="card"><h3>Audit Konsistensi <span class="tag">'+(a.length-fail.length)+'/'+a.length+' lolos</span></h3>';
     a.forEach(x=>{
       const ic=x.ok?'✅':(x.warn?'⚠️':'❌');
@@ -1227,10 +1556,14 @@ function renderPanel(){
 function opts(list, cur){ return list.map(o=>'<option value="'+esc(o)+'"'+(o===cur?' selected':'')+'>'+esc(o)+'</option>').join(''); }
 function optsObj(obj, cur){ return Object.keys(obj).map(k=>'<option value="'+k+'"'+(k===cur?' selected':'')+'>'+esc(obj[k].name)+'</option>').join(''); }
 
-function renderFaceThumbs(){
-  const box=$('#faceThumbs'); if(!box) return;
-  box.innerHTML=state.uploads.faceRefs.map((f,i)=>
-    '<div class="thumb"><img src="data:'+f.mimeType+';base64,'+f.data+'"><button data-rmface="'+i+'">×</button></div>').join('');
+function renderRefThumbs(){
+  const box=$('#refThumbs'); if(!box) return;
+  box.innerHTML=state.uploads.refs.map((f,i)=>
+    '<div class="thumb" title="'+esc(f.role||'')+'"><img src="data:'+f.mimeType+';base64,'+f.data+'"><button data-rmref="'+i+'">×</button></div>'+
+    '<div style="display:flex;flex-direction:column;justify-content:center;margin-right:6px">'+
+      '<select data-path="uploads.refs.'+i+'.role" style="width:auto;font-size:11px;padding:4px 20px 4px 7px">'+
+      REF_ROLES.map(r=>'<option value="'+r.id+'"'+(f.role===r.id?' selected':'')+'>'+esc(r.l)+'</option>').join('')+
+      '</select></div>').join('');
 }
 
 /* ---------------- modal API ---------------- */
@@ -1281,11 +1614,18 @@ document.addEventListener('input', e=>{
     AI_ORDER.forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
     renderRail();
   }
+  /* Realism Lock ikut tertanam di dalam prompt sheet & scenes, jadi mengubah
+     setelan realisme membuat prompt yang sudah jadi kedaluwarsa. */
+  if(p.startsWith('realism.')){
+    ['sheet','scenes'].forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
+    renderRail();
+  }
+  if(p==='refmode'&&hasContent('refs')) state.dirty.refs=true;
   if(!p.startsWith('api.')) persistState();
 });
 document.addEventListener('change', e=>{
-  const p=e.target.dataset.path;
-  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'){ renderPanel(); }
+  const p=e.target.dataset.path; if(!p) return;
+  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='refmode'||p.startsWith('realism.')) renderPanel();
 });
 document.addEventListener('click', async e=>{
   const t=e.target.closest('button'); if(!t) return;
@@ -1308,7 +1648,21 @@ document.addEventListener('click', async e=>{
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
   }
   if(t.dataset.prov){ state.api.provider=t.dataset.prov; renderApiModal(); return; }
-  if(t.dataset.rmface!=null){ state.uploads.faceRefs.splice(+t.dataset.rmface,1); renderFaceThumbs(); persistState(); return; }
+  if(t.dataset.rmref!=null){
+    state.uploads.refs.splice(+t.dataset.rmref,1);
+    if(hasContent('refs')) state.dirty.refs=true;
+    renderPanel(); persistState(); return;
+  }
+  if(t.id==='btnCopyRealism'||t.id==='btnCopyRealismAlt'){
+    const short=['midjourney','sdxl'].includes(state.setup.imgEngine);
+    const want=(t.id==='btnCopyRealism')?(short?'short':'full'):(short?'full':'short');
+    try{ await navigator.clipboard.writeText(realismLock(want)); toast('Realism Lock tersalin.','ok'); }
+    catch(err){ toast('Clipboard diblokir browser.','err'); } return;
+  }
+  if(t.id==='btnCopyNeg'){
+    try{ await navigator.clipboard.writeText(ANTI_SLOP_NEG); toast('Negative prompt tersalin.','ok'); }
+    catch(err){ toast('Clipboard diblokir browser.','err'); } return;
+  }
   if(t.id==='btnCopyAllSheet'){
     const txt=state.sheet.map((x,i)=>'### '+(i+1)+'. '+x.label+'\n'+x.prompt+(x.negative?'\n[negative] '+x.negative:'')).join('\n\n');
     try{ await navigator.clipboard.writeText(txt); toast('Semua prompt tersalin.','ok'); }catch(err){ toast('Clipboard diblokir browser.','err'); } return;
@@ -1328,13 +1682,22 @@ function fileBase(){
   return (state.persona.nama_lengkap||state.setup.namaProject||'ai-talent').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 }
 document.addEventListener('change', async e=>{
-  if(e.target.id!=='faceInput') return;
-  const files=[...e.target.files].slice(0,3-state.uploads.faceRefs.length);
+  if(e.target.id!=='refInput') return;
+  const slot=4-state.uploads.refs.length;
+  const files=[...e.target.files].slice(0, Math.max(0,slot));
+  if(!files.length){ toast('Maksimal 4 gambar referensi.','err'); e.target.value=''; return; }
   for(const f of files){
-    if(f.size>4*1024*1024){ toast('Gambar '+f.name+' lebih dari 4MB, dilewati.','err'); continue; }
-    state.uploads.faceRefs.push(await getBase64(f));
+    if(!/^image\//.test(f.type)){ toast(f.name+' bukan gambar, dilewati.','err'); continue; }
+    try{
+      const img=await downscaleImage(f);
+      /* referensi pertama diasumsikan wajah — peran bisa diubah lewat dropdown */
+      img.role = state.uploads.refs.length===0 ? 'wajah' : 'gaya';
+      state.uploads.refs.push(img);
+    }catch(err){ toast('Gagal memproses '+f.name+': '+err.message,'err'); }
   }
-  e.target.value=''; renderFaceThumbs(); persistState();
+  e.target.value='';
+  if(hasContent('refs')) state.dirty.refs=true;
+  renderPanel(); persistState();
 });
 
 $('#btnGenAll').onclick=runAll;
