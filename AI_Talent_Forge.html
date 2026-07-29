@@ -397,7 +397,8 @@ const IMG_ENGINES={
   flux:{name:'Flux.2 / Flux Dev', syntax:'Kalimat natural deskriptif dalam bahasa Inggris, mengalir, tanpa tag koma dan tanpa parameter CLI. Satu paragraf padat.', ref:'Dukung reference image + stacking sampai 4 LoRA dengan bobot terpisah.'},
   midjourney:{name:'Midjourney v7', syntax:'Frasa padat bahasa Inggris dipisah koma, diakhiri parameter. Selalu akhiri dengan: --ar {RASIO} --style raw --v 7', ref:'Kunci wajah pakai --cref <url> --cw 100, kunci gaya pakai --sref <url>.'},
   sdxl:{name:'SDXL / Pony / Illustrious', syntax:'Gaya tag bahasa Inggris dipisah koma, dari umum ke detail. Sertakan juga negative prompt terpisah.', ref:'Pakai LoRA karakter + IP-Adapter FaceID / InstantID / PuLID untuk kunci wajah.'},
-  nanobanana:{name:'Nano Banana / Gemini Image', syntax:'Instruksi natural bahasa Inggris, boleh menyebut aksi edit eksplisit. Deskriptif dan spesifik.', ref:'Sangat kuat menjaga identitas lewat reference image; sebut eksplisit "keep the same face".'},
+  nanobanana:{name:'Nano Banana Pro / Gemini Image', syntax:'Instruksi natural bahasa Inggris, boleh menyebut aksi edit eksplisit. Deskriptif dan spesifik.', ref:'Tekstur kulit dan akurasi wajah paling kuat untuk pemula; sangat menjaga identitas lewat reference image — sebut eksplisit "keep the same face".'},
+  higgsfield:{name:'Higgsfield Soul', syntax:'Kalimat natural bahasa Inggris, deskriptif gaya potret lifestyle.', ref:'Pencahayaan bersih dan konsistensi antar-generasi bagus. Alternatif kuat untuk potret lifestyle.'},
   seedream:{name:'Seedream 4', syntax:'Kalimat natural bahasa Inggris, deskriptif sinematik.', ref:'Dukung multi-reference image.'},
   qwen:{name:'Qwen-Image', syntax:'Kalimat natural bahasa Inggris, deskriptif.', ref:'Bagus untuk dataset LoRA dan teks dalam gambar.'},
   ideogram:{name:'Ideogram v3', syntax:'Kalimat natural bahasa Inggris. Sebutkan teks dalam tanda kutip bila ada tulisan di gambar.', ref:'Terbaik untuk kemasan produk / teks di dalam frame.'}
@@ -505,6 +506,38 @@ const MOTION={
     penuh:{l:'Penuh (disarankan)', en:'physically accurate motion: correct weight and inertia, natural acceleration and deceleration, hair and fabric lagging a beat behind the body, feet planting with real contact and no sliding; natural motion blur consistent with shutter speed; depth-consistent parallax between foreground, subject and background as the camera moves; subtle handheld micro-shake and slight rolling-shutter wobble on fast pans'}
   }
 };
+
+/* ---------------- disiplin gerak per shot ----------------
+   Motion Lock di atas menambahkan fisika, tapi BANYAKNYA gerak harus beda
+   per jenis shot. Untuk talking-head ber-lipsync, gerakan kepala berlebihan
+   justru merusak sinkronisasi bibir dan langsung terbaca AI — di sana
+   menahan diri lebih realistis daripada dinamis. Untuk b-roll produk,
+   gerakan bebas justru bagus. */
+const SHOT_DISCIPLINE={
+  tenang:{
+    l:'Tenang — talking head / lipsync',
+    en:'restrained performance: minimal head movement, shoulders and torso nearly still, only small natural micro-expressions, expression shifting slowly rather than suddenly, no exaggerated gestures; camera held almost static'
+  },
+  sedang:{
+    l:'Sedang — demo produk di tangan',
+    en:'moderate movement: hands and product move with clear purpose while head and torso stay relatively stable, expression shifting gently'
+  },
+  dinamis:{
+    l:'Dinamis — b-roll / lifestyle',
+    en:'free natural movement through the scene, full-body action allowed, camera may travel with the subject'
+  }
+};
+
+/* Gerbang kelayakan sebuah frame untuk dipakai sebagai start frame animasi.
+   Start frame mengunci karakter jauh lebih kuat daripada teks prompt saja,
+   jadi frame yang lolos gerbang ini menentukan kualitas seluruh video. */
+const ANIMATE_GATE=[
+  'Wajah utuh terlihat, tidak terpotong terlalu rapat',
+  'Mata dan mulut tajam serta tidak terhalang (syarat lipsync)',
+  'Tidak bergaya artistik — terbaca sebagai foto, bukan artwork',
+  'Pencahayaan wajar dengan bayangan alami',
+  'Sekilas pandang lolos sebagai foto sungguhan'
+];
 
 /* Gerakan kamera — dipilih AI per scene, daftar ini jadi kosakata bakunya. */
 const CAM_MOVE=[
@@ -1009,6 +1042,13 @@ function promptScenes(fb){
     '- prompt_image: BAHASA INGGRIS, sintaks '+ie.name+'. Ini frame pembuka scene.\n'+
     '- prompt_video: BAHASA INGGRIS, sintaks '+ve.name+'. '+(ve.audio?'Sertakan dialog dalam tanda kutip dan deskripsi audio/ambience karena engine ini punya audio native.':'JANGAN tulis dialog di dalam prompt video karena engine ini tanpa audio native — fokus ke gerakan, ekspresi, dan kamera saja.')+'\n'+
     '- dialog: tulis dalam '+state.setup.bahasa+', gaya bicara natural sesuai Voice & Speech, panjang pas untuk '+(state.setup.durasi||8)+' detik (sekitar 20–28 kata). Pakai filler words khas talent.\n'+
+    '  Khusus untuk lipsync: pakai kalimat PENDEK dan sederhana dengan tempo bicara normal. Kalimat panjang berbelit dan bicara cepat membuat sinkronisasi bibir meleset dan hasilnya langsung terbaca AI.\n'+
+
+    '- disiplin: tentukan takaran gerak scene ini, isi dengan salah satu dari "tenang", "sedang", atau "dinamis".\n'+
+    Object.keys(SHOT_DISCIPLINE).map(k=>'  '+k+' = '+SHOT_DISCIPLINE[k].l).join('\n')+'\n'+
+    '  ATURAN KERAS: setiap scene yang ADA DIALOGNYA wajib "tenang". Gerakan kepala berlebihan merusak sinkronisasi bibir dan itu penyebab gagal nomor satu di video UGC AI. Menahan diri lebih realistis daripada dinamis.\n'+
+    '  Emosi mulai dari netral lalu naik perlahan — ekspresi dramatis sejak awal terbaca palsu.\n'+
+    '  Scene b-roll tanpa dialog boleh "dinamis".\n'+
     '- Scene pertama wajib punya hook kuat di 3 detik pertama: sebutkan hook visual DAN hook verbal.\n'+
     '- Scene terakhir wajib berisi CTA.\n'+
     '- setting: lokasi konkret yang masuk akal untuk '+state.setup.pasar+', bukan lokasi generik.\n\n'+
@@ -1030,9 +1070,13 @@ function promptScenes(fb){
     '- Yang BOLEH ditambahkan hanya di prompt_video: gerakan kamera, perkembangan aksi sesuai beats, perilaku partikel/kain/rambut, dan realisme gerak.\n'+
     '- prompt_video WAJIB memuat blok realisme gerak berikut, disalin apa adanya:\n'+
     (motionLock()?'"""\n'+motionLock()+'\n"""\n':'(realisme gerak dimatikan — lewati)\n')+
+    '- prompt_video WAJIB juga memuat klausa disiplin gerak sesuai nilai "disiplin" scene itu:\n'+
+    Object.keys(SHOT_DISCIPLINE).map(k=>'  '+k+' → "'+SHOT_DISCIPLINE[k].en+'"').join('\n')+'\n'+
+    '- prompt_image scene ini akan diunggah sebagai START FRAME saat animasi, dan itulah yang paling kuat mengunci karakter — lebih kuat dari teks prompt mana pun. Karena itu prompt_image wajib menghasilkan frame yang lolos gerbang berikut:\n'+
+    ANIMATE_GATE.map((g,i)=>'  '+(i+1)+') '+g).join('\n')+'\n'+
     fbLine(fb)+'\n\n'+
     JSON_RULE+'\nSkema wajib:\n'+
-    '{"scenes":[{"nama":"","use_case":"","aksi":"","setting":"","wardrobe":"","komposisi":"","kamera":"","beats":"","dialog":"","prompt_image":"","prompt_video":""}]}\n'+
+    '{"scenes":[{"nama":"","use_case":"","aksi":"","setting":"","wardrobe":"","komposisi":"","kamera":"","disiplin":"","beats":"","dialog":"","prompt_image":"","prompt_video":""}]}\n'+
     'Tepat '+n+' item, urut.';
 }
 
@@ -1071,7 +1115,7 @@ function normScene(x,i){
   return {
     nama:x.nama||('Scene '+(i+1)), use_case:x.use_case||'', aksi:x.aksi||'',
     setting:x.setting||'', wardrobe:x.wardrobe||'', komposisi:x.komposisi||'',
-    kamera:x.kamera||'', beats:x.beats||'', dialog:x.dialog||'',
+    kamera:x.kamera||'', disiplin:(SHOT_DISCIPLINE[x.disiplin]?x.disiplin:''), beats:x.beats||'', dialog:x.dialog||'',
     prompt_image:stripText(x.prompt_image), prompt_video:stripText(x.prompt_video)
   };
 }
@@ -1209,6 +1253,17 @@ function audit(){
       const mo=state.scenes.filter(s=>/inertia|motion blur|parallax|weight/i.test(s.prompt_video||'')).length;
       push(mo===state.scenes.length,'Semua prompt video memuat realisme gerak — '+mo+'/'+state.scenes.length, true);
     }
+    const withDis=state.scenes.filter(s=>s.disiplin).length;
+    push(withDis===state.scenes.length,'Semua scene punya disiplin gerak — '+withDis+'/'+state.scenes.length, true);
+    /* Gerakan kepala berlebihan saat bicara merusak lipsync — ini penyebab
+       gagal paling umum di video UGC AI, jadi diperiksa terpisah. */
+    const badLip=state.scenes.filter(s=>String(s.dialog||'').trim()&&s.disiplin&&s.disiplin!=='tenang');
+    push(badLip.length===0, badLip.length
+      ? badLip.length+' scene berdialog memakai gerak berlebihan — berisiko merusak lipsync'
+      : 'Semua scene berdialog memakai gerak tenang (aman untuk lipsync)', true);
+    const restrained=state.scenes.filter(s=>String(s.dialog||'').trim())
+      .every(s=>/restrained|minimal head movement|nearly still/i.test(s.prompt_video||''));
+    push(!!restrained||!state.scenes.some(s=>String(s.dialog||'').trim()),'Prompt video scene berdialog memuat klausa menahan gerak', true);
   }
 
   push(!!state.content.pilar,'Content pillars sudah disusun');
@@ -1269,6 +1324,7 @@ function mdDoc(){
       if(x.wardrobe) m+='- **Wardrobe:** '+x.wardrobe+'\n';
       if(x.komposisi) m+='- **Komposisi:** '+x.komposisi+'\n';
       if(x.kamera) m+='- **Kamera:** '+x.kamera+'\n';
+      if(x.disiplin) m+='- **Disiplin gerak:** '+((SHOT_DISCIPLINE[x.disiplin]||{}).l||x.disiplin)+'\n';
       if(x.dialog) m+='- **Dialog:** '+x.dialog+'\n';
       if(x.beats) m+='- **Beats:** '+x.beats+'\n';
       m+='\n**Image prompt ('+ie.name+')**\n\n```\n'+x.prompt_image+'\n```\n\n';
@@ -1585,6 +1641,10 @@ function renderPanel(){
     } else {
       h+='<div class="rowbtns" style="margin-bottom:14px"><button class="btn sm" id="btnCopyAllSheet">⧉ Salin Semua Prompt</button>'+
          '<span class="pill info">'+esc(imgEngine().name)+'</span><span class="pill info">'+esc(ratio())+'</span></div>';
+      h+='<div class="lock"><h4>🎯 Gerbang Siap Dianimasikan</h4>'+
+         '<p>Frame yang kamu unggah sebagai <b>start frame</b> mengunci karakter jauh lebih kuat daripada teks prompt mana pun — dan itu menentukan kualitas seluruh video. Sebelum lanjut menganimasikan, pastikan hasil generate-mu lolos lima hal ini. Memperbaiki wajah sekarang jauh lebih murah daripada nanti.</p>'+
+         ANIMATE_GATE.map(g=>'<div class="checkrow"><span class="ic">☐</span><span>'+esc(g)+'</span></div>').join('')+
+         '</div>';
       state.sheet.forEach((x,i)=>{
         h+='<div class="card"><h3>'+(i+1)+'. '+esc(x.label)+'</h3>'+
            '<div class="promptbox">'+esc(x.prompt)+'</div>'+
@@ -1619,6 +1679,8 @@ function renderPanel(){
             (x.wardrobe?'<tr><th>Wardrobe</th><td>'+esc(x.wardrobe)+'</td></tr>':'')+
             (x.komposisi?'<tr><th>Komposisi</th><td>'+esc(x.komposisi)+'</td></tr>':'')+
             (x.kamera?'<tr><th>Kamera</th><td>'+esc(x.kamera)+'</td></tr>':'')+
+            (x.disiplin?'<tr><th>Disiplin gerak</th><td>'+esc((SHOT_DISCIPLINE[x.disiplin]||{}).l||x.disiplin)+
+              (x.dialog&&x.disiplin!=='tenang'?' <span class="pill warn">⚠ scene berdialog sebaiknya tenang</span>':'')+'</td></tr>':'')+
             (x.dialog?'<tr><th>Dialog</th><td>'+esc(x.dialog)+'</td></tr>':'')+
           '</table></div>'+
           (x.beats?'<div class="meta" style="margin:12px 0 5px">BEATS</div><div class="lockbox">'+esc(x.beats)+'</div>':'')+
@@ -1659,9 +1721,12 @@ function renderPanel(){
       '<div class="checkrow"><span class="ic">2</span><span>Kumpulkan 20–60 gambar konsisten dari Reference Sheet sebagai dataset, lalu latih LoRA karakter kalau kamu butuh konsistensi jangka panjang.</span></div>'+
       '<div class="checkrow"><span class="ic">3</span><span>Untuk jalur tanpa training: pakai reference image + adapter penjaga identitas (IP-Adapter FaceID, InstantID, atau PuLID) di ComfyUI.</span></div>'+
       '<div class="checkrow"><span class="ic">4</span><span>Buat suara di tool voice design memakai prompt di tahap 05. Catat seed suaranya supaya bisa dibuat ulang persis.</span></div>'+
-      '<div class="checkrow"><span class="ic">5</span><span>Animasikan frame dari Scene Pack di '+esc(vidEngine().name)+'. '+(vidEngine().audio?'Dialog sudah ada di dalam prompt.':'Tambahkan voice over dan lipsync di tahap terpisah.')+'</span></div>'+
-      '<div class="checkrow"><span class="ic">6</span><span>Bawa Talent Block ke Framework Brain Director untuk merakit storyboard affiliate per produk.</span></div>'+
-      '<div class="checkrow"><span class="ic">7</span><span>Pasang disclosure dari tahap 09 di bio, caption, dan on-screen sebelum posting pertama.</span></div>'+
+      '<div class="checkrow"><span class="ic">5</span><span>Sebelum menganimasikan, lolos-kan frame terpilih lewat Gerbang Siap Dianimasikan di tahap 08. Base image yang bersih menentukan sebagian besar realisme akhir — memperbaiki wajah sekarang jauh lebih murah daripada nanti.</span></div>'+
+      '<div class="checkrow"><span class="ic">6</span><span>Animasikan di '+esc(vidEngine().name)+' dengan mengunggah frame itu sebagai <b>start frame</b>, bukan hanya mengandalkan teks prompt — start frame yang mengunci karakter. Durasi 5–10 detik, 9:16. '+(vidEngine().audio?'Dialog sudah ada di dalam prompt.':'Tambahkan voice over dan lipsync di tahap terpisah.')+'</span></div>'+
+      '<div class="checkrow"><span class="ic">7</span><span>Kalau hasilnya terasa AI: kurangi gerak kepala, pendekkan dialog, mulai dari ekspresi netral. Gerak berlebihan dan dialog kepanjangan adalah dua penyebab gagal paling umum.</span></div>'+
+      '<div class="checkrow"><span class="ic">8</span><span>Opsional: upscale hasil terbaik di Topaz Video AI atau sejenisnya. Ingat, upscaling menaikkan resolusi tapi tidak memperbaiki gerak yang tidak wajar — sumbernya yang menentukan.</span></div>'+
+      '<div class="checkrow"><span class="ic">9</span><span>Bawa Talent Block ke Framework Brain Director untuk merakit storyboard affiliate per produk.</span></div>'+
+      '<div class="checkrow"><span class="ic">10</span><span>Pasang disclosure dari tahap 11 di bio, caption, dan on-screen sebelum posting pertama.</span></div>'+
       '</div>';
     p.innerHTML=h;
   }

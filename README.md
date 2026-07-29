@@ -25,7 +25,7 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 09 Scene Pack | Scene UGC/affiliate siap produksi + prompt gambar, video, dialog |
 | 10 Content Engine | Positioning, content pillars, bank ide Shorts & longform, monetisasi |
 | 11 Compliance | Disclosure AI + afiliasi, aturan klaim, checklist sebelum posting |
-| 12 Audit & Ekspor | 25 pemeriksaan konsistensi, realisme & struktur, Talent Block, ekspor MD/JSON |
+| 12 Audit & Ekspor | 28 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
 
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.
 
@@ -47,6 +47,10 @@ Detail yang paling sering gagal diminta eksplisit: iris + limbal ring + catchlig
 **Struktur BEATS.** Satu shot pendek tetap butuh tiga titik, kalau tidak model cenderung menghasilkan gerakan datar tanpa perkembangan. Setiap scene wajib punya timeline bertimestamp yang skalanya ikut durasi — untuk 8 detik jadi `t=0–1.4s HOOK · t=1.4–5.2s BUILD · t=5.2–8s PAYOFF`.
 
 **Slot komposisi & aksi.** Tiap scene wajib punya kata kerja fisik yang terbaca instan (bukan "berpose") dan komposisi eksplisit — sudut, jarak, aturan framing. Minimal 2 scene wajib menyediakan **negative space** untuk teks overlay, karena caption dan sticker butuh ruang yang direncanakan, bukan sisa.
+
+**Disiplin gerak per shot.** Motion Lock menambahkan fisika, tapi *banyaknya* gerak harus beda per jenis shot. Untuk talking-head ber-lipsync, gerakan kepala berlebihan justru merusak sinkronisasi bibir dan langsung terbaca AI — di sana menahan diri lebih realistis daripada dinamis. Tiap scene dapat nilai `tenang` / `sedang` / `dinamis`, dan **setiap scene berdialog wajib `tenang`**. Audit menolak kalau dilanggar.
+
+**Gerbang siap dianimasikan.** Frame yang diunggah sebagai *start frame* mengunci karakter jauh lebih kuat daripada teks prompt mana pun, jadi kualitasnya menentukan seluruh video. Reference Sheet menampilkan lima syarat kelulusan: wajah utuh tidak terpotong rapat, mata & mulut tajam tidak terhalang (syarat lipsync), tidak bergaya artistik, pencahayaan wajar, dan lolos sekilas pandang sebagai foto sungguhan.
 
 **Kontinuitas gambar → video.** Prompt video wajib mewarisi subjek, wardrobe, setting, dan komposisi dari prompt gambar scene yang sama. Yang boleh ditambahkan hanya gerakan kamera, perkembangan aksi sesuai beats, perilaku partikel, dan realisme gerak.
 
@@ -88,6 +92,7 @@ Riset yang mendasari struktur tool ini:
 - [ElevenLabs Voice Design](https://elevenlabs.io/docs/eleven-creative/voices/voice-design) · [panduan prompting v3](https://elevenlabsmagazine.com/elevenlabs-voice-design-guide-2026/)
 - [Aturan disclosure AI influencer](https://www.auditsocials.com/blog/ai-generated-influencer-content-compliance-disclosure-rules-2026) · [evaluasi FTC atas konten influencer AI](https://www.disclosurefacts.com/blog/why-ai-generated-influencer-content-may-violate-ftc-rules)
 - [Prompt Engineering Masterclass](docs/prompt-engineering-masterclass.md) (dokumen internal) — master formula IMAGE/VIDEO. Yang diambil: slot BEATS bertimestamp, physics gerak, komposisi eksplisit + negative space, dan aturan kontinuitas still→video. Catatan: contoh prompt di dokumen itu memakai `ultra-realistic` / `hyper-realistic` yang justru masuk daftar kata terlarang di tool ini — yang bekerja pada contoh tersebut adalah detail spesifiknya, bukan buzzword-nya.
+- [Ultra-Realistic AI UGC Character Guide](docs/ultra-realistic-ugc-guide.md) (dokumen internal). Yang diambil: disiplin gerak per shot, gerbang siap-dianimasikan, alur start-frame, dan aturan dialog untuk lipsync. Panduan ini menyadarkan satu konflik nyata — prinsip "less movement = more realism" untuk talking-head berlawanan dengan dorongan sinematik dari masterclass, dan itu diselesaikan lewat disiplin gerak per shot alih-alih satu aturan untuk semua scene.
 - [Strategi Shorts vs longform](https://influenceflow.io/resources/youtube-shorts-and-long-form-video-strategy-the-complete-2026-creators-guide-1/) · [monetisasi Shorts 2026](https://www.ssemble.com/blog/youtube-shorts-monetization-guide-2026)
 
 Khusus realisme & anti-slop:
