@@ -1725,10 +1725,15 @@ function audit(){
        sehingga setiap prompt ber-"portrait lens" salah dianggap film */
     [/\b35mm\b|kodak|\bportra\b|analog film/i,'film'],
     [/webcam|laptop camera/i,'webcam'],[/sony zv|vlogging camera/i,'vlog']];
-  const LIGHT_FAM=[[/from a window|window light|window to camera/i,'jendela'],
-    [/golden.?hour|sunset|afternoon light|morning light|sunlight/i,'matahari'],
-    [/tungsten|table lamp|indoor mixed/i,'lampu ruangan'],[/ring light/i,'ring light'],[/neon/i,'neon'],
-    [/overcast|diffused daylight|diffused natural light/i,'mendung'],[/studio light|softbox|studio lighting/i,'studio']];
+  /* Taksonomi cahaya diperbaiki setelah terbukti menghasilkan false positive.
+     Jendela itu BUKAAN, bukan sumber — "morning light from a window" dan
+     "diffused daylight from a window" itu satu sumber yang dideskripsikan dua
+     kali, bukan dua sumber yang bertabrakan. Cahaya campuran alami + lampu
+     ruangan juga sengaja disediakan sebagai opsi di tahap 05, jadi tidak boleh
+     ditandai. Yang benar-benar bertentangan hanyalah dua tata cahaya artifisial
+     sekaligus, karena itu saling meniadakan. */
+  const LIGHT_FAM=[[/studio light|softbox|studio lighting/i,'studio'],
+    [/ring light/i,'ring light'],[/neon/i,'neon']];
   const famCount=(t,fams)=>fams.filter(f=>f[0].test(t)).map(f=>f[1]);
   const allP=[...state.sheet.map(x=>({n:x.label,t:x.prompt||''})),
               ...state.scenes.flatMap(x=>[{n:x.nama+' (gambar)',t:x.prompt_image||''},{n:x.nama+' (video)',t:x.prompt_video||''}])]
@@ -1736,12 +1741,14 @@ function audit(){
   if(allP.length){
     const dblCam=allP.filter(x=>famCount(x.t,CAM_FAM).length>1);
     push(dblCam.length===0, dblCam.length
-      ? dblCam.length+' prompt menyebut lebih dari satu kamera — engine akan menebak'
+      ? dblCam.length+' prompt menyebut lebih dari satu kamera ('+
+        famCount(dblCam[0].t,CAM_FAM).join(' + ')+') di '+dblCam[0].n+' — engine akan menebak'
       : 'Setiap prompt menyebut tepat satu kamera', true);
     const dblLight=allP.filter(x=>famCount(x.t,LIGHT_FAM).length>1);
     push(dblLight.length===0, dblLight.length
-      ? dblLight.length+' prompt menyebut lebih dari satu sumber cahaya — bayangan akan tidak konsisten'
-      : 'Setiap prompt menyebut tepat satu sumber cahaya', true);
+      ? dblLight.length+' prompt memakai dua tata cahaya artifisial sekaligus ('+
+        famCount(dblLight[0].t,LIGHT_FAM).join(' + ')+') di '+dblLight[0].n+' — keduanya saling meniadakan'
+      : 'Tidak ada prompt dengan tata cahaya yang bertentangan', true);
     /* Nol kamera sama merusaknya dengan dua: engine menebak sendiri dan hasil
        antar shot jadi tidak seragam. Kata "camera" saja tidak dihitung karena
        muncul juga di kalimat seperti "looking at the camera". */
