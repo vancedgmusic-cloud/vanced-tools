@@ -372,7 +372,7 @@ const state = {
   },
   /* Setelan render tahap 14. Gambar hasilnya TIDAK disimpan di sini —
      lihat renderStore. */
-  render:{ model:'gemini-3-pro-image-preview', size:'2K', chain:true },
+  render:{ model:'gemini-2.5-flash-image', size:'2K', chain:true },
   setup:{
     namaProject:'', gender:'Perempuan', rentangUsia:'22-26', etnisTarget:'Indonesia (Jawa/Sunda)',
     pasar:'Indonesia', bahasa:'Bahasa Indonesia', platform:'TikTok + YouTube Shorts',
@@ -1034,12 +1034,32 @@ const PROVIDERS=[
 ];
 const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|exhausted|too many|unavailable|failed to fetch|quota/i;
 
+/* 429 ada DUA jenis dan bedanya menentukan tindakan.
+   - Rate limit: jatahnya ada, cuma terlalu cepat. Menunggu pasti berhasil,
+     dan Google memberi tahu berapa lama lewat RetryInfo.retryDelay.
+   - Kuota nol / billing belum aktif: menunggu tidak akan pernah berhasil.
+     Google menandainya dengan quotaValue "0" di QuotaFailure.
+   Pesan teksnya SAMA untuk keduanya ("You exceeded your current quota…"),
+   jadi yang bisa dipercaya hanya details-nya, bukan kalimatnya. */
+function quotaInfo(d){
+  const det=(d&&d.error&&d.error.details)||[];
+  let hard=false, waitMs=0;
+  det.forEach(x=>{
+    (x.violations||[]).forEach(v=>{
+      const q=String(v.quotaValue!=null?v.quotaValue:(v.quota_limit_value!=null?v.quota_limit_value:''));
+      if(q==='0') hard=true;
+    });
+    const rd=x.retryDelay||x.retry_delay;
+    if(rd){ const m=/([\d.]+)s/.exec(String(rd)); if(m) waitMs=Math.min(60000, Math.round(parseFloat(m[1])*1000)+500); }
+  });
+  return {hard, waitMs};
+}
 async function postJSON(url, opts, label){
-  let lastMsg='';
+  let lastMsg='', nextWait=0;
   for(let att=0; att<3; att++){
     if(att){
       setBusy(true,'Server AI sibuk — mencoba ulang ('+att+'/2)…');
-      await new Promise(r=>setTimeout(r, att===1?2500:6000));
+      await new Promise(r=>setTimeout(r, nextWait||(att===1?2500:6000)));
     }
     let status=0, d=null;
     try{
@@ -1049,6 +1069,13 @@ async function postJSON(url, opts, label){
     const errMsg=(d&&d.error)?(d.error.message||JSON.stringify(d.error)):'';
     if(status>=200&&status<300&&!errMsg) return d;
     lastMsg=errMsg||('HTTP '+status);
+    if(status===429){
+      const q=quotaInfo(d);
+      /* Mengulang permintaan berkuota nol tiga kali hanya membuang waktu —
+         dan pada render 12 panel, membuangnya dua belas kali. */
+      if(q.hard) throw new Error(label+': KUOTA-NOL '+lastMsg);
+      nextWait=q.waitMs;
+    }
     if(!(status===429||status>=500||TRANSIENT.test(lastMsg))) throw new Error(label+': '+lastMsg);
   }
   throw new Error(label+': '+lastMsg+' — server sedang penuh. Tunggu 1–2 menit, atau pindah provider (mis. Groq) lewat ⚙ API.');
@@ -1683,15 +1710,46 @@ function warnShort(got, want, satuan){
 let renderStore={ src:'', items:[], grid:'' };
 let renderAbort=false;
 
+/* Urutan sengaja dimulai dari yang BISA dipakai tanpa kartu kredit. Model
+   Gemini 3 Image berjatah NOL di tier gratis — bukan "sedikit", tapi nol —
+   jadi memakainya tanpa billing selalu berakhir 429 dan membuat orang mengira
+   API key-nya rusak lalu membuat key baru berkali-kali. */
 const IMG_MODELS={
-  'gemini-3-pro-image-preview':{name:'Nano Banana Pro (Gemini 3 Pro Image)', note:'Paling patuh instruksi dan satu-satunya yang benar-benar menuruti resolusi 2K/4K. Paling mahal.'},
-  'gemini-3.1-flash-image-preview':{name:'Nano Banana 2 (Gemini 3.1 Flash Image)', note:'Cepat dan murah. Mengabaikan setelan resolusi — hasilnya selalu sekitar 1K.'},
-  'gemini-2.5-flash-image':{name:'Nano Banana (Gemini 2.5 Flash Image)', note:'Generasi lama, paling murah. Tekstur kulitnya di bawah dua model di atas.'}
+  'gemini-2.5-flash-image':{name:'Nano Banana (Gemini 2.5 Flash Image) — GRATIS', tier:'gratis',
+    note:'Satu-satunya yang jalan tanpa billing: 10 gambar/menit, 500 gambar/hari, keluar di 1024px. Tekstur kulitnya sedikit di bawah model Gemini 3, tapi ini yang bisa langsung kamu pakai.'},
+  'gemini-3.1-flash-image-preview':{name:'Nano Banana 2 (Gemini 3.1 Flash Image) — butuh billing', tier:'bayar',
+    note:'Butuh billing aktif di Google Cloud. Cepat dan murah, tapi mengabaikan setelan resolusi — hasilnya selalu sekitar 1K.'},
+  'gemini-3-pro-image-preview':{name:'Nano Banana Pro (Gemini 3 Pro Image) — butuh billing', tier:'bayar',
+    note:'Butuh billing aktif di Google Cloud; jatah tier gratisnya nol. Paling patuh instruksi dan satu-satunya yang benar-benar menuruti resolusi 2K/4K. Paling mahal.'}
 };
 /* Gemini hanya menerima rasio dari daftar tetap; 4:5 milik tool ini tidak ada
    di sana dan akan ditolak, jadi dipetakan ke tetangga terdekat. */
 const IMG_RATIO={'9:16':'9:16','16:9':'16:9','1:1':'1:1','4:5':'3:4','4:3':'4:3','3:4':'3:4'};
 function imgKey(){ return String(state.api.imgKey||state.api.geminiKey||'').trim(); }
+let lastImgAt=0;
+
+/* Pesan mentah Google untuk kuota nol berbunyi "You exceeded your current
+   quota, please check your plan and billing details" — terbaca seperti API
+   key yang rusak, sehingga orang membuat key baru berkali-kali padahal
+   penyebabnya modelnya memang tidak punya jatah gratis sama sekali. */
+function imgErr(msg, model){
+  const berbayar=(IMG_MODELS[model]||{}).tier==='bayar';
+  if(/KUOTA-NOL/.test(msg)){
+    return berbayar
+      ? 'Model ini berjatah NOL di tier gratis — butuh billing aktif di Google Cloud. Membuat API key baru tidak akan menolong, hasilnya akan sama persis. Ganti Model ke "Nano Banana (Gemini 2.5 Flash Image) — GRATIS" di atas, lalu render ulang.'
+      : 'Jatah harian tier gratis sudah habis (500 gambar/hari per project Google Cloud, bukan per key). Tunggu sampai reset, atau pakai project Google Cloud lain.';
+  }
+  if(/429|quota|rate limit|RESOURCE_EXHAUSTED/i.test(msg)){
+    return 'Terlalu cepat untuk batas 10 gambar/menit di tier gratis. Tunggu satu menit lalu klik Render Sekarang lagi — panel yang sudah jadi tidak hilang.';
+  }
+  if(/API key not valid|API_KEY_INVALID|401|403|PERMISSION_DENIED/i.test(msg)){
+    return 'API key ditolak. Pastikan key dibuat di aistudio.google.com/apikey dan Generative Language API aktif di project-nya.';
+  }
+  if(/not found|NOT_FOUND|is not supported/i.test(msg)){
+    return 'Model ini tidak tersedia untuk key kamu. Ganti ke "Nano Banana (Gemini 2.5 Flash Image) — GRATIS".';
+  }
+  return msg;
+}
 
 /* Satu panggilan = satu gambar. refs dipakai untuk mengunci identitas:
    panel pertama jadi acuan panel berikutnya, karena reference image mengunci
@@ -1711,7 +1769,17 @@ async function genImage(prompt, ar, refs){
        permintaan ditolak, bukan menghasilkan gambar tanpa teks. */
     generationConfig:{ responseModalities:['TEXT','IMAGE'], imageConfig:{ aspectRatio:ar, imageSize:state.render.size||'2K' } }
   };
-  const d=await postJSON(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},'Image');
+  /* Tier gratis dibatasi 10 gambar per menit. Dua belas panel beruntun pasti
+     menabraknya di panel ke-11, jadi jaraknya diatur sendiri di sini alih-alih
+     menunggu ditolak lalu mengulang. */
+  const gap=(IMG_MODELS[model]||{}).tier==='gratis' ? 6500 : 1200;
+  const sisa=gap-(Date.now()-lastImgAt);
+  if(lastImgAt&&sisa>0) await new Promise(r=>setTimeout(r,sisa));
+  lastImgAt=Date.now();
+  let d;
+  try{
+    d=await postJSON(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},'Image');
+  }catch(e){ throw new Error(imgErr(e.message||String(e), model)); }
   const blocked=(d.promptFeedback&&d.promptFeedback.blockReason)||'';
   const c=(d.candidates&&d.candidates[0])||null;
   const ps=(c&&c.content&&c.content.parts)||[];
@@ -2417,8 +2485,14 @@ function mergeLoadedState(d){
   bumpAudit();
   if(!Array.isArray(state.uploads.refs)) state.uploads.refs=[];
   /* Project lama belum punya blok setelan render tahap 14. */
-  if(!state.render||typeof state.render!=='object') state.render={model:'gemini-3-pro-image-preview',size:'2K',chain:true};
-  if(!IMG_MODELS[state.render.model]) state.render.model='gemini-3-pro-image-preview';
+  if(!state.render||typeof state.render!=='object') state.render={model:'gemini-2.5-flash-image',size:'2K',chain:true};
+  if(!IMG_MODELS[state.render.model]) state.render.model='gemini-2.5-flash-image';
+  /* Project yang tersimpan sebelum perbaikan ini memakai model berbayar
+     sebagai default, dan dibiarkan begitu render-nya pasti gagal 429.
+     Dipindahkan SEKALI saja lalu ditandai — supaya pengguna yang memang
+     punya billing dan sengaja memilih model berbayar tidak dipaksa balik
+     setiap kali project dibuka. */
+  if(!state.render.fixed){ state.render.model='gemini-2.5-flash-image'; state.render.fixed=1; }
   if(!['1K','2K','4K'].includes(state.render.size)) state.render.size='2K';
   /* Project lama menyimpan referensi gaya sebagai teks bebas tanpa dropdown.
      Teksnya tidak boleh hilang — dipindahkan ke mode "custom" supaya tetap
@@ -2944,7 +3018,8 @@ function renderPanel(){
         '<div class="field full"><label>API Key Gambar</label><input type="password" data-path="api.imgKey" value="'+esc(state.api.imgKey)+'" placeholder="'+(state.api.geminiKey?'kosongkan untuk memakai key Gemini yang sudah diisi di ⚙ API':'AIza…')+'">'+
           '<div class="hint">Key dibuat gratis di aistudio.google.com/apikey. Sama seperti key teks: tidak pernah ditulis ke disk kecuali kamu menyalakan "ingat key" di ⚙ API, dan tidak pernah ikut ke file <code>.json</code>.</div></div>'+
         '<div class="field"><label>Model</label><select data-path="render.model">'+optsObj(IMG_MODELS,r.model)+'</select>'+
-          '<div class="hint">'+esc((IMG_MODELS[r.model]||{}).note||'')+'</div></div>'+
+          '<div class="hint"'+((IMG_MODELS[r.model]||{}).tier==='bayar'?' style="color:var(--amber)"':'')+'>'+
+          esc((IMG_MODELS[r.model]||{}).note||'')+'</div></div>'+
         '<div class="field"><label>Resolusi</label><select data-path="render.size">'+opts(['1K','2K','4K'],r.size)+'</select>'+
           '<div class="hint">Hanya Nano Banana Pro yang benar-benar menuruti setelan ini; dua model lain selalu keluar sekitar 1K.</div></div>'+
       '</div>'+
@@ -2961,16 +3036,22 @@ function renderPanel(){
         (busy?'<button class="btn" id="btnRenderStop">■ Hentikan</button>':'')+
       '</div>'+
       (jml?'<div class="prog"><i style="width:'+Math.round((renderStore.items.filter(x=>x.state!=='pending').length/jml)*100)+'%"></i></div>':'')+
-      '<div class="note">Pose Sheet menghabiskan 12 panggilan API sekali jalan — perkirakan 2–4 menit dan biaya sesuai tarif model yang kamu pilih. Gambar hasil render <b>hanya ada di memori</b> dan hilang kalau halaman ditutup atau dimuat ulang, karena satu gambar 2K terlalu besar untuk penyimpanan browser dan akan mematikan autosave seluruh project. Unduh dulu yang kamu mau pakai.</div>'+
+      '<div class="note">Pose Sheet menghabiskan 12 panggilan API sekali jalan. Di model gratis jaraknya ditahan 6,5 detik supaya tidak menabrak batas 10 gambar/menit, jadi sekali jalan sekitar 2–3 menit. Jatah gratisnya 500 gambar/hari, dihitung <b>per project Google Cloud, bukan per API key</b> — membuat key baru di project yang sama tidak menambah jatah. Gambar hasil render <b>hanya ada di memori</b> dan hilang kalau halaman ditutup atau dimuat ulang, karena satu gambar terlalu besar untuk penyimpanan browser dan akan mematikan autosave seluruh project. Unduh dulu yang kamu mau pakai.</div>'+
       '</div>';
 
     if(jml){
-      h+='<div class="card"><h3>Hasil <span class="tag">'+ok+'/'+jml+' berhasil</span></h3><div class="rgrid">'+
+      h+='<div class="card"><h3>Hasil <span class="tag">'+ok+'/'+jml+' berhasil</span></h3>';
+      /* Pesan gagal ditampilkan UTUH di sini, bukan cuma terpotong di dalam
+         sel — inilah satu-satunya tempat penyebabnya benar-benar terbaca. */
+      const errs=[...new Set(renderStore.items.filter(x=>x.state==='gagal').map(x=>x.err))];
+      if(errs.length) h+='<div class="note" style="border-color:var(--red);color:var(--text)"><b>Kenapa gagal:</b> '+
+        errs.map(esc).join('<br><br>')+'</div>';
+      h+='<div class="rgrid">'+
         renderStore.items.map((it,i)=>{
           if(it.state==='ok') return '<div class="rcell"><img src="'+dataURL(it.img)+'" data-zoom="'+i+'" alt="'+esc(it.label)+'">'+
             '<span class="num">'+String(i+1).padStart(2,'0')+'</span><button class="dl" data-dl="'+i+'" title="Unduh">↓</button>'+
             '<span class="cap">'+esc(it.label)+'</span></div>';
-          if(it.state==='gagal') return '<div class="rcell failed" title="'+esc(it.err||'')+'">'+esc(it.label)+'<br>'+esc((it.err||'gagal').slice(0,70))+'</div>';
+          if(it.state==='gagal') return '<div class="rcell failed" title="'+esc(it.err||'')+'">'+esc(it.label)+'<br>gagal — lihat sebabnya di atas</div>';
           if(it.state==='batal') return '<div class="rcell pending">dibatalkan</div>';
           return '<div class="rcell pending">menunggu…</div>';
         }).join('')+'</div>';

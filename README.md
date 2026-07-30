@@ -29,6 +29,8 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 13 Audit & Ekspor | 42 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
 | 14 Render Gambar | Jalankan prompt jadi gambar langsung di browser — **Pose Sheet 12 panel** + character sheet gabungan untuk image reference engine video |
 
+**Catatan penting tahap 14.** Hanya `gemini-2.5-flash-image` (Nano Banana) yang punya tier gratis: 10 gambar/menit, 500 gambar/hari, dihitung **per project Google Cloud, bukan per API key**. Model Gemini 3 Image (`gemini-3-pro-image-preview`, `gemini-3.1-flash-image-preview`) berjatah **nol** di tier gratis dan butuh billing aktif — tanpa itu setiap panggilan dibalas 429 dengan pesan `"You exceeded your current quota, please check your plan and billing details"`, yang terbaca seperti API key rusak padahal bukan. Tool memisahkan dua jenis 429 lewat `quotaValue` di `error.details`: kuota nol dilempar langsung tanpa diulang, rate limit diulang sesuai `retryDelay` dari Google.
+
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.
 
 Mode **Komposit** (default) menurunkan ciri fisik tapi mewajibkan AI mengusulkan **pembeda** konkret, supaya hasil akhirnya orang baru dan bukan salinan orang di foto. Meniru wajah orang nyata yang bisa dikenali menyentuh hak atas potret dan bisa berujung penangguhan akun. Mode **Inspirasi** hanya mengambil vibe dan gaya.
