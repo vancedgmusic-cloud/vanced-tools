@@ -76,7 +76,11 @@ Bangun talent sekali, pakai untuk semua produk.
 
 ## Catatan teknis
 
-- **API key tidak pernah disimpan** — hanya hidup di memori tab, tidak ikut ke localStorage maupun file `.json`.
+- **API key tidak disimpan secara default** — hanya hidup di memori tab. Ada opsi opt-in "Ingat key di perangkat ini"
+  untuk pemakaian di ponsel; key lalu disimpan di slot localStorage terpisah, dan tetap TIDAK pernah ikut ke file
+  project `.json`. Bisa dihapus lewat tombol "Lupakan key".
+- **Bisa dipakai di ponsel** — rail tahap berubah jadi drawer di bawah 900px, dan setiap panel punya navigasi
+  maju-mundur sendiri sehingga tidak ada tahap yang tanpa jalan keluar.
 - **Gambar referensi dikecilkan ke 768px** sebelum masuk penyimpanan, jadi ikut tersimpan di project tanpa menjebol kuota localStorage — dan otomatis ikut ke file `.json`, jadi hati-hati kalau file project dibagikan.
 - Autosave ke localStorage; ekspor `.json` untuk cadangan dan pindah perangkat.
 - Semua provider punya retry otomatis saat server sibuk, dan loop kontinuasi supaya output panjang tidak terpotong.

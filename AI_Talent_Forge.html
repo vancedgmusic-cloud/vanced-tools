@@ -105,7 +105,58 @@ main{overflow-y:auto;padding:22px 26px 60px}
 .grid{display:grid;gap:12px}
 .grid.two{grid-template-columns:1fr 1fr}
 .grid.three{grid-template-columns:repeat(3,1fr)}
-@media(max-width:900px){.grid.two,.grid.three{grid-template-columns:1fr}.body{grid-template-columns:1fr}nav.rail{display:none}}
+/* Navigasi bawah panel — selalu ada di setiap tahap, jadi tidak mungkin
+   terjebak tanpa jalan keluar. Ini satu-satunya navigasi di layar kecil
+   selain drawer, karena rail berubah jadi drawer di bawah 900px. */
+.stepnav{
+  display:flex;align-items:stretch;gap:9px;margin-top:26px;padding-top:16px;
+  border-top:1px solid var(--line);
+}
+.stepnav a{
+  flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;text-decoration:none;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:10px 13px;transition:.14s;color:var(--text);
+}
+.stepnav a:hover{border-color:var(--line2);background:var(--panel2)}
+.stepnav a:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.stepnav .dir{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.stepnav .nm{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stepnav a.next{text-align:right;border-color:#57D0BE44;background:var(--teal-soft)}
+.stepnav a.next:hover{border-color:var(--teal)}
+.stepnav .spacer{flex:1}
+
+#btnMenu{display:none}
+#railScrim{display:none}
+
+@media(max-width:900px){
+  .grid.two,.grid.three{grid-template-columns:1fr}
+  .body{grid-template-columns:1fr}
+  main{padding:18px 15px 48px}
+  header.top{gap:9px;padding:9px 12px}
+  .brand small{display:none}
+  #btnMenu{display:inline-flex}
+  /* Rail jadi drawer, bukan disembunyikan — sebelumnya display:none membuat
+     tahap tanpa tombol lanjut tidak bisa ditinggalkan sama sekali di HP. */
+  nav.rail{
+    position:fixed;inset:0 auto 0 0;width:min(272px,82vw);z-index:41;
+    transform:translateX(-101%);transition:transform .22s ease;
+    box-shadow:0 0 40px #0009;
+  }
+  nav.rail.open{transform:none}
+  #railScrim{
+    display:block;position:fixed;inset:0;background:#080A0Ecc;z-index:40;
+    opacity:0;pointer-events:none;transition:opacity .22s;border:0;
+  }
+  #railScrim.on{opacity:1;pointer-events:auto}
+  .panelhead h2{font-size:19px}
+  .statusline{font-size:10px}
+}
+@media(max-width:520px){
+  .top .btn.sm{padding:6px 9px;font-size:11.5px}
+  .stepnav{flex-direction:column}
+  .stepnav a.next{text-align:left}
+}
+@media(prefers-reduced-motion:reduce){nav.rail,#railScrim{transition:none}}
 .field{min-width:0}
 .field .hint{font-size:11px;color:var(--faint);margin-top:4px;line-height:1.45}
 .full{grid-column:1/-1}
@@ -176,6 +227,7 @@ table.mini td{color:var(--text)}
 <body>
 <div class="app" id="app">
   <header class="top" id="topbar">
+    <button class="btn sm" id="btnMenu" aria-label="Buka daftar tahap" aria-expanded="false">☰</button>
     <div class="brand">
       <div class="mark">ATF</div>
       <div>
@@ -193,6 +245,7 @@ table.mini td{color:var(--text)}
   </header>
 
   <div class="body">
+    <button id="railScrim" aria-label="Tutup daftar tahap" tabindex="-1"></button>
     <nav class="rail" id="rail"></nav>
     <main id="main"><div class="wrap" id="panel"></div></main>
   </div>
@@ -250,7 +303,7 @@ function download(name, text, mime='text/plain'){
 /* ---------------- state ---------------- */
 const state = {
   api:{
-    provider:'builtin',
+    provider:'builtin', remember:false,
     claudeKey:'', claudeModel:'claude-sonnet-4-6',
     geminiKey:'', geminiModel:'gemini-2.5-flash',
     groqKey:'', groqModel:'llama-3.3-70b-versatile',
@@ -1393,6 +1446,30 @@ function serializableState(){
   delete c.api;
   return c;
 }
+/* API key disimpan di slot localStorage TERPISAH dari project, dan hanya
+   kalau user menyalakannya sendiri. Dipisah supaya key tidak pernah bisa
+   ikut terbawa saat project diekspor ke .json atau dibagikan. */
+function persistKeys(){
+  try{
+    if(state.api.remember) localStorage.setItem('atf_api', JSON.stringify(state.api));
+    else localStorage.removeItem('atf_api');
+  }catch(_){}
+}
+function restoreKeys(){
+  try{
+    const raw=localStorage.getItem('atf_api'); if(!raw) return false;
+    const d=JSON.parse(raw);
+    if(d&&typeof d==='object'){ Object.assign(state.api, d); state.api.remember=true; return true; }
+  }catch(_){}
+  return false;
+}
+function forgetKeys(){
+  state.api.remember=false;
+  ['claudeKey','geminiKey','groqKey','orKey','customKey'].forEach(k=>state.api[k]='');
+  try{ localStorage.removeItem('atf_api'); }catch(_){}
+  renderApiModal(); toast('Key dilupakan dari perangkat ini.','ok');
+}
+
 let persistWarned=false;
 function persistState(){
   try{
@@ -1454,8 +1531,37 @@ function hasBasics(id){
   if(id==='input') return !!String(state.input.niche||'').trim();
   return false;
 }
-function go(id){ currentStep=id; renderRail(); renderPanel(); $('#main').scrollTop=0; }
+function go(id){ currentStep=id; closeRail(); renderRail(); renderPanel(); $('#main').scrollTop=0; }
 function render(){ renderRail(); renderPanel(); }
+
+/* ---------------- drawer tahap (layar kecil) ---------------- */
+function openRail(){
+  $('#rail').classList.add('open');
+  $('#railScrim').classList.add('on');
+  $('#btnMenu').setAttribute('aria-expanded','true');
+}
+function closeRail(){
+  $('#rail').classList.remove('open');
+  $('#railScrim').classList.remove('on');
+  $('#btnMenu').setAttribute('aria-expanded','false');
+}
+function toggleRail(){ $('#rail').classList.contains('open')?closeRail():openRail(); }
+
+/* Navigasi maju-mundur, ditambahkan ke SETIAP panel. Tanpa ini ada tahap
+   yang tidak punya jalan keluar sama sekali begitu rail jadi drawer. */
+function stepNav(){
+  const i=STEPS.findIndex(s=>s.id===currentStep);
+  if(i<0) return '';
+  const prev=STEPS[i-1], next=STEPS[i+1];
+  let h='<nav class="stepnav" aria-label="Navigasi tahap">';
+  h+= prev
+    ? '<a href="#" data-go="'+prev.id+'"><span class="dir">← Tahap '+prev.no+'</span><span class="nm">'+esc(prev.label)+'</span></a>'
+    : '<span class="spacer"></span>';
+  h+= next
+    ? '<a class="next" href="#" data-go="'+next.id+'"><span class="dir">Tahap '+next.no+' →</span><span class="nm">'+esc(next.label)+'</span></a>'
+    : '<span class="spacer"></span>';
+  return h+'</nav>';
+}
 
 function head(no,title,desc){
   return '<div class="panelhead"><div class="eyebrow">Tahap '+no+'</div><h2>'+esc(title)+'</h2>'+(desc?'<p>'+desc+'</p>':'')+'</div>';
@@ -1532,7 +1638,7 @@ function renderPanel(){
       '<div class="field"><label>Jumlah Scene di Scene Pack</label><input type="number" min="3" max="10" data-path="setup.jumlahScene" value="'+esc(s.jumlahScene)+'"></div>'+
       '<div class="field"><label>Durasi per Scene (detik)</label><input type="number" min="5" max="20" data-path="setup.durasi" value="'+esc(s.durasi||8)+'"></div>'+
     '</div></div>'+
-    '<div class="rowbtns"><button class="btn primary" data-go="input">Lanjut ke Brief →</button></div>';
+    '';
   }
 
   else if(currentStep==='input'){
@@ -1546,8 +1652,7 @@ function renderPanel(){
       '<div class="field"><label>Referensi Gaya</label><input data-path="input.referensi" value="'+esc(i.referensi)+'" placeholder="mis. gaya konten ala clean-girl, warna netral"></div>'+
       '<div class="field full"><label>Catatan Khusus</label><textarea data-path="input.catatan" placeholder="Hal yang wajib ada atau wajib dihindari.">'+esc(i.catatan)+'</textarea></div>'+
     '</div></div>'+
-    '<div class="rowbtns"><button class="btn primary" data-go="refs">Lanjut ke Referensi Visual →</button>'+
-    '<button class="btn" id="btnGenAll2">⚡ Generate Semua Tahap</button></div>';
+    '<div class="rowbtns"><button class="btn primary" id="btnGenAll2">⚡ Generate Semua Tahap</button></div>';
   }
 
   else if(currentStep==='refs'){
@@ -1586,7 +1691,6 @@ function renderPanel(){
         '<div class="rowbtns"><button class="btn sm" data-copy="refs.pembeda">⧉ Salin</button></div></div>';
       h+='<div class="card"><h3>Bacaan Referensi <span class="tag">'+F.refs.length+' field</span></h3>'+
          kvGrid(F.refs,'refs',state.refs)+genBar('refs')+'</div>';
-      h+='<div class="rowbtns"><button class="btn primary" data-go="persona">Lanjut ke Persona Core →</button></div>';
     }
     p.innerHTML=h;
     renderRefThumbs();
@@ -1641,7 +1745,7 @@ function renderPanel(){
       '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Kata-kata ini terdengar seperti pujian, tapi justru menarik hasil ke arah kulit plastik dan wajah filter. AI diinstruksikan tidak memakainya.</p>'+
       '<div class="promptbox" style="max-height:110px">'+esc(SLOP_WORDS.join(' · '))+'</div></div>';
 
-    h+='<div class="rowbtns"><button class="btn primary" data-go="wardrobe">Lanjut ke Wardrobe →</button></div>';
+    h+='';
     p.innerHTML=h;
   }
 
@@ -1752,6 +1856,8 @@ function renderPanel(){
       '</div>';
     p.innerHTML=h;
   }
+  /* Tanpa terkecuali — inilah jaring yang mencegah tahap tanpa jalan keluar. */
+  p.insertAdjacentHTML('beforeend', stepNav());
 }
 function opts(list, cur){ return list.map(o=>'<option value="'+esc(o)+'"'+(o===cur?' selected':'')+'>'+esc(o)+'</option>').join(''); }
 function optsObj(obj, cur){ return Object.keys(obj).map(k=>'<option value="'+k+'"'+(k===cur?' selected':'')+'>'+esc(obj[k].name)+'</option>').join(''); }
@@ -1786,6 +1892,16 @@ function renderApiModal(){
     '<div class="field"><label>Base URL</label><input data-path="api.customBase" value="'+esc(a.customBase)+'" placeholder="https://api.openai.com/v1"></div>'+
     '<div class="field"><label>API Key</label><input type="password" data-path="api.customKey" value="'+esc(a.customKey)+'"></div>'+
     '<div class="field"><label>Model</label><input data-path="api.customModel" value="'+esc(a.customModel)+'"></div>';
+  /* builtin tidak butuh key, jadi opsi ingat-key tidak relevan di sana */
+  if(a.provider!=='builtin') f+=
+    '<div class="field full" style="border-top:1px dashed var(--line);padding-top:12px;margin-top:2px">'+
+      '<label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);cursor:pointer">'+
+        '<input type="checkbox" id="chkRemember" style="width:auto;margin:0"'+(a.remember?' checked':'')+'>'+
+        'Ingat key di perangkat ini'+
+      '</label>'+
+      '<div class="hint">Berguna di ponsel supaya tidak mengisi key tiap kali. Key tersimpan di penyimpanan browser perangkat ini — jangan nyalakan di perangkat bersama. Key tetap TIDAK ikut ke file project <code>.json</code>.</div>'+
+      (a.remember?'<div class="rowbtns"><button class="btn sm" id="btnForgetKey">Lupakan key dari perangkat ini</button></div>':'')+
+    '</div>';
   $('#provFields').innerHTML=f;
   const common='Key hanya hidup di memori tab ini (tidak disimpan di mana pun, tidak ikut file .json) dan dikirim langsung ke endpoint resmi provider dari browser-mu. Semua provider punya retry otomatis kalau server sibuk.';
   const notes={
@@ -1821,15 +1937,18 @@ document.addEventListener('input', e=>{
     renderRail();
   }
   if(p==='refmode'&&hasContent('refs')) state.dirty.refs=true;
-  if(!p.startsWith('api.')) persistState();
+  if(p.startsWith('api.')) persistKeys(); else persistState();
 });
 document.addEventListener('change', e=>{
+  if(e.target.id==='chkRemember'){ state.api.remember=e.target.checked; persistKeys(); renderApiModal(); return; }
   const p=e.target.dataset.path; if(!p) return;
   if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='refmode'||p.startsWith('realism.')) renderPanel();
 });
 document.addEventListener('click', async e=>{
-  const t=e.target.closest('button'); if(!t) return;
-  if(t.dataset.go){ go(t.dataset.go); return; }
+  const t=e.target.closest('button,a[data-go]'); if(!t) return;
+  if(t.dataset.go){ e.preventDefault(); go(t.dataset.go); return; }
+  if(t.id==='btnMenu'){ toggleRail(); return; }
+  if(t.id==='railScrim'){ closeRail(); return; }
   if(t.dataset.gen){ runStage(t.dataset.gen,''); return; }
   if(t.dataset.rev){
     const id=t.dataset.rev; const fb=($('#rev-'+id)?.value||'').trim();
@@ -1847,7 +1966,8 @@ document.addEventListener('click', async e=>{
     try{ await navigator.clipboard.writeText(txt); toast('Tahap tersalin.','ok'); }
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
   }
-  if(t.dataset.prov){ state.api.provider=t.dataset.prov; renderApiModal(); return; }
+  if(t.dataset.prov){ state.api.provider=t.dataset.prov; persistKeys(); renderApiModal(); return; }
+  if(t.id==='btnForgetKey'){ forgetKeys(); return; }
   if(t.dataset.rmref!=null){
     state.uploads.refs.splice(+t.dataset.rmref,1);
     if(hasContent('refs')) state.dirty.refs=true;
@@ -1904,6 +2024,12 @@ document.addEventListener('change', async e=>{
   renderPanel(); persistState();
 });
 
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape') return;
+  if($('#apiOverlay').classList.contains('open')) $('#apiOverlay').classList.remove('open');
+  else if($('#rail').classList.contains('open')) closeRail();
+});
+
 $('#btnGenAll').onclick=runAll;
 $('#btnApi').onclick=()=>{ renderApiModal(); $('#apiOverlay').classList.add('open'); };
 $('#btnCloseApi').onclick=()=>$('#apiOverlay').classList.remove('open');
@@ -1913,7 +2039,10 @@ $('#btnSave').onclick=saveProject;
 $('#btnLoad').onclick=()=>$('#fileInput').click();
 $('#fileInput').addEventListener('change',e=>{ if(e.target.files[0]) loadProject(e.target.files[0]); e.target.value=''; });
 $('#btnClearLocal').onclick=()=>{
-  if(!confirm('Hapus seluruh isi project dari browser ini? Tindakan ini tidak bisa dibatalkan.')) return;
+  const isi=state.persona.nama_lengkap||state.sheet.length||state.scenes.length;
+  if(!confirm(isi
+    ? 'Hapus seluruh isi project dari browser ini?\n\nKamu punya hasil yang belum tentu tercadangkan. Batalkan dulu lalu tekan "↓ Simpan" untuk ekspor .json kalau belum.\n\nTindakan ini tidak bisa dibatalkan.'
+    : 'Hapus seluruh isi project dari browser ini? Tindakan ini tidak bisa dibatalkan.')) return;
   localStorage.removeItem('atf_state'); location.reload();
 };
 
@@ -1923,6 +2052,7 @@ window.addEventListener('beforeunload', e=>{
 });
 
 if(tryRestoreLocal()) toast('Sesi sebelumnya dipulihkan dari penyimpanan browser ini.','ok');
+if(restoreKeys()) toast('API key dipulihkan dari perangkat ini.','ok');
 render();
 </script>
 </body>
