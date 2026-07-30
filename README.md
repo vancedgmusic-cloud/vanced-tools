@@ -27,7 +27,11 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 11 Content Engine | Positioning, content pillars, bank ide Shorts & longform, monetisasi |
 | 12 Compliance | Disclosure AI + afiliasi, aturan klaim, checklist sebelum posting |
 | 13 Audit & Ekspor | 42 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
-| 14 Render Gambar | Jalankan prompt jadi gambar langsung di browser — **Pose Sheet 12 panel** + character sheet gabungan untuk image reference engine video |
+| 14 Render Gambar | Jalankan prompt jadi gambar langsung di browser — **Pose Sheet 12 panel** (satu kanvas utuh untuk image reference engine video) + **Foto Single 5 pose** siap posting |
+
+**Dua paket gambar, dua tujuan berbeda.** *Pose Sheet 12 panel* adalah lembar REFERENSI: cahaya dan latar dipaksa rata dan identik di kedua belas panel supaya yang terbaca engine video hanya identitasnya. Dua belas panel dirender terpisah pada resolusi penuh lalu disusun jadi satu kanvas 1536x2732 — meminta engine membuat satu gambar 12 panel membagi resolusi ke dua belas dan tiap wajah jadi terlalu lunak untuk dipakai referensi. Gaya *rapat* (default) tanpa sekat dan tanpa teks apa pun; gaya *berlabel* menambah gutter dan nama pose untuk dibaca manusia, dan sengaja tidak disarankan sebagai referensi video karena teks di dalam frame ikut terbaca sebagai isi gambar.
+
+*Foto Single 5 pose* adalah foto KONTEN yang berdiri sendiri — hero portrait, tawa candid, pegang produk, jalan outdoor, dan selfie UGC. Masing-masing punya komposisi dan rasio sendiri dan memakai kondisi pengambilan pilihan pengguna di tahap 05, bukan studio rata. Khusus panel selfie, Blok B diganti kamera ponsel karena ponsel dan stok film adalah dua medium yang tidak boleh disebut bersamaan.
 
 **Dua jalur API di tahap 14.** *Google AI Studio* memakai key sendiri. *Proxy OpenAI-compatible* (LiteLLM, KoboiLLM, dsb.) memindahkan billing ke penyedia proxy — isi Base URL, key, dan nama model dari dashboard proxy.
 

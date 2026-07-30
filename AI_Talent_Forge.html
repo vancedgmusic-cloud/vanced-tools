@@ -375,7 +375,7 @@ const state = {
   },
   /* Setelan render tahap 14. Gambar hasilnya TIDAK disimpan di sini —
      lihat renderStore. */
-  render:{ provider:'google', model:'gemini-2.5-flash-image', proxyModel:'gemini-2.5-flash-image', size:'2K', chain:true, extra:'' },
+  render:{ provider:'google', model:'gemini-2.5-flash-image', proxyModel:'gemini-2.5-flash-image', size:'2K', chain:true, extra:'', sheet:'rapat' },
   setup:{
     namaProject:'', gender:'Perempuan', rentangUsia:'22-26', etnisTarget:'Indonesia (Jawa/Sunda)',
     pasar:'Indonesia', bahasa:'Bahasa Indonesia', platform:'TikTok + YouTube Shorts',
@@ -709,6 +709,43 @@ function posePrompt(p){
     look?('wardrobe: '+look):'',
     wl?('always wearing '+wl):'',
     POSE_BASE,
+    realismSkin('full').replace(/\.$/,''),
+    'no: '+ANTI_SLOP_NEG
+  ].filter(Boolean).join('. ')+'.';
+}
+
+/* ---------------- paket foto single ----------------
+   Berbeda tujuan dari Pose Sheet. Pose Sheet adalah lembar REFERENSI: cahaya
+   dan latar sengaja dibuat rata dan identik supaya identitasnya terbaca
+   bersih. Yang di bawah ini adalah foto KONTEN yang berdiri sendiri — tiap
+   satu punya komposisi, jarak, dan suasananya sendiri, dan memakai kondisi
+   pengambilan yang dipilih pengguna di tahap 05, bukan studio rata. */
+const HERO_SHOTS=[
+  {id:'h1', l:'Hero portrait', ar:'3:4',
+   en:'half-body hero portrait, body angled slightly away while the face turns back to the lens, chin level, a small closed-mouth smile that reaches the eyes, one hand relaxed near the collarbone, shallow depth of field separating her from the background'},
+  {id:'h2', l:'Tawa candid', ar:'3:4',
+   en:'caught mid-laugh looking off-camera to the side, head tipped back a little, shoulders lifted, hair falling across one cheek, unposed candid moment rather than a held expression'},
+  {id:'h3', l:'Pegang produk', ar:'9:16',
+   en:'holding a small unbranded product at chest height with both hands, tilting it toward the lens while looking straight at the camera with an interested expression, product sharp and fully readable in frame, generous empty space on the upper third'},
+  {id:'h4', l:'Jalan outdoor', ar:'9:16',
+   en:'full-length shot walking toward the camera on a city sidewalk, mid-stride with real weight on the front foot, one hand holding a bag strap, looking slightly off-lens, motion in the hair and clothing'},
+  {id:'h5', l:'Selfie UGC', ar:'9:16',
+   en:'arm\'s-length front-camera selfie held slightly above eye level, free hand gesturing near the face mid-explanation, casual indoor setting visible but out of focus behind her, mild wide-angle facial perspective typical of a phone front camera'}
+];
+function heroPrompt(h){
+  const lock=String(state.dna.identity_lock||'').trim();
+  const wl=String(state.wardrobe.wardrobe_lock||'').trim();
+  const look=String(state.wardrobe.signature_look||'').trim();
+  /* Shot selfie memakai kamera ponsel dan karena itu TIDAK boleh memakai
+     Blok B — dua medium dalam satu prompt membuat engine menebak. */
+  const capture = h.id==='h5'
+    ? 'shot on an iPhone 15 Pro front camera, handheld, natural indoor light'
+    : realismCapture('full').replace(/\.$/,'');
+  return [
+    lock, h.en,
+    look?('wardrobe: '+look):'',
+    wl?('always wearing '+wl):'',
+    capture,
     realismSkin('full').replace(/\.$/,''),
     'no: '+ANTI_SLOP_NEG
   ].filter(Boolean).join('. ')+'.';
@@ -1886,13 +1923,17 @@ function renderBase(){
 /* Daftar sumber prompt: pose sheet baru, atau prompt yang sudah jadi di
    tahap 08 dan 09 — supaya tidak ada prompt yang harus ditulis dua kali. */
 function renderSources(){
-  const out=[{v:'pose', l:'Pose Sheet 12 panel — untuk referensi video', n:12}];
+  const out=[
+    {v:'pose', l:'Pose Sheet 12 panel — satu kanvas utuh untuk referensi video', n:12},
+    {v:'hero', l:'Foto Single — 5 pose pilihan, siap posting', n:5}
+  ];
   state.sheet.forEach((s,i)=>{ if(s.prompt) out.push({v:'sheet:'+i, l:'Tahap 08 · '+s.label, n:1}); });
   state.scenes.forEach((s,i)=>{ if(s.prompt_image) out.push({v:'scene:'+i, l:'Tahap 09 · '+s.nama, n:1}); });
   return out;
 }
 function renderJobs(src){
   if(src==='pose') return POSE_SHEET.map(p=>({label:p.l, prompt:posePrompt(p), ar:'3:4'}));
+  if(src==='hero') return HERO_SHOTS.map(h=>({label:h.l, prompt:heroPrompt(h), ar:h.ar}));
   const ar=IMG_RATIO[ratio()]||'9:16';
   const m=/^(sheet|scene):(\d+)$/.exec(src||'');
   if(!m) return [];
@@ -1906,8 +1947,8 @@ async function runRender(src){
   if(state.render.provider==='proxy'){
     if(!proxyBase()||!String(state.api.imgProxyKey||'').trim()){ toast('Isi dulu Base URL dan API key proxy.','err'); return; }
   } else if(!imgKey()){ toast('Isi dulu API key gambar di tahap 14.','err'); return; }
-  if(src==='pose'&&!String(state.dna.identity_lock||'').trim()){
-    toast('Pose Sheet butuh Identity Lock. Generate dulu tahap 04.','err'); go('dna'); return;
+  if((src==='pose'||src==='hero')&&!String(state.dna.identity_lock||'').trim()){
+    toast('Paket ini butuh Identity Lock. Generate dulu tahap 04.','err'); go('dna'); return;
   }
   const jobs=renderJobs(src);
   if(!jobs.length){ toast('Tidak ada prompt untuk dirender.','err'); return; }
@@ -1945,27 +1986,45 @@ async function runRender(src){
    terlalu lunak untuk dipakai sebagai referensi video. Merender terpisah lalu
    menyusunnya di sini membuat tiap panel tetap resolusi penuh dan tetap bisa
    diunduh satuan. */
+/* Dua gaya sheet, dan pilihannya bukan selera.
+   - RAPAT: tanpa sekat sama sekali, jadi satu kanvas utuh yang menyatu. Ini
+     yang dipakai sebagai image reference ke engine video, karena garis
+     pemisah dan teks label ikut terbaca sebagai isi gambar dan bisa muncul
+     lagi di hasil video.
+   - BERLABEL: ada gutter dan nama pose di tiap panel, untuk dibaca manusia
+     atau dikirim ke editor — JANGAN dipakai sebagai referensi video. */
 function composeGrid(items, cols=3, cellW=512){
+  const berlabel=state.render.sheet==='label';
+  const gap=berlabel?10:0, barH=berlabel?34:0;
   return new Promise((res,rej)=>{
-    const cellH=Math.round(cellW*4/3), gap=10, rows=Math.ceil(items.length/cols);
+    const cellH=Math.round(cellW*4/3), rows=Math.ceil(items.length/cols);
     const cv=document.createElement('canvas');
-    cv.width=cols*cellW+(cols+1)*gap; cv.height=rows*cellH+(rows+1)*gap;
+    cv.width=cols*cellW+(cols+1)*gap;
+    cv.height=rows*(cellH+barH)+(rows+1)*gap;
     const ctx=cv.getContext('2d');
     ctx.fillStyle='#12151B'; ctx.fillRect(0,0,cv.width,cv.height);
     let left=items.length;
     if(!left) return rej(new Error('kosong'));
+    const done=()=>{ if(!--left) res(cv.toDataURL('image/png')); };
     items.forEach((it,i)=>{
       const im=new Image();
       im.onload=()=>{
-        const x=gap+(i%cols)*(cellW+gap), y=gap+Math.floor(i/cols)*(cellH+gap);
+        const x=gap+(i%cols)*(cellW+gap), y=gap+Math.floor(i/cols)*(cellH+barH+gap);
         const s=Math.max(cellW/im.width, cellH/im.height);
         const w=im.width*s, h=im.height*s;
         ctx.save(); ctx.beginPath(); ctx.rect(x,y,cellW,cellH); ctx.clip();
         ctx.drawImage(im, x+(cellW-w)/2, y+(cellH-h)/2, w, h);
         ctx.restore();
-        if(!--left) res(cv.toDataURL('image/png'));
+        if(berlabel){
+          ctx.fillStyle='#0B0E13'; ctx.fillRect(x,y+cellH,cellW,barH);
+          ctx.fillStyle='#CFE9E4';
+          ctx.font='500 17px ui-monospace, monospace';
+          ctx.textBaseline='middle';
+          ctx.fillText(String(i+1).padStart(2,'0')+'  '+it.label, x+12, y+cellH+barH/2, cellW-24);
+        }
+        done();
       };
-      im.onerror=()=>{ if(!--left) res(cv.toDataURL('image/png')); };
+      im.onerror=done;
       im.src=dataURL(it.img);
     });
   });
@@ -2575,6 +2634,7 @@ function mergeLoadedState(d){
   if(state.render.provider!=='proxy') state.render.provider='google';
   if(typeof state.render.proxyModel!=='string'||!state.render.proxyModel) state.render.proxyModel='gemini-2.5-flash-image';
   if(typeof state.render.extra!=='string') state.render.extra='';
+  if(state.render.sheet!=='label') state.render.sheet='rapat';
   /* Project yang tersimpan sebelum perbaikan ini memakai model berbayar
      sebagai default, dan dibiarkan begitu render-nya pasti gagal 429.
      Dipindahkan SEKALI saja lalu ditandai — supaya pengguna yang memang
@@ -3131,9 +3191,15 @@ function renderPanel(){
       '</div>';
 
     h+='<div class="card"><h3>Yang Dirender</h3>'+
-      '<div class="field full"><label>Sumber Prompt</label><select id="renderSrc">'+
+      '<div class="grid two"><div class="field full"><label>Sumber Prompt</label><select id="renderSrc">'+
         srcs.map(s=>'<option value="'+esc(s.v)+'"'+(s.v===cur?' selected':'')+'>'+esc(s.l)+(s.n>1?' ('+s.n+' gambar)':'')+'</option>').join('')+
       '</select></div>'+
+      '<div class="field full"><label>Gaya Character Sheet</label><select data-path="render.sheet">'+
+        '<option value="rapat"'+(r.sheet==='label'?'':' selected')+'>Rapat tanpa sekat — satu kanvas utuh (untuk referensi video)</option>'+
+        '<option value="label"'+(r.sheet==='label'?' selected':'')+'>Berjarak + nama pose — untuk dibaca manusia</option>'+
+      '</select><div class="hint">'+(r.sheet==='label'
+        ? 'Ada tulisan di dalam gambar. <b>Jangan</b> dipakai sebagai referensi engine video — teksnya ikut terbaca sebagai isi gambar dan bisa muncul lagi di hasil video.'
+        : 'Dua belas panel menyatu tanpa garis pemisah dan tanpa teks apa pun, jadi engine video hanya melihat wajahnya.')+'</div></div></div>'+
       '<div class="rowbtns">'+
         '<button class="btn primary" id="btnRender">▶ Render Sekarang</button>'+
         (busy?'<button class="btn" id="btnRenderStop">■ Hentikan</button>':'')+
@@ -3170,8 +3236,9 @@ function renderPanel(){
     }
 
     h+='<div class="card"><h3>Dua cara memakainya</h3><div class="checks">'+
-      '<div class="checkrow"><span class="ic">A</span><span><b>Ambil langsung dari sini.</b> Render Pose Sheet, unduh <b>Character Sheet</b> gabungan, lalu unggah satu file itu ke '+esc(vidEngine().name)+' sebagai image reference. Untuk start frame satu scene tertentu, render sumber "Tahap 09" dan unduh panelnya satuan.</span></div>'+
-      '<div class="checkrow"><span class="ic">B</span><span><b>Salin prompt ke tempat lain.</b> Semua prompt tetap ada di tahap 08 dan 09 lengkap dengan tombol salin, jadi kamu bisa merender di Midjourney, ComfyUI, atau layanan mana pun tanpa key di sini.</span></div>'+
+      '<div class="checkrow"><span class="ic">A</span><span><b>Pose Sheet 12 panel → referensi video.</b> Render, unduh <b>Character Sheet</b>, unggah satu file itu ke '+esc(vidEngine().name)+' sebagai image reference. Cahaya dan latarnya sengaja rata dan identik di kedua belas panel supaya yang terbaca hanya identitasnya.</span></div>'+
+      '<div class="checkrow"><span class="ic">B</span><span><b>Foto Single 5 pose → langsung posting.</b> Ini foto konten yang berdiri sendiri, memakai kamera dan cahaya pilihanmu di tahap 05 — bukan studio rata. Cocok untuk feed, profil, dan thumbnail.</span></div>'+
+      '<div class="checkrow"><span class="ic">C</span><span><b>Salin prompt ke tempat lain.</b> Semua prompt tetap ada di tahap 08 dan 09 lengkap dengan tombol salin, jadi kamu bisa merender di Midjourney, ComfyUI, atau layanan mana pun tanpa key di sini.</span></div>'+
       '<div class="checkrow"><span class="ic">!</span><span>Panel <b>Sedang bicara</b> dan <b>Senyum bergigi</b> memang disertakan untuk lipsync — engine video butuh contoh mulut terbuka, bukan hanya ekspresi netral.</span></div>'+
       '</div></div>';
     p.innerHTML=h;
@@ -3312,7 +3379,7 @@ document.addEventListener('change', e=>{
     if(applyRealismePreset()) toast('Kamera, cahaya, dan grain di tahap 05 disetel ke "'+state.setup.realisme+'".','ok');
     persistState(); renderRail(); renderPanel(); return;
   }
-  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='input.gayaRef'||p==='refmode'||p==='render.provider'||p==='render.model'||p.startsWith('realism.')) renderPanel();
+  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='input.gayaRef'||p==='refmode'||p==='render.provider'||p==='render.model'||p==='render.sheet'||p.startsWith('realism.')) renderPanel();
 });
 document.addEventListener('click', async e=>{
   /* Lightbox: gambar bukan tombol, jadi tidak lolos filter di bawah. */
