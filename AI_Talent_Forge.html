@@ -469,6 +469,7 @@ const F = {
     {k:'shorts',l:'Ide Shorts / TikTok (10 judul)',long:1},
     {k:'longform',l:'Ide Longform YouTube (5 judul)',long:1},
     {k:'seri',l:'Format Serial Berulang',long:1},
+    {k:'mix',l:'Rencana Produksi per Format UGC',long:1},
     {k:'cadence',l:'Jadwal Posting',long:1},
     {k:'monetisasi',l:'Jalur Monetisasi',long:1}
   ],
@@ -710,7 +711,7 @@ const TEETH_DETAIL='teeth with natural enamel translucency and slight irregulari
 /* Negative prompt anti-slop. Catatan penting: JANGAN memasukkan kata bertema
    tekstur (mis. "detailed skin") ke sini — itu justru membuang tekstur yang
    susah payah kita minta. */
-const ANTI_SLOP_NEG='plastic skin, airbrushed, poreless, waxy skin, over-smoothed, beauty filter, instagram filter, heavily retouched, CGI, 3d render, digital painting, illustration, doll-like, mannequin, wax figure, perfectly symmetrical face, glossy skin, uncanny valley, blown-out highlights, oversaturated, HDR look, plastic hair, uniform hair strands, dead eyes, blurry, deformed hands, extra fingers, watermark, text, logo';
+const ANTI_SLOP_NEG='plastic skin, airbrushed, poreless, waxy skin, over-smoothed, beauty filter, instagram filter, heavily retouched, CGI, 3d render, digital painting, illustration, doll-like, mannequin, wax figure, perfectly symmetrical face, glossy skin, uncanny valley, blown-out highlights, oversaturated, HDR look, plastic hair, uniform hair strands, dead eyes, blurry, deformed hands, extra fingers, watermark, text, logo, subtitles, captions, lower-third, on-screen text, graphic typography';
 
 /* Kata-kata yang justru MENARIK model ke arah hasil slop — dilarang dipakai. */
 const SLOP_WORDS=['flawless','perfect skin','perfect face','beautiful','stunning','gorgeous','masterpiece','best quality','8k','4k','ultra hd','hyperrealistic','ultra realistic','highly detailed face','glamorous','magazine cover','supermodel','instagram model'];
@@ -774,6 +775,49 @@ function engineParams(){
   if(e==='flux') return 'guidance '+k.fluxg+(k.extra?' · sisipkan nama file "'+k.extra+'" di prompt agar Flux meniru foto ponsel':'');
   if(e==='sdxl') return 'CFG 3.5–5 · pakai skin/detail LoRA + ADetailer untuk wajah · upscaler yang mempertahankan detail';
   return 'Sertakan negative/larangan anti-slop di prompt karena engine ini tidak punya field negative terpisah.';
+}
+
+/* ---------------- format konten UGC ----------------
+   Ini sumbu yang BERBEDA dari SCENE_USECASE. SCENE_USECASE adalah babak di
+   dalam SATU video (hook → demo → CTA). Yang di bawah ini adalah JENIS video
+   yang diproduksi berulang untuk mengisi kalender — satu talent bisa membuat
+   puluhan dari tiap jenis. Tanpa pembedaan ini, bank ide gampang jadi
+   variasi dari satu format saja. */
+const UGC_FORMATS=[
+  {id:'hiburan', l:'UGC Entertainment', bicara:true,
+   vibe:'Tantangan atau kejutan. Produk jadi punchline-nya, bukan subjek utamanya.',
+   seeds:['tes buta "coba tebak yang mana"','tantangan "gue bayarin kalau berani coba"','reaksi deadpan saat produk masuk frame tiba-tiba','gagal di percobaan pertama lalu berhasil']},
+  {id:'wawancara', l:'Street Interview', bicara:true,
+   vibe:'Wawancara orang asing di tempat umum. Terasa nyata, tingkat kepercayaan paling tinggi.',
+   seeds:['"skincare favorit kamu sekarang apa?" lalu ambil produk dari tas','"kasih nilai 1 sampai 10 dong"','opini buta dulu, brand-nya dibuka belakangan','coba di tengah panas lalu rekam ekspresi pertama']},
+  {id:'unboxing', l:'Unboxing', bicara:false,
+   vibe:'Pengungkapan premium. Tangan, kemasan, dan momen pertama membuka.',
+   seeds:['tarik pita perlahan pada satu botol','paket langganan jatuh lalu dibuka','set hadiah dibuka lapis demi lapis','makro hangtag dan detail label']},
+  {id:'review', l:'Product Review', bicara:true,
+   vibe:'Talking-head jujur. Produk di tangan, komposisi dibaca, diberi peringkat.',
+   seeds:['baca dua bahan lalu angkat alis','bandingkan langsung dengan produk generik','"aku pakai 7 hari" diary review','urutkan beberapa varian di depan kamera']},
+  {id:'asmr', l:'ASMR', bicara:false,
+   vibe:'Dipimpin suara, close-up. Tanpa bicara, bunyi penanganan produk terdengar jelas.',
+   seeds:['makro buka tutup lalu tuang ke gelas berisi es','butiran kondensasi meluncur lalu botol dibuka','denting sendok dan es jatuh','botol diketuk lalu diputar di atas marmer']}
+];
+
+/* ---------------- anggaran kata per durasi ----------------
+   Kepadatan bicara natural sekitar 2,5 kata per detik. Sebelumnya tool cuma
+   punya satu aturan kasar (20–28 kata); tabel ini membuat panjang dialog
+   benar-benar menempel ke durasi klip yang dipilih. */
+const WORDS_PER_SEC=2.5;
+const MAX_CLIP=15;   /* di atas ini hampir semua engine video pecah — dibagi jadi 2 klip */
+const SCRIPT_TIERS=[
+  ['1–8 kata',   '4–5 detik'],
+  ['9–15 kata',  '6–8 detik'],
+  ['16–25 kata', '9–12 detik'],
+  ['26–35 kata', '13–15 detik'],
+  ['36 kata ke atas', 'terlalu panjang — pecah jadi urutan 2 klip']
+];
+function wordBudget(){
+  const d=Math.max(4, Math.min(MAX_CLIP, Math.round(+state.setup.durasi)||8));
+  const ideal=Math.round(d*WORDS_PER_SEC);
+  return { d, ideal, min:Math.max(4,Math.round(ideal*0.7)), max:Math.round(ideal*1.15) };
 }
 
 /* ---------------- perbaikan bagian yang gagal ----------------
@@ -1158,7 +1202,10 @@ const STAGE_TASK={
     '- Ide Longform: 5 judul YouTube 8–15 menit, sertakan sudut pandang unik tiap judul.\n'+
     '- Format serial: 2 format berulang yang bisa jadi ciri khas channel.\n'+
     '- Jadwal posting: realistis untuk 1 orang operator, sebutkan jumlah per minggu per format.\n'+
-    '- Monetisasi: urutkan dari yang paling cepat menghasilkan ke yang paling lambat, sertakan syaratnya.',
+    '- Monetisasi: urutkan dari yang paling cepat menghasilkan ke yang paling lambat, sertakan syaratnya.\n'+
+    '- FIELD mix: rencana produksi yang dibagi ke lima format UGC berikut. Untuk SETIAP format, tulis porsi per bulan dan 2 ide konkret yang spesifik ke niche dan produk ini — bukan mengulang contoh yang saya beri.\n'+
+    UGC_FORMATS.map(f=>'  * '+f.l+' ('+(f.bicara?'ada dialog':'tanpa dialog')+') — '+f.vibe+' Contoh arah: '+f.seeds.slice(0,2).join('; ')+'.').join('\n')+'\n'+
+    '  Catatan: format tanpa dialog (Unboxing, ASMR) tidak butuh naskah tapi butuh arahan bunyi yang spesifik.',
   compliance:()=>
     'TUGAS: Susun aturan kepatuhan untuk talent AI ini. Ini WAJIB karena talent bukan manusia nyata dan dipakai untuk konten berbayar/affiliate.\n'+
     'Konteks regulasi yang harus tercermin:\n'+
@@ -1264,7 +1311,9 @@ function promptScenes(fb){
     '- Setiap scene wajib menyebut wardrobe yang dipakai, dan wardrobe_lock harus tetap muncul.\n'+
     '- prompt_image: BAHASA INGGRIS, sintaks '+ie.name+'. Ini frame pembuka scene.\n'+
     '- prompt_video: BAHASA INGGRIS, sintaks '+ve.name+'. '+(ve.audio?'Sertakan dialog dalam tanda kutip dan deskripsi audio/ambience karena engine ini punya audio native.':'JANGAN tulis dialog di dalam prompt video karena engine ini tanpa audio native — fokus ke gerakan, ekspresi, dan kamera saja.')+'\n'+
-    '- dialog: tulis dalam '+state.setup.bahasa+', gaya bicara natural sesuai Voice & Speech, panjang pas untuk '+(state.setup.durasi||8)+' detik (sekitar 20–28 kata). Pakai filler words khas talent.\n'+
+    '- dialog: tulis dalam '+state.setup.bahasa+', gaya bicara natural sesuai Voice & Speech. Pakai filler words khas talent.\n'+
+    '  ANGGARAN KATA: kepadatan bicara natural sekitar '+WORDS_PER_SEC+' kata per detik, jadi untuk '+wordBudget().d+' detik targetkan '+wordBudget().min+'–'+wordBudget().max+' kata (ideal '+wordBudget().ideal+'). Lebih panjang dari itu memaksa bicara cepat, dan bicara cepat membuat sinkronisasi bibir meleset.\n'+
+    '  Kalau sebuah ide benar-benar butuh lebih dari '+MAX_CLIP+' detik, JANGAN dipaksa jadi satu klip — pecah jadi dua scene berurutan dan beri nama "(1/2)" serta "(2/2)".\n'+
     '  Khusus untuk lipsync: pakai kalimat PENDEK dan sederhana dengan tempo bicara normal. Kalimat panjang berbelit dan bicara cepat membuat sinkronisasi bibir meleset dan hasilnya langsung terbaca AI.\n'+
 
     '- disiplin: tentukan takaran gerak scene ini, isi dengan salah satu dari "tenang", "sedang", atau "dinamis".\n'+
@@ -1274,6 +1323,7 @@ function promptScenes(fb){
     '  Scene b-roll tanpa dialog boleh "dinamis".\n'+
     '- Scene pertama wajib punya hook kuat di 3 detik pertama: sebutkan hook visual DAN hook verbal.\n'+
     '- Scene terakhir wajib berisi CTA.\n'+
+    '- TANPA TEKS TERGAMBAR: prompt gambar dan video WAJIB melarang teks, caption, subtitle, dan lower-third muncul di dalam frame. Teks hasil generate hampir selalu rusak, dan caption yang benar ditambahkan saat editing — bukan dibakar ke dalam video. Sertakan larangan ini di setiap prompt.\n'+
     '- setting: lokasi konkret yang masuk akal untuk '+state.setup.pasar+', bukan lokasi generik.\n\n'+
 
     'SLOT WAJIB TIAP SCENE\n'+
@@ -1532,6 +1582,18 @@ function audit(){
   const turn=state.sheet.filter(x=>/^(front|three|side|back)$/.test(x.id));
   const tSeeds=[...new Set(turn.map(x=>String(x.seed||'').trim()).filter(Boolean))];
   if(turn.length && tSeeds.length) push(tSeeds.length===1,'Seed turnaround seragam'+(tSeeds.length>1?' — ada '+tSeeds.length+' seed berbeda, pencahayaan dan latar akan meleset':''), true);
+  if(state.scenes.length){
+    const wb=wordBudget();
+    const overrun=state.scenes.filter(x=>{ const w=String(x.dialog||'').trim().split(/\s+/).filter(Boolean).length; return w>wb.max; });
+    push(overrun.length===0, overrun.length
+      ? overrun.length+' scene dialognya melebihi '+wb.max+' kata untuk '+wb.d+' detik — akan memaksa bicara cepat dan merusak lipsync'
+      : 'Panjang dialog semua scene pas untuk '+wb.d+' detik (maks '+wb.max+' kata)', true);
+    const textLeak=state.scenes.filter(x=>!/no text|without text|no caption|no subtitle|no on-screen/i.test((x.prompt_image||'')+' '+(x.prompt_video||'')));
+    push(textLeak.length===0, textLeak.length
+      ? textLeak.length+' scene belum melarang teks tergambar di dalam frame'
+      : 'Semua scene melarang teks tergambar di dalam frame', true);
+  }
+  push(!!state.content.mix,'Rencana produksi per format UGC sudah ada', true);
   push(!!state.content.pilar,'Content pillars sudah disusun');
   push(!!state.compliance.disclosure_id && !!state.compliance.disclosure_en,'Disclosure AI tersedia dalam 2 bahasa');
   push(!!state.compliance.checklist,'Checklist sebelum posting sudah ada');
@@ -1827,6 +1889,8 @@ function mergeLoadedState(d){
   /* setelan realisme lama / rusak dikembalikan ke opsi yang valid */
   Object.keys(REALISM).forEach(g=>{ if(!REALISM[g].opt[state.realism[g]]) state.realism[g]=Object.keys(REALISM[g].opt)[0]; });
   if(!MOTION.opt[state.realism.gerak]) state.realism.gerak='penuh';
+  /* project lama bisa menyimpan durasi di atas batas engine */
+  state.setup.durasi=Math.max(4, Math.min(MAX_CLIP, Math.round(+state.setup.durasi)||8));
   /* project lama menyimpan scene tanpa slot aksi/komposisi/beats */
   state.scenes=state.scenes.map((x,i)=>normScene(x,i));
 }
@@ -1976,7 +2040,7 @@ function renderPanel(){
       '<div class="field"><label>Gaya Realisme</label><select data-path="setup.realisme">'+opts(REALISME,s.realisme)+'</select></div>'+
       '<div class="field"><label>Rasio Frame</label><select data-path="setup.rasio">'+opts(['9:16','16:9','1:1','4:5'],s.rasio)+'</select></div>'+
       '<div class="field"><label>Jumlah Scene di Scene Pack</label><input type="number" min="3" max="10" data-path="setup.jumlahScene" value="'+esc(s.jumlahScene)+'"></div>'+
-      '<div class="field"><label>Durasi per Scene (detik)</label><input type="number" min="5" max="20" data-path="setup.durasi" value="'+esc(s.durasi||8)+'"></div>'+
+      '<div class="field"><label>Durasi per Scene (detik)</label><input type="number" min="4" max="15" data-path="setup.durasi" value="'+esc(s.durasi||8)+'"></div>'+
     '</div></div>'+
     '';
   }
@@ -2110,7 +2174,27 @@ function renderPanel(){
   else if(currentStep==='dna')     p.innerHTML=stageAIPanel('dna','04','Character DNA','Cetak biru fisik yang mengunci wajah. Tahap paling penting — Identity Lock dari sini dipakai di setiap prompt gambar dan video.');
   else if(currentStep==='wardrobe')p.innerHTML=stageAIPanel('wardrobe','06','Wardrobe & Style','Sistem pakaian agar tampilan tetap khas tapi tidak monoton. Wardrobe Lock jadi penanda kedua setelah wajah.');
   else if(currentStep==='voice')   p.innerHTML=stageAIPanel('voice','07','Voice & Speech','Identitas suara untuk voice over dan lipsync, lengkap dengan prompt siap tempel ke tool voice design.');
-  else if(currentStep==='content') p.innerHTML=stageAIPanel('content','11','Content Engine','Positioning, pilar konten, dan bank ide Shorts serta longform supaya talent ini punya bahan produksi berkelanjutan.');
+  else if(currentStep==='content'){
+    p.innerHTML=stageAIPanel('content','11','Content Engine','Positioning, pilar konten, dan bank ide Shorts serta longform supaya talent ini punya bahan produksi berkelanjutan.');
+    /* Referensi format disisipkan sebelum navigasi tahap di akhir panel. */
+    const ref='<div class="card"><h3>Lima Format UGC <span class="tag">sumbu produksi</span></h3>'+
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Ini berbeda dari babak di dalam satu video. Ini <b>jenis</b> video yang diproduksi berulang untuk mengisi kalender — satu talent bisa membuat puluhan dari tiap jenis. Tanpa memisahkan keduanya, bank ide gampang jadi variasi dari satu format saja.</p>'+
+      '<div class="scroll-x"><table class="mini"><tr><th>Format</th><th style="width:78px">Dialog</th><th>Vibe &amp; contoh arah</th></tr>'+
+      UGC_FORMATS.map(f=>'<tr><th>'+esc(f.l)+'</th>'+
+        '<td><span class="pill '+(f.bicara?'ok':'info')+'">'+(f.bicara?'ada':'tanpa')+'</span></td>'+
+        '<td>'+esc(f.vibe)+'<div class="hint" style="margin-top:5px">'+esc(f.seeds.join(' · '))+'</div></td></tr>').join('')+
+      '</table></div></div>';
+    const wb=wordBudget();
+    const dur='<div class="card"><h3>Anggaran Kata per Durasi <span class="tag">'+wb.d+' detik</span></h3>'+
+      '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Kepadatan bicara natural sekitar '+WORDS_PER_SEC+' kata per detik. Untuk durasi yang kamu pilih, targetnya <b>'+wb.min+'–'+wb.max+' kata</b> (ideal '+wb.ideal+'). Lebih panjang memaksa bicara cepat, dan itu merusak sinkronisasi bibir.</p>'+
+      '<div class="scroll-x"><table class="mini"><tr><th>Panjang naskah</th><th>Durasi klip</th></tr>'+
+      SCRIPT_TIERS.map(r=>'<tr><th>'+esc(r[0])+'</th><td>'+esc(r[1])+'</td></tr>').join('')+
+      '</table></div>'+
+      '<div class="hint" style="margin-top:9px">Batas keras '+MAX_CLIP+' detik per klip — di atas itu hampir semua engine video pecah. Ide yang lebih panjang dipecah jadi dua scene "(1/2)" dan "(2/2)".</div></div>';
+    /* stepNav baru ditambahkan setelah rantai if/else selesai, jadi menaruh
+       referensi di akhir sini sudah menempatkannya tepat sebelum navigasi. */
+    p.insertAdjacentHTML('beforeend', ref+dur);
+  }
   else if(currentStep==='compliance') p.innerHTML=stageAIPanel('compliance','12','Compliance','Aturan pengungkapan AI dan afiliasi. Talent ini bukan manusia nyata — pengungkapan yang jelas melindungi kamu dan akunmu.');
 
   else if(currentStep==='sheet'){
