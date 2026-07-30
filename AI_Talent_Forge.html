@@ -90,6 +90,7 @@ nav.rail{
 .dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--line2)}
 .dot.ok{background:var(--green)}
 .dot.dirty{background:var(--amber)}
+.dot.bad{background:var(--red)}
 .railgroup{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);padding:12px 9px 5px}
 
 main{overflow-y:auto;padding:22px 26px 60px}
@@ -1526,7 +1527,7 @@ async function runStage(id, fb){
     }
     state.done[id]=true; delete state.dirty[id];
     markDownstream(id);
-    persistState(); renderProjLabel();
+    bumpAudit(); persistState(); renderProjLabel();
     toast((STAGE_LABEL[id]||id)+' selesai.','ok');
   }catch(e){
     toast(e.message,'err');
@@ -1557,7 +1558,7 @@ async function runAll(){
         state[id]=o;
       }
       state.done[id]=true; delete state.dirty[id];
-      persistState(); renderRail();
+      bumpAudit(); persistState(); renderRail();
     }catch(e){
       setBusy(false); render();
       toast('Berhenti di '+(STAGE_LABEL[id]||id)+': '+e.message,'err');
@@ -1569,6 +1570,13 @@ async function runAll(){
 }
 
 /* ---------------- audit ---------------- */
+let auditVersion=0, auditCache=null, auditCacheV=-1;
+function bumpAudit(){ auditVersion++; }
+function auditCached(){
+  if(auditCacheV!==auditVersion){ auditCache=audit(); auditCacheV=auditVersion; }
+  return auditCache;
+}
+
 function audit(){
   const out=[];
   const push=(ok,msg,warn)=>out.push({ok,msg,warn:!!warn});
@@ -1978,6 +1986,7 @@ function mergeLoadedState(d){
   if(Array.isArray(d.sheet)) state.sheet=d.sheet;
   if(Array.isArray(d.scenes)) state.scenes=d.scenes;
   if(Array.isArray(d.repair)) state.repair=d.repair.map((x,i)=>normRepair(x,i)); else state.repair=[];
+  bumpAudit();
   if(!Array.isArray(state.uploads.refs)) state.uploads.refs=[];
   /* setelan realisme lama / rusak dikembalikan ke opsi yang valid */
   Object.keys(REALISM).forEach(g=>{ if(!REALISM[g].opt[state.realism[g]]) state.realism[g]=Object.keys(REALISM[g].opt)[0]; });
@@ -2012,12 +2021,36 @@ function loadProject(file){
 }
 
 /* ---------------- render ---------------- */
+/* Sebelumnya hanya tahap ai:true plus setup/input yang diberi status, sehingga
+   Realisme dan Audit & Ekspor abu-abu selamanya apa pun isinya — terbaca
+   seperti "belum selesai" padahal tidak ada yang salah. */
+function railStatus(s){
+  if(s.ai) return stageStatus(s.id);
+  if(s.id==='setup'||s.id==='input') return hasBasics(s.id)?'ok':'';
+  if(s.id==='realism') return 'ok';   /* selalu siap: default valid, lock langsung tersusun */
+  if(s.id==='export'){
+    /* Project yang belum digenerate memang belum lolos apa-apa — menandainya
+       merah hanya menakuti tanpa sebab. Titik baru hidup setelah ada isi. */
+    const adaIsi=!!(state.persona.nama_lengkap||state.dna.identity_lock||state.sheet.length||state.scenes.length);
+    if(!adaIsi) return '';
+    const gagal=auditCached().filter(x=>!x.ok);
+    if(!gagal.length) return 'ok';
+    return gagal.some(x=>!x.warn) ? 'bad' : 'dirty';
+  }
+  return '';
+}
+function railHint(st){
+  return st==='ok'   ? 'siap'
+       : st==='dirty'? 'ada peringatan / perlu regenerasi'
+       : st==='bad'  ? 'ada pemeriksaan yang gagal'
+       : 'belum ada isi';
+}
 function renderRail(){
   let html='', lastGroup='';
   STEPS.forEach(s=>{
     if(s.group!==lastGroup){ html+='<div class="railgroup">'+s.group+'</div>'; lastGroup=s.group; }
-    const st=s.ai?stageStatus(s.id):(s.id==='setup'||s.id==='input'?(hasBasics(s.id)?'ok':''):'');
-    html+='<button class="railitem'+(currentStep===s.id?' on':'')+'" data-go="'+s.id+'">'+
+    const st=railStatus(s);
+    html+='<button class="railitem'+(currentStep===s.id?' on':'')+'" data-go="'+s.id+'" title="'+esc(s.no+' '+s.label+' — '+railHint(st))+'">'+
       '<span class="no">'+s.no+'</span><span class="lbl">'+s.label+'</span>'+
       '<span class="dot'+(st?' '+st:'')+'"></span></button>';
   });
@@ -2545,6 +2578,7 @@ document.addEventListener('input', e=>{
   }
   /* Realism Lock ikut tertanam di dalam prompt sheet & scenes, jadi mengubah
      setelan realisme membuat prompt yang sudah jadi kedaluwarsa. */
+  if(p.startsWith('realism.')||p==='setup.durasi') bumpAudit();
   if(p.startsWith('realism.')){
     ['sheet','scenes','repair'].forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
     renderRail();
