@@ -1083,19 +1083,38 @@ const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|ex
    jadi yang bisa dipercaya hanya details-nya, bukan kalimatnya. */
 function quotaInfo(d){
   const det=(d&&d.error&&d.error.details)||[];
-  let hard=false, waitMs=0;
+  let hard=false, waitMs=0; const ids=[];
   det.forEach(x=>{
     (x.violations||[]).forEach(v=>{
       const q=String(v.quotaValue!=null?v.quotaValue:(v.quota_limit_value!=null?v.quota_limit_value:''));
       if(q==='0') hard=true;
+      const id=String(v.quotaId||v.quota_id||v.quotaMetric||v.quota_metric||'');
+      if(id) ids.push(id);
     });
     const rd=x.retryDelay||x.retry_delay;
     if(rd){ const m=/([\d.]+)s/.exec(String(rd)); if(m) waitMs=Math.min(60000, Math.round(parseFloat(m[1])*1000)+500); }
   });
-  return {hard, waitMs};
+  const id=ids.join(' ');
+  return {
+    hard, waitMs, id,
+    /* quotaId Google menyebut satuannya sendiri — jauh lebih bisa dipercaya
+       daripada menebak dari kalimat error, yang bunyinya sama untuk semua. */
+    perHari:/PerDay/i.test(id), perMenit:/PerMinute/i.test(id),
+    /* ada-tidaknya detail menentukan apakah kita berhak menyimpulkan apa pun */
+    adaDetail:det.length>0
+  };
+}
+/* Error dengan konteks mentah menempel. Tanpa ini, tafsiran tool menimpa
+   pesan asli penyedia, dan kalau tafsirannya meleset penggunanya kehilangan
+   satu-satunya petunjuk yang benar. */
+function apiError(label, msg, status, q, raw){
+  const e=new Error(label+': '+msg);
+  e.status=status; e.quota=q||null; e.rawMsg=msg;
+  e.rawBody=raw?String(JSON.stringify(raw)).slice(0,400):'';
+  return e;
 }
 async function postJSON(url, opts, label){
-  let lastMsg='', nextWait=0;
+  let lastMsg='', nextWait=0, lastQuota=null, lastBody=null;
   for(let att=0; att<3; att++){
     if(att){
       setBusy(true,'Server AI sibuk — mencoba ulang ('+att+'/2)…');
@@ -1110,15 +1129,15 @@ async function postJSON(url, opts, label){
     if(status>=200&&status<300&&!errMsg) return d;
     lastMsg=errMsg||('HTTP '+status);
     if(status===429){
-      const q=quotaInfo(d);
-      /* Mengulang permintaan berkuota nol tiga kali hanya membuang waktu —
-         dan pada render 12 panel, membuangnya dua belas kali. */
-      if(q.hard) throw new Error(label+': KUOTA-NOL '+lastMsg);
-      nextWait=q.waitMs;
+      lastQuota=quotaInfo(d); lastBody=d;
+      /* Mengulang permintaan berkuota nol atau kuota HARIAN tiga kali hanya
+         membuang waktu — keduanya tidak akan pulih dalam hitungan detik. */
+      if(lastQuota.hard||lastQuota.perHari) throw apiError(label,lastMsg,429,lastQuota,d);
+      nextWait=lastQuota.waitMs;
     }
-    if(!(status===429||status>=500||TRANSIENT.test(lastMsg))) throw new Error(label+': '+lastMsg);
+    if(!(status===429||status>=500||TRANSIENT.test(lastMsg))) throw apiError(label,lastMsg,status,lastQuota,d);
   }
-  throw new Error(label+': '+lastMsg+' — server sedang penuh. Tunggu 1–2 menit, atau pindah provider (mis. Groq) lewat ⚙ API.');
+  throw apiError(label, lastMsg+(lastQuota?'':' — server sedang penuh. Tunggu 1–2 menit, atau pindah provider (mis. Groq) lewat ⚙ API.'), 429, lastQuota, lastBody);
 }
 
 const OA_PRESETS={
@@ -1766,40 +1785,63 @@ const IMG_MODELS={
    di sana dan akan ditolak, jadi dipetakan ke tetangga terdekat. */
 const IMG_RATIO={'9:16':'9:16','16:9':'16:9','1:1':'1:1','4:5':'3:4','4:3':'4:3','3:4':'3:4'};
 function imgKey(){ return String(state.api.imgKey||state.api.geminiKey||'').trim(); }
-let lastImgAt=0;
+let lastImgAt=0, imgCallCount=0;
 
 /* Pesan mentah Google untuk kuota nol berbunyi "You exceeded your current
    quota, please check your plan and billing details" — terbaca seperti API
    key yang rusak, sehingga orang membuat key baru berkali-kali padahal
    penyebabnya modelnya memang tidak punya jatah gratis sama sekali. */
-function imgErr(msg, model){
+/* Tafsiran tool adalah DUGAAN, bukan vonis, jadi pesan asli penyedia selalu
+   ikut ditampilkan. Pelajaran dari uji nyata: satu panggilan Tes Koneksi
+   dijawab "terlalu cepat untuk 10 gambar/menit" — mustahil, karena baru satu
+   panggilan. Tafsiran yang meleset menimpa satu-satunya petunjuk yang benar.
+   Sekarang cabang yang tidak bisa dibuktikan menyebut dirinya dugaan, dan
+   klaim "terlalu cepat" hanya keluar kalau memang ada panggilan sebelumnya. */
+function imgErr(e, model){
+  const msg=String((e&&e.rawMsg)||(e&&e.message)||e||'');
+  const q=(e&&e.quota)||null;
+  const body=(e&&e.rawBody)||'';
   const berbayar=(IMG_MODELS[model]||{}).tier==='bayar';
+  const adaPanggilanSebelumnya=imgCallCount>1;
+  const asli='\n\nPesan asli dari server: '+msg+(q&&q.id?('\nQuota ID: '+q.id):'')+
+             (body&&!q?('\nBalasan mentah: '+body):'');
+
   if(model==='proxy'){
-    if(/KUOTA-NOL|429|quota|budget|RESOURCE_EXHAUSTED/i.test(msg))
-      return 'Proxy menolak karena kuota atau budget: '+msg.replace('KUOTA-NOL ','');
     if(/Predict\/RawPredict|cannot be accessed through Vertex Predict/i.test(msg))
-      return 'Proxy merutekan model ini ke Vertex Predict API yang tidak mendukung Gemini. Ini bug yang diketahui di LiteLLM untuk /images/generations. Pastikan nama model yang kamu isi BUKAN diawali "imagen" supaya tool memakai /chat/completions.';
+      return 'Proxy merutekan model ini ke Vertex Predict API yang tidak mendukung Gemini — bug yang diketahui di LiteLLM. Pastikan nama model BUKAN diawali "imagen" supaya tool memakai /chat/completions.'+asli;
     if(/401|403|Unauthorized|invalid.*key|authentication/i.test(msg))
-      return 'API key proxy ditolak. Periksa key dan Base URL-nya (harus berakhir di /v1).';
+      return 'API key proxy ditolak. Periksa key dan Base URL-nya (harus berakhir di /v1).'+asli;
     if(/404|not found|No deployments|does not exist/i.test(msg))
-      return 'Nama model tidak dikenal di proxy itu. Salin persis dari kolom "Model Information" di dashboard proxy — bukan teks abu-abu di bawahnya.';
-    return msg;
+      return 'Nama model tidak dikenal di proxy itu. Salin persis dari kolom "Model Information" di dashboard proxy — bukan teks abu-abu di bawahnya.'+asli;
+    if(e&&e.status===429)
+      return 'Proxy menolak karena kuota atau budget.'+asli;
+    return msg+(body?('\n\nBalasan mentah: '+body):'');
   }
-  if(/KUOTA-NOL/.test(msg)){
-    return berbayar
-      ? 'Model ini berjatah NOL di tier gratis — butuh billing aktif di Google Cloud. Membuat API key baru tidak akan menolong, hasilnya akan sama persis. Ganti Model ke "Nano Banana (Gemini 2.5 Flash Image) — GRATIS" di atas, lalu render ulang.'
-      : 'Jatah harian tier gratis sudah habis (500 gambar/hari per project Google Cloud, bukan per key). Tunggu sampai reset, atau pakai project Google Cloud lain.';
+
+  if(e&&e.status===429){
+    if(q&&q.hard)
+      return (berbayar
+        ? 'Model ini berjatah NOL di tier gratis — butuh billing aktif di Google Cloud. Membuat API key baru tidak akan menolong. Ganti Model ke "Nano Banana (Gemini 2.5 Flash Image) — GRATIS", lalu ulangi.'
+        : 'Google melaporkan jatahmu untuk model ini NOL. Biasanya karena project Google Cloud-nya belum mengaktifkan Generative Language API, atau modelnya memang tidak tersedia di region akunmu.')+asli;
+    if(q&&q.perHari)
+      return 'Jatah HARIAN sudah habis (tier gratis 500 gambar/hari, dihitung per project Google Cloud — bukan per API key). Tunggu reset, atau pakai project Google Cloud lain.'+asli;
+    if(q&&q.perMenit)
+      return adaPanggilanSebelumnya
+        ? 'Kena batas per menit. Tunggu satu menit lalu klik Render Sekarang lagi — panel yang sudah jadi tidak hilang.'+asli
+        /* Batas per menit di panggilan PERTAMA berarti jatahnya dipakai dari
+           luar aplikasi ini — jangan menyuruh pengguna memperlambat sesuatu
+           yang belum sempat dia lakukan. */
+        : 'Google menyebut batas PER MENIT, tapi ini panggilan pertama di sesi ini — jadi bukan kamu yang merender terlalu cepat. Berarti jatah per menit project itu terpakai dari luar aplikasi ini: percobaan sebelumnya yang masih terhitung, atau aplikasi lain memakai key/project yang sama. Tunggu satu menit penuh lalu coba lagi; kalau tetap begini, jatah project-nya memang nol dan butuh billing aktif.'+asli;
+    /* Tidak ada penanda yang bisa dipercaya: jangan mengarang sebab. */
+    return 'Google menolak dengan 429 tapi tidak menyebutkan jatah mana yang habis'+
+      (adaPanggilanSebelumnya?'' : ', dan ini panggilan PERTAMA di sesi ini — jadi bukan karena kamu merender terlalu cepat')+
+      '. Kemungkinan terbesar, dari yang paling sering: (1) model gambar butuh billing aktif di project Google Cloud milik key ini; (2) jatah harian project sudah habis dari percobaan sebelumnya — jatah dihitung per project, bukan per key; (3) Generative Language API belum diaktifkan di project itu. Cek kuota aslinya di aistudio.google.com → Settings → Plan information.'+asli;
   }
-  if(/429|quota|rate limit|RESOURCE_EXHAUSTED/i.test(msg)){
-    return 'Terlalu cepat untuk batas 10 gambar/menit di tier gratis. Tunggu satu menit lalu klik Render Sekarang lagi — panel yang sudah jadi tidak hilang.';
-  }
-  if(/API key not valid|API_KEY_INVALID|401|403|PERMISSION_DENIED/i.test(msg)){
-    return 'API key ditolak. Pastikan key dibuat di aistudio.google.com/apikey dan Generative Language API aktif di project-nya.';
-  }
-  if(/not found|NOT_FOUND|is not supported/i.test(msg)){
-    return 'Model ini tidak tersedia untuk key kamu. Ganti ke "Nano Banana (Gemini 2.5 Flash Image) — GRATIS".';
-  }
-  return msg;
+  if(/API key not valid|API_KEY_INVALID|PERMISSION_DENIED/i.test(msg)||(e&&(e.status===401||e.status===403)))
+    return 'API key ditolak. Pastikan key dibuat di aistudio.google.com/apikey dan Generative Language API aktif di project-nya.'+asli;
+  if(/not found|NOT_FOUND|is not supported/i.test(msg)||(e&&e.status===404))
+    return 'Model ini tidak tersedia untuk key kamu. Ganti ke "Nano Banana (Gemini 2.5 Flash Image) — GRATIS".'+asli;
+  return msg+(body?('\n\nBalasan mentah: '+body):'');
 }
 
 /* Satu panggilan = satu gambar. refs dipakai untuk mengunci identitas:
@@ -1871,9 +1913,9 @@ async function genImage(prompt, ar, refs){
        kecil tetap dipertahankan supaya tidak membanjiri antrean penyedia. */
     const sisa=1200-(Date.now()-lastImgAt);
     if(lastImgAt&&sisa>0) await new Promise(r=>setTimeout(r,sisa));
-    lastImgAt=Date.now();
+    lastImgAt=Date.now(); imgCallCount++;
     try{ return await genImageProxy(prompt, refs); }
-    catch(e){ throw new Error(imgErr(e.message||String(e), 'proxy')); }
+    catch(e){ throw new Error(imgErr(e, 'proxy')); }
   }
   const key=imgKey();
   if(!key) throw new Error('API key gambar belum diisi.');
@@ -1895,11 +1937,11 @@ async function genImage(prompt, ar, refs){
   const gap=(IMG_MODELS[model]||{}).tier==='gratis' ? 6500 : 1200;
   const sisa=gap-(Date.now()-lastImgAt);
   if(lastImgAt&&sisa>0) await new Promise(r=>setTimeout(r,sisa));
-  lastImgAt=Date.now();
+  lastImgAt=Date.now(); imgCallCount++;
   let d;
   try{
     d=await postJSON(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},'Image');
-  }catch(e){ throw new Error(imgErr(e.message||String(e), model)); }
+  }catch(e){ throw new Error(imgErr(e, model)); }
   const blocked=(d.promptFeedback&&d.promptFeedback.blockReason)||'';
   const c=(d.candidates&&d.candidates[0])||null;
   const ps=(c&&c.content&&c.content.parts)||[];
@@ -3213,8 +3255,9 @@ function renderPanel(){
       /* Pesan gagal ditampilkan UTUH di sini, bukan cuma terpotong di dalam
          sel — inilah satu-satunya tempat penyebabnya benar-benar terbaca. */
       const errs=[...new Set(renderStore.items.filter(x=>x.state==='gagal').map(x=>x.err))];
-      if(errs.length) h+='<div class="note" style="border-color:var(--red);color:var(--text)"><b>Kenapa gagal:</b> '+
-        errs.map(esc).join('<br><br>')+'</div>';
+      if(errs.length) h+='<div class="note" style="border-color:var(--red);color:var(--text);white-space:pre-wrap">'+
+        '<b>Kenapa gagal:</b> '+errs.map(esc).join('\n\n———\n\n')+'</div>'+
+        '<div class="rowbtns"><button class="btn sm" id="btnCopyErr">⧉ Salin pesan error</button></div>';
       h+='<div class="rgrid">'+
         renderStore.items.map((it,i)=>{
           if(it.state==='ok') return '<div class="rcell"><img src="'+dataURL(it.img)+'" data-zoom="'+i+'" alt="'+esc(it.label)+'">'+
@@ -3450,6 +3493,12 @@ document.addEventListener('click', async e=>{
   if(t.id==='btnCopyTalent'){
     try{ await navigator.clipboard.writeText(talentBlock()); toast('Talent Block tersalin — tempel ke Framework Brain Director.','ok'); }
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
+  }
+  if(t.id==='btnCopyErr'){
+    const txt=[...new Set(renderStore.items.filter(x=>x.state==='gagal').map(x=>x.err))].join('\n\n———\n\n');
+    try{ await navigator.clipboard.writeText(txt); toast('Pesan error tersalin.','ok'); }
+    catch(_){ toast('Gagal menyalin — blok teksnya lalu salin manual.','err'); }
+    return;
   }
   if(t.id==='btnTestImg'){
     setBusy(true,'Menguji koneksi gambar…');
