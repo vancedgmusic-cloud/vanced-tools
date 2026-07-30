@@ -153,6 +153,9 @@ main{overflow-y:auto;padding:22px 26px 60px}
 }
 @media(max-width:520px){
   .top .btn.sm{padding:6px 9px;font-size:11.5px}
+  /* "Siap" tidak membawa informasi — teksnya muncul hanya saat memproses */
+  .statusline .txt{display:none}
+  .statusline.busy .txt{display:inline}
   .stepnav{flex-direction:column}
   .stepnav a.next{text-align:left}
 }
@@ -210,6 +213,22 @@ footer .hintline{font-size:11.5px;color:var(--faint);flex:1;min-width:120px}
 .toast.err{border-left-color:var(--red)}
 @keyframes slide{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
 
+.projrow{display:flex;gap:7px;align-items:stretch;margin-bottom:7px}
+.projrow .pick{
+  flex:1;min-width:0;text-align:left;display:flex;flex-direction:column;gap:2px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:9px 11px;color:var(--text);transition:.13s;
+}
+.projrow .pick:hover:not(:disabled){border-color:var(--line2);background:var(--panel3)}
+.projrow.on .pick{border-color:#57D0BE55;background:var(--teal-soft);cursor:default;opacity:1}
+.projrow .pick:disabled{cursor:default}
+/* Nama boleh terpotong, badge "aktif" tidak — badge di luar span yang truncate. */
+.projrow .row1{display:flex;align-items:center;gap:6px;min-width:0}
+.projrow .nm{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.projrow .row1 .pill{flex:none}
+.projrow .meta{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.04em}
+.projrow .btn{flex:none;padding:0 10px}
+
 .empty{text-align:center;padding:40px 20px;color:var(--faint)}
 .empty p{font-size:13px;margin-bottom:14px;max-width:52ch;margin-left:auto;margin-right:auto;line-height:1.6}
 
@@ -236,10 +255,9 @@ table.mini td{color:var(--text)}
       </div>
     </div>
     <div class="grow"></div>
-    <div class="statusline" id="statusline"><span class="recdot" id="recdot"></span><span id="statustext">Siap</span></div>
+    <button class="btn sm" id="btnProj" title="Ganti atau buat project"><span id="projLabel">Project</span> ▾</button>
+    <div class="statusline" id="statusline"><span class="recdot" id="recdot"></span><span class="txt" id="statustext">Siap</span></div>
     <button class="btn sm" id="btnApi">⚙ API</button>
-    <button class="btn sm" id="btnSave">↓ Simpan</button>
-    <button class="btn sm" id="btnLoad">↑ Muat</button>
     <button class="btn sm primary" id="btnGenAll">⚡ Generate Semua</button>
     <input type="file" id="fileInput" accept="application/json" hidden>
   </header>
@@ -251,9 +269,8 @@ table.mini td{color:var(--text)}
   </div>
 
   <footer class="bot">
-    <div class="hintline" id="footHint">Tersimpan otomatis di browser ini. Ekspor project ke .json untuk cadangan.</div>
-    <button class="btn sm ghost" id="btnClearLocal">Reset Project</button>
-  </footer>
+    <div class="hintline" id="footHint">Tersimpan otomatis per project di browser ini. Buka menu <b>Project</b> untuk ganti project, atau ekspor <code>.json</code> sebagai cadangan.</div>
+    </footer>
 </div>
 
 <div class="overlay" id="apiOverlay">
@@ -267,6 +284,21 @@ table.mini td{color:var(--text)}
       <button class="btn primary sm" id="btnTestApi">Tes Koneksi</button>
       <button class="btn sm" id="btnCloseApi">Tutup</button>
     </div>
+  </div>
+</div>
+
+<div class="overlay" id="projOverlay">
+  <div class="modal">
+    <h3>Project</h3>
+    <div class="sub">Tiap talent disimpan terpisah di browser perangkat ini. Beralih tidak menghapus apa pun.</div>
+    <div class="rowbtns" style="margin-bottom:14px">
+      <button class="btn primary sm" id="btnProjNew">+ Project baru</button>
+      <button class="btn sm" id="btnSave">↓ Ekspor .json</button>
+      <button class="btn sm" id="btnLoad">↑ Impor .json</button>
+      <button class="btn sm" id="btnProjClose">Tutup</button>
+    </div>
+    <div id="projList"></div>
+    <div class="note" id="projNote"></div>
   </div>
 </div>
 
@@ -327,7 +359,14 @@ const state = {
   sheet:[], scenes:[],
   done:{}, dirty:{}
 };
+/* Bagian state yang membentuk sebuah project (semua kecuali api). Disalin
+   sekali di sini supaya membuat project kosong tidak perlu menduplikasi
+   daftar nilai default — kalau ada field baru, otomatis ikut. */
+const PROJECT_KEYS=['setup','input','refmode','realism','uploads','refs','persona','dna','wardrobe','voice','content','compliance','sheet','scenes','done','dirty'];
+const DEFAULTS=JSON.parse(JSON.stringify(PROJECT_KEYS.reduce((o,k)=>(o[k]=state[k],o),{})));
+
 let currentStep='setup', busy=false;
+let projectId=null;
 
 /* ---------------- langkah ---------------- */
 const STEPS=[
@@ -1166,6 +1205,7 @@ function stageStatus(id){
 function setBusy(b, text){
   busy=b;
   $('#recdot').classList.toggle('on', b);
+  $('#statusline').classList.toggle('busy', b);
   $('#statustext').textContent = b?(text||'Memproses…'):'Siap';
   document.querySelectorAll('button').forEach(x=>{
     if(x.id==='btnApi'||x.id==='btnCloseApi') return;
@@ -1234,7 +1274,7 @@ async function runStage(id, fb){
     }
     state.done[id]=true; delete state.dirty[id];
     markDownstream(id);
-    persistState();
+    persistState(); renderProjLabel();
     toast((STAGE_LABEL[id]||id)+' selesai.','ok');
   }catch(e){
     toast(e.message,'err');
@@ -1470,22 +1510,137 @@ function forgetKeys(){
   renderApiModal(); toast('Key dilupakan dari perangkat ini.','ok');
 }
 
+/* ---------------- pustaka project ----------------
+   Tiap project disimpan di kuncinya sendiri, bukan satu blob besar, supaya
+   kuota yang jebol di satu project tidak merusak project lain maupun indeks.
+   Sebelumnya hanya ada SATU slot, jadi memulai talent kedua menimpa yang
+   pertama tanpa peringatan. */
+const LS_IDX='atf_index', LS_CUR='atf_current', LS_P='atf_p_';
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function projName(st){
+  const s=st||state;
+  return String((s.setup&&s.setup.namaProject)||'').trim()
+      || String((s.persona&&s.persona.nama_lengkap)||'').trim()
+      || 'Tanpa nama';
+}
+function readIndex(){
+  try{ const a=JSON.parse(localStorage.getItem(LS_IDX)||'[]'); return Array.isArray(a)?a:[]; }
+  catch(_){ return []; }
+}
+function writeIndex(a){ try{ localStorage.setItem(LS_IDX, JSON.stringify(a)); }catch(_){} }
+function projSize(id){
+  try{ return (localStorage.getItem(LS_P+id)||'').length; }catch(_){ return 0; }
+}
+function fmtSize(n){ return n>=1048576 ? (n/1048576).toFixed(1)+' MB' : Math.max(1,Math.round(n/1024))+' KB'; }
+function fmtWhen(ts){
+  if(!ts) return '—';
+  const d=new Date(ts);
+  return d.toLocaleDateString('id-ID',{day:'numeric',month:'short'})+', '+d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+}
+
 let persistWarned=false;
 function persistState(){
+  if(!projectId) projectId=uid();
+  const body=JSON.stringify(serializableState());
   try{
-    localStorage.setItem('atf_state', JSON.stringify(serializableState()));
+    localStorage.setItem(LS_P+projectId, body);
+    localStorage.setItem(LS_CUR, projectId);
+    const idx=readIndex().filter(p=>p.id!==projectId);
+    idx.unshift({id:projectId, nama:projName(), updatedAt:Date.now()});
+    writeIndex(idx);
+    persistWarned=false;
   }catch(e){
     if(!persistWarned){
       persistWarned=true;
-      toast('Penyimpanan otomatis browser penuh — simpan project ke .json lewat tombol ↓ Simpan.','err');
+      toast('Penyimpanan browser penuh — project ini berhenti tersimpan otomatis. Ekspor ke .json lewat ↓ Simpan, lalu hapus project lama di menu Project.','err');
     }
   }
 }
-function tryRestoreLocal(){
+/* Kembalikan seluruh bagian project ke nilai awal tanpa mengutak-utik api. */
+function resetToBlank(){
+  const fresh=JSON.parse(JSON.stringify(DEFAULTS));
+  PROJECT_KEYS.forEach(k=>{ state[k]=fresh[k]; });
+  currentStep='setup';
+}
+function projLoad(id){
+  let raw=null;
+  try{ raw=localStorage.getItem(LS_P+id); }catch(_){}
+  if(!raw){ toast('Project tidak ditemukan di perangkat ini.','err'); return false; }
+  let d=null;
+  try{ d=JSON.parse(raw); }catch(_){ toast('Data project rusak dan tidak bisa dibaca.','err'); return false; }
+  resetToBlank();
+  mergeLoadedState(d);
+  projectId=id;
+  try{ localStorage.setItem(LS_CUR, id); }catch(_){}
+  return true;
+}
+function projSwitch(id){
+  if(id===projectId) return;
+  persistState();               /* project yang sedang dibuka diamankan dulu */
+  if(!projLoad(id)) return;
+  go('setup'); renderProjModal();
+  toast('Beralih ke "'+projName()+'".','ok');
+}
+function projNew(){
+  persistState();
+  resetToBlank();
+  projectId=uid();
+  persistState();
+  go('setup'); renderProjModal();
+  toast('Project baru dibuat. Beri nama di tahap 00.','ok');
+}
+function projDuplicate(id){
+  const src=(id===projectId) ? JSON.stringify(serializableState()) : localStorage.getItem(LS_P+id);
+  if(!src){ toast('Project tidak ditemukan.','err'); return; }
+  let d; try{ d=JSON.parse(src); }catch(_){ toast('Data project rusak.','err'); return; }
+  d.setup=d.setup||{};
+  d.setup.namaProject=(String(d.setup.namaProject||projName(d)).trim()+' (salinan)').slice(0,80);
+  const nid=uid();
   try{
-    const raw=localStorage.getItem('atf_state'); if(!raw) return false;
-    const d=JSON.parse(raw); mergeLoadedState(d); return true;
+    localStorage.setItem(LS_P+nid, JSON.stringify(d));
+    const idx=readIndex(); idx.unshift({id:nid, nama:projName(d), updatedAt:Date.now()}); writeIndex(idx);
+    renderProjModal(); toast('Project diduplikasi.','ok');
+  }catch(_){ toast('Penyimpanan browser penuh — duplikasi gagal.','err'); }
+}
+function projDelete(id){
+  const entry=readIndex().find(p=>p.id===id);
+  const nama=entry?entry.nama:'project ini';
+  if(!confirm('Hapus "'+nama+'" dari perangkat ini?\n\nPastikan sudah diekspor ke .json kalau masih dibutuhkan. Tindakan ini tidak bisa dibatalkan.')) return;
+  try{ localStorage.removeItem(LS_P+id); }catch(_){}
+  writeIndex(readIndex().filter(p=>p.id!==id));
+  if(id===projectId){
+    /* project aktif dihapus — pindah ke yang tersisa, atau mulai yang baru */
+    const rest=readIndex();
+    if(rest.length && projLoad(rest[0].id)){ go('setup'); }
+    else { resetToBlank(); projectId=uid(); persistState(); go('setup'); }
+  }
+  renderProjModal(); render();
+  toast('Project dihapus.','ok');
+}
+/* Sesi pertama setelah pembaruan: pindahkan slot tunggal lama jadi project. */
+function migrateLegacy(){
+  let raw=null;
+  try{ raw=localStorage.getItem('atf_state'); }catch(_){ return false; }
+  if(!raw) return false;
+  try{
+    const d=JSON.parse(raw);
+    const id=uid();
+    localStorage.setItem(LS_P+id, raw);
+    writeIndex([{id, nama:projName(d), updatedAt:Date.now()}].concat(readIndex()));
+    localStorage.setItem(LS_CUR, id);
+    localStorage.removeItem('atf_state');
+    return true;
   }catch(_){ return false; }
+}
+function bootProject(){
+  migrateLegacy();
+  let cur=null;
+  try{ cur=localStorage.getItem(LS_CUR); }catch(_){}
+  const idx=readIndex();
+  if(cur && idx.some(p=>p.id===cur) && projLoad(cur)) return true;
+  if(idx.length && projLoad(idx[0].id)) return true;
+  projectId=uid();
+  return false;
 }
 function mergeLoadedState(d){
   if(!d||typeof d!=='object') return;
@@ -1507,10 +1662,22 @@ function saveProject(){
   download(nm+'.json', JSON.stringify(serializableState(),null,2), 'application/json');
   toast('Project tersimpan sebagai .json','ok');
 }
+/* Impor selalu membuat project BARU. Menimpa project yang sedang dibuka
+   berisiko menghapus kerja yang belum diekspor tanpa bisa dibatalkan. */
 function loadProject(file){
   const rd=new FileReader();
-  rd.onload=()=>{ try{ mergeLoadedState(JSON.parse(rd.result)); toast('Project dimuat.','ok'); go('setup'); render(); }
-    catch(e){ toast('File project tidak valid.','err'); } };
+  rd.onload=()=>{
+    let d=null;
+    try{ d=JSON.parse(rd.result); }catch(e){ toast('File project tidak valid.','err'); return; }
+    if(!d||typeof d!=='object'){ toast('File project tidak valid.','err'); return; }
+    persistState();
+    resetToBlank();
+    projectId=uid();
+    mergeLoadedState(d);
+    persistState();
+    go('setup'); render(); renderProjModal();
+    toast('Diimpor sebagai project baru: "'+projName()+'".','ok');
+  };
   rd.readAsText(file);
 }
 
@@ -1872,6 +2039,37 @@ function renderRefThumbs(){
       '</select></div>').join('');
 }
 
+/* ---------------- modal project ---------------- */
+function renderProjLabel(){
+  const el=$('#projLabel'); if(!el) return;
+  const n=projName();
+  el.textContent = n.length>18 ? n.slice(0,17)+'…' : n;
+  const b=$('#btnProj'); if(b) b.title='Project: '+n+' — klik untuk ganti atau buat baru';
+}
+function renderProjModal(){
+  renderProjLabel();
+  const box=$('#projList'); if(!box) return;
+  const idx=readIndex();
+  /* project aktif mungkin belum masuk indeks kalau belum pernah tersentuh */
+  if(projectId && !idx.some(p=>p.id===projectId)) idx.unshift({id:projectId, nama:projName(), updatedAt:Date.now()});
+  if(!idx.length){ box.innerHTML='<div class="empty"><p>Belum ada project tersimpan.</p></div>'; return; }
+  box.innerHTML=idx.map(p=>{
+    const on=p.id===projectId;
+    const nm=on?projName():p.nama;   /* yang aktif pakai nama terkini, bukan snapshot */
+    return '<div class="projrow'+(on?' on':'')+'">'+
+      '<button class="pick" data-projgo="'+p.id+'"'+(on?' disabled':'')+'>'+
+        '<span class="row1"><span class="nm">'+esc(nm||'Tanpa nama')+'</span>'+(on?'<span class="pill ok">aktif</span>':'')+'</span>'+
+        '<span class="meta">'+fmtWhen(p.updatedAt)+' · '+fmtSize(projSize(p.id))+'</span>'+
+      '</button>'+
+      '<button class="btn sm" data-projdup="'+p.id+'" title="Duplikat">⧉</button>'+
+      '<button class="btn sm" data-projdel="'+p.id+'" title="Hapus">🗑</button>'+
+      '</div>';
+  }).join('');
+  const total=idx.reduce((a,p)=>a+projSize(p.id),0);
+  $('#projNote').textContent=idx.length+' project · total '+fmtSize(total)+
+    ' terpakai di penyimpanan browser ini. Penyimpanan browser terbatas (umumnya 5–10 MB) dan gambar referensi paling banyak memakan tempat — hapus project lama kalau autosave mulai gagal. Ekspor ke .json untuk cadangan yang aman.';
+}
+
 /* ---------------- modal API ---------------- */
 function renderApiModal(){
   $('#provGrid').innerHTML=PROVIDERS.map(p=>'<button class="prov '+(state.api.provider===p.id?'sel':'')+'" data-prov="'+p.id+'"><b>'+p.name+'</b><span>'+p.desc+'</span></button>').join('');
@@ -1938,6 +2136,7 @@ document.addEventListener('input', e=>{
   }
   if(p==='refmode'&&hasContent('refs')) state.dirty.refs=true;
   if(p.startsWith('api.')) persistKeys(); else persistState();
+  if(p==='setup.namaProject'||p==='persona.nama_lengkap') renderProjLabel();
 });
 document.addEventListener('change', e=>{
   if(e.target.id==='chkRemember'){ state.api.remember=e.target.checked; persistKeys(); renderApiModal(); return; }
@@ -1966,6 +2165,9 @@ document.addEventListener('click', async e=>{
     try{ await navigator.clipboard.writeText(txt); toast('Tahap tersalin.','ok'); }
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
   }
+  if(t.dataset.projgo){ projSwitch(t.dataset.projgo); return; }
+  if(t.dataset.projdup){ projDuplicate(t.dataset.projdup); return; }
+  if(t.dataset.projdel){ projDelete(t.dataset.projdel); return; }
   if(t.dataset.prov){ state.api.provider=t.dataset.prov; persistKeys(); renderApiModal(); return; }
   if(t.id==='btnForgetKey'){ forgetKeys(); return; }
   if(t.dataset.rmref!=null){
@@ -2026,7 +2228,8 @@ document.addEventListener('change', async e=>{
 
 document.addEventListener('keydown', e=>{
   if(e.key!=='Escape') return;
-  if($('#apiOverlay').classList.contains('open')) $('#apiOverlay').classList.remove('open');
+  if($('#projOverlay').classList.contains('open')) $('#projOverlay').classList.remove('open');
+  else if($('#apiOverlay').classList.contains('open')) $('#apiOverlay').classList.remove('open');
   else if($('#rail').classList.contains('open')) closeRail();
 });
 
@@ -2038,21 +2241,19 @@ $('#btnTestApi').onclick=testApi;
 $('#btnSave').onclick=saveProject;
 $('#btnLoad').onclick=()=>$('#fileInput').click();
 $('#fileInput').addEventListener('change',e=>{ if(e.target.files[0]) loadProject(e.target.files[0]); e.target.value=''; });
-$('#btnClearLocal').onclick=()=>{
-  const isi=state.persona.nama_lengkap||state.sheet.length||state.scenes.length;
-  if(!confirm(isi
-    ? 'Hapus seluruh isi project dari browser ini?\n\nKamu punya hasil yang belum tentu tercadangkan. Batalkan dulu lalu tekan "↓ Simpan" untuk ekspor .json kalau belum.\n\nTindakan ini tidak bisa dibatalkan.'
-    : 'Hapus seluruh isi project dari browser ini? Tindakan ini tidak bisa dibatalkan.')) return;
-  localStorage.removeItem('atf_state'); location.reload();
-};
+$('#btnProj').onclick=()=>{ renderProjModal(); $('#projOverlay').classList.add('open'); };
+$('#btnProjClose').onclick=()=>$('#projOverlay').classList.remove('open');
+$('#btnProjNew').onclick=projNew;
+$('#projOverlay').addEventListener('click',e=>{ if(e.target.id==='projOverlay') $('#projOverlay').classList.remove('open'); });
 
 /* pelindung kerja — ingatkan sebelum menutup tab kalau ada hasil belum diekspor */
 window.addEventListener('beforeunload', e=>{
   if(!busy && (state.sheet.length||state.scenes.length||state.persona.nama_lengkap)){ e.preventDefault(); e.returnValue=''; }
 });
 
-if(tryRestoreLocal()) toast('Sesi sebelumnya dipulihkan dari penyimpanan browser ini.','ok');
+if(bootProject()) toast('Project "'+projName()+'" dipulihkan dari perangkat ini.','ok');
 if(restoreKeys()) toast('API key dipulihkan dari perangkat ini.','ok');
+renderProjLabel();
 render();
 </script>
 </body>

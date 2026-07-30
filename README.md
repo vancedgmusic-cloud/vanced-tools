@@ -82,7 +82,10 @@ Bangun talent sekali, pakai untuk semua produk.
 - **Bisa dipakai di ponsel** — rail tahap berubah jadi drawer di bawah 900px, dan setiap panel punya navigasi
   maju-mundur sendiri sehingga tidak ada tahap yang tanpa jalan keluar.
 - **Gambar referensi dikecilkan ke 768px** sebelum masuk penyimpanan, jadi ikut tersimpan di project tanpa menjebol kuota localStorage — dan otomatis ikut ke file `.json`, jadi hati-hati kalau file project dibagikan.
-- Autosave ke localStorage; ekspor `.json` untuk cadangan dan pindah perangkat.
+- **Beberapa talent dalam satu browser** — tiap project punya slot localStorage sendiri, jadi memulai talent kedua
+  tidak menimpa yang pertama. Menu Project bisa beralih, duplikat, hapus, ekspor, dan impor. Impor `.json`
+  selalu masuk ke project baru, tidak pernah menimpa yang sedang dibuka.
+- Autosave per project ke localStorage; ekspor `.json` untuk cadangan dan pindah perangkat.
 - Semua provider punya retry otomatis saat server sibuk, dan loop kontinuasi supaya output panjang tidak terpotong.
 
 ## Referensi
