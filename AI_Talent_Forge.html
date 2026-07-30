@@ -1430,12 +1430,22 @@ function hasContent(id){
   if(id==='repair') return state.repair.length>0;
   const o=state[id]; return !!(o&&Object.keys(o).some(k=>String(o[k]||'').trim()));
 }
+/* Ketergantungan sebenarnya, bukan urutan linear.
+   Hanya tahap yang isinya masuk ke buildContext bisa membuat tahap lain
+   kedaluwarsa. Reference Sheet, Scene Pack, Repair Kit, Content Engine, dan
+   Compliance tidak dibaca oleh tahap mana pun — meregenerasinya tidak
+   mengusangkan apa-apa. Versi sebelumnya memakai slice(i+1) sehingga
+   meregenerasi Scene Pack menandai tiga tahap sesudahnya perlu diulang,
+   padahal hasilnya masih sah; user disuruh membakar kredit tanpa sebab. */
+const FEEDS_CONTEXT=['refs','persona','dna','wardrobe','voice'];
+const CONTEXT_LEAVES=['sheet','scenes','repair','content','compliance'];
+
 function markDownstream(fromId){
-  /* refs berada di luar AI_ORDER tapi menjadi bahan dasar semuanya, jadi
-     perubahannya menandai seluruh tahap AI sebagai perlu regenerasi. */
-  if(fromId==='refs'){ AI_ORDER.forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; }); return; }
-  const i=AI_ORDER.indexOf(fromId); if(i<0) return;
-  AI_ORDER.slice(i+1).forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
+  if(!FEEDS_CONTEXT.includes(fromId)) return;   /* daun: tidak mengusangkan apa pun */
+  const i=FEEDS_CONTEXT.indexOf(fromId);
+  [...FEEDS_CONTEXT.slice(i+1), ...CONTEXT_LEAVES].forEach(id=>{
+    if(id!==fromId && hasContent(id)) state.dirty[id]=true;
+  });
 }
 function stageStatus(id){
   if(state.dirty[id]) return 'dirty';
@@ -2116,18 +2126,18 @@ function railStatus(s){
   }
   return '';
 }
-function railHint(st){
-  return st==='ok'   ? 'siap'
-       : st==='dirty'? 'ada peringatan / perlu regenerasi'
-       : st==='bad'  ? 'ada pemeriksaan yang gagal'
-       : 'belum ada isi';
+function railHint(st, id){
+  if(st==='ok') return 'siap';
+  if(st==='dirty') return id==='export' ? 'ada peringatan di audit' : 'perlu regenerasi — bahan di atasnya berubah';
+  if(st==='bad') return 'ada pemeriksaan yang gagal';
+  return 'belum ada isi';
 }
 function renderRail(){
   let html='', lastGroup='';
   STEPS.forEach(s=>{
     if(s.group!==lastGroup){ html+='<div class="railgroup">'+s.group+'</div>'; lastGroup=s.group; }
     const st=railStatus(s);
-    html+='<button class="railitem'+(currentStep===s.id?' on':'')+'" data-go="'+s.id+'" title="'+esc(s.no+' '+s.label+' — '+railHint(st))+'">'+
+    html+='<button class="railitem'+(currentStep===s.id?' on':'')+'" data-go="'+s.id+'" title="'+esc(s.no+' '+s.label+' — '+railHint(st, s.id))+'">'+
       '<span class="no">'+s.no+'</span><span class="lbl">'+s.label+'</span>'+
       '<span class="dot'+(st?' '+st:'')+'"></span></button>';
   });
@@ -2654,8 +2664,20 @@ document.addEventListener('input', e=>{
   let v=e.target.value; if(e.target.type==='number') v=+v;
   setPath(state,p,v);
   /* perubahan bahan dasar menandai semua tahap AI yang sudah berisi sebagai perlu regenerasi */
+  /* Mengubah engine gambar tidak seharusnya mengusangkan persona. Field setup
+     dipisah: yang menentukan SIAPA talent-nya mengusangkan semuanya, yang
+     hanya menentukan CARA produksinya cukup mengusangkan tahap penghasil
+     prompt, dan nama project tidak mengusangkan apa pun. */
   if(p.startsWith('input.')||p.startsWith('setup.')){
-    AI_ORDER.forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
+    /* durasi dan jumlah scene hanya dibaca oleh promptScenes, jadi tidak
+       mengusangkan Reference Sheet maupun Repair Kit. */
+    const hanyaScene=['setup.jumlahScene','setup.durasi'];
+    const semuaPrompt=['setup.imgEngine','setup.vidEngine','setup.rasio','setup.realisme'];
+    const target = p==='setup.namaProject'   ? []
+                 : hanyaScene.includes(p)    ? ['scenes']
+                 : semuaPrompt.includes(p)   ? ['sheet','scenes','repair']
+                 : AI_ORDER;
+    target.forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
     renderRail();
   }
   /* Realism Lock ikut tertanam di dalam prompt sheet & scenes, jadi mengubah
