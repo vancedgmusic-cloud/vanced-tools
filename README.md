@@ -26,7 +26,7 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 10 Perbaikan & Seed | Prompt inpaint terarah per bagian gagal + strategi seed + catatan seed |
 | 11 Content Engine | Positioning, content pillars, bank ide Shorts & longform, monetisasi |
 | 12 Compliance | Disclosure AI + afiliasi, aturan klaim, checklist sebelum posting |
-| 13 Audit & Ekspor | 33 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
+| 13 Audit & Ekspor | 37 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
 
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.
 
@@ -42,6 +42,10 @@ Tahap 05 menyusun **Realism Lock** dari 8 kontrol (tekstur kulit, garis & keruta
 Panjang blok menyesuaikan engine: versi penuh (~275 kata) untuk engine bahasa natural yang makin patuh dengan deskripsi panjang, versi ringkas (~45 kata) untuk Midjourney/SDXL yang memberi bobot per frasa.
 
 Detail yang paling sering gagal diminta eksplisit: iris + limbal ring + catchlight yang cocok arah cahaya, rambut dengan helai lepas, gigi dengan ketidakteraturan wajar, dan proporsi tubuh dengan lipatan kulit alami.
+
+**Realism Lock dipecah dua — dan ini bukan kosmetik.** *Blok A* berisi sifat subjek (kulit, mata, rambut, gigi, tubuh) yang berlaku di shot mana pun, jadi ditempel ke setiap prompt. *Blok B* berisi kondisi pengambilan (kamera, pencahayaan, grain) yang berbeda per shot — turnaround butuh studio rata, scene luar ruang punya cahaya matahari sendiri, orbit tidak mungkin pakai kamera selfie sepanjang tangan. Blok B adalah default yang boleh diganti, dan satu prompt hanya boleh memuat **satu** kamera dan **satu** sumber cahaya. Audit menolak yang menyebut dua.
+
+Sebelum dipecah, keduanya digabung dan ditempel ke semua prompt, sehingga setiap prompt berisi dua kamera dan dua pencahayaan yang bertabrakan.
 
 **Realisme gerak (khusus video).** Realism Lock di atas semuanya soal kulit yang diam. Di video yang bikin hasil terasa palsu justru fisika, jadi ada **Motion Lock** terpisah yang hanya ditempel ke prompt video: berat & inersia, akselerasi natural, rambut dan kain telat sepersekian detik dari badan, kaki menapak tanpa sliding, motion blur sesuai shutter, parallax konsisten kedalaman, plus micro-shake dan rolling-shutter wobble.
 

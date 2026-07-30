@@ -735,22 +735,40 @@ function rpick(group){ const g=REALISM[group]; return g.opt[rcfg()[group]]||Obje
 /* Blok realisme yang ditempel ke setiap prompt. Versi "short" dipakai untuk
    engine bergaya tag/parameter (Midjourney, SDXL) karena prompt panjang di
    sana justru mengencerkan bobot tiap frasa. */
-function realismLock(mode){
+/* Blok realisme dipecah dua, dan ini bukan kosmetik.
+   - realismSkin: sifat SUBJEK (kulit, mata, rambut, gigi, tubuh). Berlaku di
+     shot mana pun, jadi aman ditempel ke setiap prompt.
+   - realismCapture: KONDISI PENGAMBILAN (kamera, cahaya, grain). Ini berbeda
+     per shot — turnaround butuh studio rata, scene luar ruang butuh cahaya
+     tempatnya sendiri.
+   Sebelumnya keduanya digabung dan ditempel ke semua prompt, sehingga setiap
+   prompt berisi DUA kamera dan DUA pencahayaan yang saling bertabrakan. */
+function realismSkin(mode){
   if(mode==='short'){
     const g=k=>REALISM_SHORT[k][rcfg()[k]]||'';
     return [
       ...['tekstur','imperfeksi','garis','kilap'].map(g),
       'detailed iris with accurate catchlights', 'individual flyaway hairs',
-      ...['tubuh','kamera','cahaya','grain'].map(g),
-      'unretouched raw photo'
+      g('tubuh'), 'unretouched raw photo'
     ].filter(Boolean).join(', ')+'.';
   }
   return [
     rpick('tekstur').en, rpick('garis').en, rpick('imperfeksi').en, rpick('kilap').en,
     EYE_DETAIL, HAIR_DETAIL, TEETH_DETAIL, rpick('tubuh').en,
-    rpick('kamera').en, rpick('cahaya').en, rpick('grain').en,
     'unretouched raw photograph of a real person, not a render and not a beauty-filtered image'
   ].join('; ')+'.';
+}
+function realismCapture(mode){
+  if(mode==='short'){
+    const g=k=>REALISM_SHORT[k][rcfg()[k]]||'';
+    return ['kamera','cahaya','grain'].map(g).filter(Boolean).join(', ')+'.';
+  }
+  return [rpick('kamera').en, rpick('cahaya').en, rpick('grain').en].join('; ')+'.';
+}
+/* Tampilan gabungan untuk panel dan ekspor — bukan yang ditempel ke prompt. */
+function realismLock(mode){
+  const s=realismSkin(mode), c=realismCapture(mode);
+  return mode==='short' ? s.replace(/\.$/,', ')+c : s.replace(/\.$/,'; ')+c;
 }
 function motionLock(){ return (MOTION.opt[rcfg().gerak]||MOTION.opt.penuh).en; }
 
@@ -863,6 +881,26 @@ const ARKETIPE=[
   'Reviewer skeptis','Kakak yang ngasih saran','Hype / high energy','Kalem & aesthetic',
   'Ibu muda praktis','Mahasiswa hemat','Pekerja kantoran sibuk','Atlet / fitness'
 ];
+/* Gaya Realisme di tahap 00 sebelumnya hanya masuk ke konteks dan tidak
+   menyentuh apa pun, sehingga pengguna bisa memilih "Sinematik filmis" tapi
+   outputnya tetap selfie iPhone karena kontrol tahap 05 yang menentukan.
+   Sekarang pilihan itu menyetel kamera, cahaya, dan grain sekaligus. */
+const REALISME_PRESET={
+  'UGC realistis (kamera HP)': {kamera:'iphone',  cahaya:'jendela', grain:'halus'},
+  'Editorial / high fashion':  {kamera:'dslr85',  cahaya:'ring',    grain:'bersih'},
+  'Sinematik filmis':          {kamera:'film35',  cahaya:'golden',  grain:'halus'},
+  'Natural lifestyle':         {kamera:'vlog',    cahaya:'jendela', grain:'halus'},
+  'Studio bersih':             {kamera:'dslr85',  cahaya:'ring',    grain:'bersih'},
+  'Vlog handheld':             {kamera:'vlog',    cahaya:'indoor',  grain:'kasar'}
+};
+function applyRealismePreset(){
+  const pr=REALISME_PRESET[state.setup.realisme];
+  if(!pr) return false;
+  Object.assign(state.realism, pr);
+  ['sheet','scenes','repair'].forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
+  return true;
+}
+
 const REALISME=[
   'UGC realistis (kamera HP)','Editorial / high fashion','Sinematik filmis',
   'Natural lifestyle','Studio bersih','Vlog handheld'
@@ -1031,7 +1069,10 @@ function parseJSONLoose(text){
 }
 const stripText=t=>String(t||'').trim().replace(/^```[a-z]*\s*/i,'').replace(/```\s*$/,'').trim();
 const schemaOf=fields=>'{'+fields.map(f=>'"'+f.k+'":""').join(',')+'}';
-const kvText=(fields,obj)=>fields.filter(f=>obj&&obj[f.k]).map(f=>'- '+f.l.replace(/^[🔒🎙]\s*/,'')+': '+obj[f.k]).join('\n');
+/* Buang penanda emoji di awal label. Flag u wajib: tanpa itu emoji astral
+   terpotong di tengah surrogate pair dan menyisakan karakter rusak. */
+const plainLabel=l=>String(l).replace(/^[\p{Extended_Pictographic}\u2600-\u27BF]\uFE0F?\s*/u,'');
+const kvText=(fields,obj)=>fields.filter(f=>obj&&obj[f.k]).map(f=>'- '+plainLabel(f.l)+': '+obj[f.k]).join('\n');
 
 /* ---------------- upload gambar referensi ----------------
    Gambar dikecilkan dulu sebelum masuk state. 768px sisi terpanjang sudah
@@ -1125,10 +1166,17 @@ function fbLine(fb){ return fb?('\nPERMINTAAN REVISI DARI USER (prioritas tertin
 /* Instruksi realisme yang ditempel ke setiap tahap penghasil prompt. */
 function realismBrief(){
   const short = ['midjourney','sdxl'].includes(state.setup.imgEngine);
+  const m = short?'short':'full';
   return 'ATURAN REALISME (WAJIB — ini pembeda hasil nyata vs hasil AI murahan)\n'+
-    'Detail halus kulit secara statistik mirip noise, jadi engine membuangnya kalau tidak diminta eksplisit. Karena itu:\n'+
-    '- SETIAP prompt gambar dan video WAJIB memuat blok realisme berikut, disalin apa adanya:\n'+
-    '"""\n'+realismLock(short?'short':'full')+'\n"""\n'+
+    'Detail halus kulit secara statistik mirip noise, jadi engine membuangnya kalau tidak diminta eksplisit. Karena itu:\n\n'+
+    'BLOK A — SIFAT SUBJEK. Ditempel ke SETIAP prompt gambar dan video, disalin apa adanya:\n'+
+    '"""\n'+realismSkin(m)+'\n"""\n\n'+
+    'BLOK B — KONDISI PENGAMBILAN. Ini setelan DEFAULT pengguna, bukan keharusan mutlak:\n'+
+    '"""\n'+realismCapture(m)+'\n"""\n'+
+    'ATURAN KERAS UNTUK BLOK B — satu prompt hanya boleh memuat SATU kamera dan SATU pencahayaan:\n'+
+    '- Kalau shot-nya cocok dengan default di atas, pakai Blok B apa adanya dan JANGAN menulis kamera atau pencahayaan lain lagi di bagian mana pun prompt itu.\n'+
+    '- Kalau shot-nya menuntut kondisi lain — turnaround butuh studio rata, scene luar ruang punya cahaya matahari sendiri, orbit tidak mungkin pakai kamera selfie sepanjang tangan — maka TULIS kondisi yang sesuai shot itu dan JANGAN sertakan Blok B sama sekali.\n'+
+    '- DILARANG menyebut dua kamera atau dua sumber cahaya dalam satu prompt. Itu membuat engine menebak, dan hasilnya jadi campuran yang tidak diminta.\n\n'+
     '- DILARANG memakai kata-kata ini karena justru menarik hasil ke arah plastik/filter: '+SLOP_WORDS.join(', ')+'.\n'+
     '- Jangan menulis "cantik", "sempurna", atau "mulus". Ganti dengan deskripsi fisik yang netral dan spesifik.\n'+
     '- Wajah harus asimetris wajar, bukan cermin kiri-kanan.\n'+
@@ -1182,7 +1230,8 @@ const STAGE_TASK={
     '- Palet warna: 4–6 warna dengan kode hex, konsisten dengan niche dan tone kulit di Character DNA.\n'+
     '- Setiap set wardrobe: sebutkan atasan, bawahan, alas kaki, dan outer bila ada — lengkap dengan warna dan bahan.\n'+
     '- Makeup: gaya harian yang bisa direplikasi, jangan berubah drastis antar konten.\n'+
-    '- FIELD wardrobe_lock: BAHASA INGGRIS, 1 baris berisi aksesoris yang SELALU dipakai di setiap konten (mis. anting kecil tertentu, jam, cincin). Ini penguat konsistensi selain wajah.',
+    '- FIELD aksesoris: daftar aksesoris tetap. Sebutkan JENIS ANTING hanya SEKALI — jangan menulis hoops di satu tempat lalu stud di tempat lain.\n'+
+    '- FIELD wardrobe_lock: BAHASA INGGRIS, 1 baris, maksimal 2 benda. WAJIB diambil dari daftar aksesoris di atas dan disebut dengan kata yang sama persis — ini ringkasannya, BUKAN daftar baru. Kalau aksesoris menyebut anting hoops, wardrobe_lock juga harus hoops, bukan stud. Daftar yang berbeda membuat prompt menyuruh engine memakai dua jenis anting sekaligus.',
   voice:()=>
     'TUGAS: Rancang identitas suara talent ini untuk voice over dan lipsync.\n'+
     'Aturan:\n'+
@@ -1282,6 +1331,7 @@ function promptSheet(fb){
     '- Prompt ditulis dalam BAHASA INGGRIS mengikuti sintaks engine di atas.\n'+
     '- Shot turnaround (1–4) wajib memakai pencahayaan, latar, jarak kamera, dan lensa yang IDENTIK satu sama lain — hanya sudut yang berubah. Sebutkan itu di prompt.\n'+
     '- Field "negative": WAJIB memuat seluruh daftar anti-slop berikut, boleh ditambah yang relevan dengan shot-nya:\n  '+ANTI_SLOP_NEG+'\n'+
+    '- Kalau engine ini tidak punya field negative terpisah, sisipkan daftar itu SATU KALI di akhir prompt dengan awalan "no: " — dan jangan mengarang daftar larangan pendek versi sendiri di tempat lain. Dua daftar berbeda saling melemahkan.\n'+
     '- Shot close-up wajah dan lembar ekspresi WAJIB memakai tingkat detail kulit paling tinggi — di jarak itu kulit plastik paling ketahuan.\n'+
     '- Field "catatan": 1 kalimat bahasa Indonesia berisi tips praktis memakai shot ini (kapan dipakai, apa yang harus dicek).\n'+
     fbLine(fb)+'\n\n'+
@@ -1308,7 +1358,8 @@ function promptScenes(fb){
     SCENE_USECASE.slice(0,n).map((u,i)=>(i+1)+'. '+u).join('\n')+'\n\n'+
     'Aturan mutlak:\n'+
     '- prompt_image dan prompt_video WAJIB diawali Identity Lock dari Character DNA, tanpa diubah.\n'+
-    '- Setiap scene wajib menyebut wardrobe yang dipakai, dan wardrobe_lock harus tetap muncul.\n'+
+    '- Setiap scene wajib menyebut wardrobe yang dipakai secara RINGKAS — atasan, bawahan, alas kaki, outer bila ada. JANGAN menyalin seluruh paragraf wardrobe beserta kode hex dan nama bahan; itu membuat prompt membengkak tanpa menambah kejelasan.\n'+
+    '- wardrobe_lock disebut TEPAT SEKALI per prompt. Jangan mengulang daftar aksesoris lengkap di samping wardrobe_lock — kalau keduanya menyebut anting dengan jenis berbeda, engine disuruh memakai dua anting sekaligus.\n'+
     '- prompt_image: BAHASA INGGRIS, sintaks '+ie.name+'. Ini frame pembuka scene.\n'+
     '- prompt_video: BAHASA INGGRIS, sintaks '+ve.name+'. '+(ve.audio?'Sertakan dialog dalam tanda kutip dan deskripsi audio/ambience karena engine ini punya audio native.':'JANGAN tulis dialog di dalam prompt video karena engine ini tanpa audio native — fokus ke gerakan, ekspresi, dan kamera saja.')+'\n'+
     '- dialog: tulis dalam '+state.setup.bahasa+', gaya bicara natural sesuai Voice & Speech. Pakai filler words khas talent.\n'+
@@ -1399,8 +1450,19 @@ function normScene(x,i){
   };
   if(String(s.dialog).trim()){
     s.disiplin='tenang';
-    if(s.prompt_video && !/restrained|minimal head movement|nearly still/i.test(s.prompt_video)){
-      s.prompt_video=s.prompt_video.replace(/\s*$/,'').replace(/[.;]$/,'')+'; '+SHOT_DISCIPLINE.tenang.en+'.';
+    if(s.prompt_video){
+      /* Model kadang sudah menulis klausa "sedang" atau "dinamis". Menambah
+         klausa tenang tanpa membuangnya membuat prompt berisi dua perintah
+         gerak yang bertabrakan — terlihat di output nyata. */
+      [SHOT_DISCIPLINE.sedang.en, SHOT_DISCIPLINE.dinamis.en].forEach(cl=>{
+        s.prompt_video=s.prompt_video.split(cl).join('');
+      });
+      s.prompt_video=s.prompt_video
+        .replace(/\b(moderate movement|free natural movement)\b[^;.]*[;.]?/gi,'')
+        .replace(/\s*;\s*;/g,';').replace(/\s{2,}/g,' ').trim();
+      if(!/restrained|minimal head movement|nearly still/i.test(s.prompt_video)){
+        s.prompt_video=s.prompt_video.replace(/[.;]\s*$/,'')+'; '+SHOT_DISCIPLINE.tenang.en+'.';
+      }
     }
   }
   return s;
@@ -1594,6 +1656,37 @@ function audit(){
       : 'Semua scene melarang teks tergambar di dalam frame', true);
   }
   push(!!state.content.mix,'Rencana produksi per format UGC sudah ada', true);
+  /* Satu prompt hanya boleh punya SATU kamera dan SATU pencahayaan. Dua-duanya
+     membuat engine menebak, dan hasilnya campuran yang tidak diminta. Ini cacat
+     yang benar-benar muncul di output nyata sebelum blok realisme dipecah. */
+  const CAM_FAM=[[/iphone|front camera|selfie/i,'ponsel'],[/dslr|canon|85mm|portrait lens/i,'DSLR'],
+    /* batas kata wajib: tanpa \b, "portra" ikut cocok di dalam kata "portrait"
+       sehingga setiap prompt ber-"portrait lens" salah dianggap film */
+    [/\b35mm\b|kodak|\bportra\b|analog film/i,'film'],
+    [/webcam|laptop camera/i,'webcam'],[/sony zv|vlogging camera/i,'vlog']];
+  const LIGHT_FAM=[[/from a window|window light|window to camera/i,'jendela'],
+    [/golden.?hour|sunset|afternoon light|morning light|sunlight/i,'matahari'],
+    [/tungsten|table lamp|indoor mixed/i,'lampu ruangan'],[/ring light/i,'ring light'],[/neon/i,'neon'],
+    [/overcast|diffused daylight|diffused natural light/i,'mendung'],[/studio light|softbox|studio lighting/i,'studio']];
+  const famCount=(t,fams)=>fams.filter(f=>f[0].test(t)).map(f=>f[1]);
+  const allP=[...state.sheet.map(x=>({n:x.label,t:x.prompt||''})),
+              ...state.scenes.flatMap(x=>[{n:x.nama+' (gambar)',t:x.prompt_image||''},{n:x.nama+' (video)',t:x.prompt_video||''}])]
+              .filter(x=>x.t);
+  if(allP.length){
+    const dblCam=allP.filter(x=>famCount(x.t,CAM_FAM).length>1);
+    push(dblCam.length===0, dblCam.length
+      ? dblCam.length+' prompt menyebut lebih dari satu kamera — engine akan menebak'
+      : 'Setiap prompt menyebut tepat satu kamera', true);
+    const dblLight=allP.filter(x=>famCount(x.t,LIGHT_FAM).length>1);
+    push(dblLight.length===0, dblLight.length
+      ? dblLight.length+' prompt menyebut lebih dari satu sumber cahaya — bayangan akan tidak konsisten'
+      : 'Setiap prompt menyebut tepat satu sumber cahaya', true);
+  }
+  const dblDis=state.scenes.filter(x=>{ const t=x.prompt_video||'';
+    return /restrained|minimal head movement/i.test(t) && /moderate movement|free natural movement/i.test(t); });
+  push(dblDis.length===0, dblDis.length
+    ? dblDis.length+' prompt video memuat dua klausa gerak yang bertabrakan'
+    : 'Tidak ada prompt video dengan klausa gerak bertabrakan', true);
   push(!!state.content.pilar,'Content pillars sudah disusun');
   push(!!state.compliance.disclosure_id && !!state.compliance.disclosure_en,'Disclosure AI tersedia dalam 2 bahasa');
   push(!!state.compliance.checklist,'Checklist sebelum posting sudah ada');
@@ -1614,7 +1707,7 @@ function mdDoc(){
   const sec=(title,fields,obj)=>{
     if(!hasContentObj(obj)) return '';
     let t='## '+title+'\n';
-    fields.forEach(f=>{ if(obj[f.k]) t+='**'+f.l.replace(/^[🔒🎙]\s*/,'')+'**\n\n'+obj[f.k]+'\n\n'; });
+    fields.forEach(f=>{ if(obj[f.k]) t+='**'+plainLabel(f.l)+'**\n\n'+obj[f.k]+'\n\n'; });
     return t;
   };
   m+=sec('Bacaan Referensi',F.refs,state.refs);
@@ -2037,7 +2130,8 @@ function renderPanel(){
         '<div class="hint">'+esc(imgEngine().ref)+'</div></div>'+
       '<div class="field"><label>Engine Video</label><select data-path="setup.vidEngine">'+optsObj(VID_ENGINES,s.vidEngine)+'</select>'+
         '<div class="hint">'+esc(vidEngine().ref)+'</div></div>'+
-      '<div class="field"><label>Gaya Realisme</label><select data-path="setup.realisme">'+opts(REALISME,s.realisme)+'</select></div>'+
+      '<div class="field"><label>Gaya Realisme</label><select data-path="setup.realisme">'+opts(REALISME,s.realisme)+'</select>'+
+        '<div class="hint">Menyetel Kamera, Pencahayaan, dan Grain di tahap 05. Masih bisa diubah satu-satu di sana setelahnya.</div></div>'+
       '<div class="field"><label>Rasio Frame</label><select data-path="setup.rasio">'+opts(['9:16','16:9','1:1','4:5'],s.rasio)+'</select></div>'+
       '<div class="field"><label>Jumlah Scene di Scene Pack</label><input type="number" min="3" max="10" data-path="setup.jumlahScene" value="'+esc(s.jumlahScene)+'"></div>'+
       '<div class="field"><label>Durasi per Scene (detik)</label><input type="number" min="4" max="15" data-path="setup.durasi" value="'+esc(s.durasi||8)+'"></div>'+
@@ -2462,6 +2556,10 @@ document.addEventListener('input', e=>{
 document.addEventListener('change', e=>{
   if(e.target.id==='chkRemember'){ state.api.remember=e.target.checked; persistKeys(); renderApiModal(); return; }
   const p=e.target.dataset.path; if(!p) return;
+  if(p==='setup.realisme'){
+    if(applyRealismePreset()) toast('Kamera, cahaya, dan grain di tahap 05 disetel ke "'+state.setup.realisme+'".','ok');
+    persistState(); renderRail(); renderPanel(); return;
+  }
   if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='refmode'||p.startsWith('realism.')) renderPanel();
 });
 document.addEventListener('click', async e=>{
@@ -2482,7 +2580,7 @@ document.addEventListener('click', async e=>{
   }
   if(t.dataset.copyid){
     const id=t.dataset.copyid;
-    const txt=F[id].filter(f=>state[id][f.k]).map(f=>f.l.replace(/^[🔒🎙]\s*/,'')+': '+state[id][f.k]).join('\n\n');
+    const txt=F[id].filter(f=>state[id][f.k]).map(f=>plainLabel(f.l)+': '+state[id][f.k]).join('\n\n');
     try{ await navigator.clipboard.writeText(txt); toast('Tahap tersalin.','ok'); }
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
   }
