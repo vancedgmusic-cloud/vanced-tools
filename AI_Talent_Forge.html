@@ -677,10 +677,10 @@ const WEIGHT_PROFILES={
 };
 const WEIGHT_FALLBACK={
   dukung:false,
-  cara:'Engine ini tidak punya sintaks bobot. Penekanan dilakukan lewat POSISI — frasa realisme paling penting ditaruh di awal kalimat, bukan di ujung — dan lewat penyebutan ulang yang terukur di satu tempat lain.',
+  cara:'Engine ini tidak punya sintaks bobot. Penekanan dilakukan dengan menaruh frasa tekstur paling menentukan di AWAL blok realisme (bukan di awal seluruh prompt — isi shot tetap harus di depan), dan menyebutnya ulang sekali di dekat penutup.',
   aman:'Jangan mengulang lebih dari dua kali; pengulangan berlebihan membuat hasil kaku.',
   negatif:'Tulis larangan sebagai kalimat eksplisit, mis. "not a render, no beauty filter".',
-  contoh:(f)=>f+' — deskripsi ini ditaruh di depan, sebelum aksi dan setting.'
+  contoh:(f)=>f+' — frasa ini dibuka di awal blok realisme, dan disebut ulang sekali menjelang penutup.'
 };
 const BOBOT={
   mati:{l:'Mati', n:0},
@@ -1174,7 +1174,17 @@ function realismBrief(){
     '"""\n'+realismSkin(m)+'\n"""\n\n'+
     'BLOK B — KONDISI PENGAMBILAN. Ini setelan DEFAULT pengguna, bukan keharusan mutlak:\n'+
     '"""\n'+realismCapture(m)+'\n"""\n'+
-    'ATURAN KERAS UNTUK BLOK B — satu prompt hanya boleh memuat SATU kamera dan SATU pencahayaan:\n'+
+    'URUTAN WAJIB DALAM SETIAP PROMPT — susun persis begini:\n'+
+    '  1) Identity Lock apa adanya\n'+
+    '  2) Aksi dan setting: apa yang dia lakukan dan di mana\n'+
+    '  3) Wardrobe ringkas + wardrobe_lock sekali\n'+
+    '  4) Komposisi: sudut, jarak, aturan framing\n'+
+    '  5) Kamera dan pencahayaan (Blok B atau pengganti yang sesuai shot)\n'+
+    '  6) Blok A sifat subjek\n'+
+    '  7) Larangan\n'+
+    'Alasannya: engine memberi bobot lebih besar pada yang di depan. Kalau blok realisme ditaruh di awal, isi shot yang sebenarnya terdorong ke ujung dan bobotnya melemah. Blok A adalah pengubah permukaan — tempatnya SETELAH isi, bukan sebelum.\n\n'+
+    'ATURAN KERAS UNTUK BLOK B — setiap prompt WAJIB memuat TEPAT SATU kamera dan TEPAT SATU pencahayaan. Bukan dua, dan bukan nol:\n'+
+    '- NOL juga salah. Kalau kamera tidak disebut, engine menebak sendiri dan hasil antar shot jadi tidak seragam. Sebutkan lensa atau bodi kamera secara eksplisit — mis. "shot on a 35mm lens", "shot on an iPhone 15 Pro" — jangan hanya menulis "camera" dalam kalimat seperti "looking at the camera".\n'+
     '- Kalau shot-nya cocok dengan default di atas, pakai Blok B apa adanya dan JANGAN menulis kamera atau pencahayaan lain lagi di bagian mana pun prompt itu.\n'+
     '- Kalau shot-nya menuntut kondisi lain — turnaround butuh studio rata, scene luar ruang punya cahaya matahari sendiri, orbit tidak mungkin pakai kamera selfie sepanjang tangan — maka TULIS kondisi yang sesuai shot itu dan JANGAN sertakan Blok B sama sekali.\n'+
     '- DILARANG menyebut dua kamera atau dua sumber cahaya dalam satu prompt. Itu membuat engine menebak, dan hasilnya jadi campuran yang tidak diminta.\n\n'+
@@ -1689,6 +1699,28 @@ function audit(){
     push(dblLight.length===0, dblLight.length
       ? dblLight.length+' prompt menyebut lebih dari satu sumber cahaya — bayangan akan tidak konsisten'
       : 'Setiap prompt menyebut tepat satu sumber cahaya', true);
+    /* Nol kamera sama merusaknya dengan dua: engine menebak sendiri dan hasil
+       antar shot jadi tidak seragam. Kata "camera" saja tidak dihitung karena
+       muncul juga di kalimat seperti "looking at the camera". */
+    const CAM_SPEC=/\b(shot on|photographed with|captured on|\d{2}mm|\blens\b|iphone \d|dslr|canon eos|sony zv|webcam|film stock|kodak)\b/i;
+    const noCam=allP.filter(x=>!CAM_SPEC.test(x.t));
+    push(noCam.length===0, noCam.length
+      ? noCam.length+' prompt tidak menyebut kamera/lensa sama sekali — engine akan menebak: '+noCam.slice(0,2).map(x=>x.n).join(', ')+(noCam.length>2?', …':'')
+      : 'Setiap prompt menyebut kamera/lensa secara eksplisit', true);
+    const LIGHT_SPEC=/\b(light|lighting|daylight|sunlight|backlit|rim ?light|softbox|overcast|neon|golden hour|illumination|shade)\b/i;
+    const noLight=allP.filter(x=>!LIGHT_SPEC.test(x.t));
+    push(noLight.length===0, noLight.length
+      ? noLight.length+' prompt tidak menyebut pencahayaan: '+noLight.slice(0,2).map(x=>x.n).join(', ')+(noLight.length>2?', …':'')
+      : 'Setiap prompt menyebut pencahayaan', true);
+    /* Isi shot harus di depan blok realisme, bukan sesudahnya. */
+    const salahUrut=allP.filter(x=>{
+      const r=x.t.search(/highly detailed skin|visible skin pores|natural skin texture/i);
+      const k=x.t.search(/eye level|low angle|high angle|close-?up|medium shot|wide shot|rule of thirds|negative space/i);
+      return r>-1 && k>-1 && k>r;
+    });
+    push(salahUrut.length===0, salahUrut.length
+      ? salahUrut.length+' prompt menaruh blok realisme sebelum komposisi — isi shot jadi kehilangan bobot'
+      : 'Isi shot mendahului blok realisme di semua prompt', true);
   }
   const dblDis=state.scenes.filter(x=>{ const t=x.prompt_video||'';
     return /restrained|minimal head movement/i.test(t) && /moderate movement|free natural movement/i.test(t); });

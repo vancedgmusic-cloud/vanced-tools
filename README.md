@@ -26,7 +26,7 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 10 Perbaikan & Seed | Prompt inpaint terarah per bagian gagal + strategi seed + catatan seed |
 | 11 Content Engine | Positioning, content pillars, bank ide Shorts & longform, monetisasi |
 | 12 Compliance | Disclosure AI + afiliasi, aturan klaim, checklist sebelum posting |
-| 13 Audit & Ekspor | 37 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
+| 13 Audit & Ekspor | 41 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
 
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.
 
@@ -46,6 +46,10 @@ Detail yang paling sering gagal diminta eksplisit: iris + limbal ring + catchlig
 **Realism Lock dipecah dua — dan ini bukan kosmetik.** *Blok A* berisi sifat subjek (kulit, mata, rambut, gigi, tubuh) yang berlaku di shot mana pun, jadi ditempel ke setiap prompt. *Blok B* berisi kondisi pengambilan (kamera, pencahayaan, grain) yang berbeda per shot — turnaround butuh studio rata, scene luar ruang punya cahaya matahari sendiri, orbit tidak mungkin pakai kamera selfie sepanjang tangan. Blok B adalah default yang boleh diganti, dan satu prompt hanya boleh memuat **satu** kamera dan **satu** sumber cahaya. Audit menolak yang menyebut dua.
 
 Sebelum dipecah, keduanya digabung dan ditempel ke semua prompt, sehingga setiap prompt berisi dua kamera dan dua pencahayaan yang bertabrakan.
+
+**Urutan prompt itu menentukan bobot.** Engine memberi bobot lebih besar pada yang di depan, jadi urutannya dipatok: Identity Lock → aksi & setting → wardrobe → komposisi → kamera & cahaya → blok realisme → larangan. Blok realisme adalah pengubah permukaan, tempatnya *setelah* isi shot. Menaruhnya di depan mendorong aksi sebenarnya ke ujung prompt dan melemahkan bobotnya — di output nyata aksi bisa terhimpit di 8% terakhir. Audit menolak prompt yang menaruh realisme sebelum komposisi.
+
+**Nol kamera sama merusaknya dengan dua.** Kalau kamera tidak disebut, engine menebak sendiri dan hasil antar shot jadi tidak seragam. Audit memeriksa kedua arah — kelebihan maupun kekurangan — dan kata "camera" saja tidak dihitung karena muncul juga di kalimat seperti "looking at the camera".
 
 **Realisme gerak (khusus video).** Realism Lock di atas semuanya soal kulit yang diam. Di video yang bikin hasil terasa palsu justru fisika, jadi ada **Motion Lock** terpisah yang hanya ditempel ke prompt video: berat & inersia, akselerasi natural, rambut dan kain telat sepersekian detik dari badan, kaki menapak tanpa sliding, motion blur sesuai shutter, parallax konsisten kedalaman, plus micro-shake dan rolling-shutter wobble.
 
