@@ -1188,7 +1188,8 @@ function realismBrief(){
     '- Kalau shot-nya cocok dengan default di atas, pakai Blok B apa adanya dan JANGAN menulis kamera atau pencahayaan lain lagi di bagian mana pun prompt itu.\n'+
     '- Kalau shot-nya menuntut kondisi lain — turnaround butuh studio rata, scene luar ruang punya cahaya matahari sendiri, orbit tidak mungkin pakai kamera selfie sepanjang tangan — maka TULIS kondisi yang sesuai shot itu dan JANGAN sertakan Blok B sama sekali.\n'+
     '- DILARANG menyebut dua kamera atau dua sumber cahaya dalam satu prompt. Itu membuat engine menebak, dan hasilnya jadi campuran yang tidak diminta.\n\n'+
-    '- DILARANG memakai kata-kata ini karena justru menarik hasil ke arah plastik/filter: '+SLOP_WORDS.join(', ')+'.\n'+
+    '- Kata-kata berikut TIDAK BOLEH MUNCUL DI DALAM PROMPT sama sekali — bukan sebagai deskripsi, dan bukan pula sebagai negasi. Jangan menuliskannya sebagai "no flawless", "no 8k", atau bentuk larangan apa pun; cukup TIDAK MENYEBUTNYA. Menuliskannya sebagai negasi tetap memasukkan katanya ke prompt, membengkakkan panjangnya, dan tidak menolong apa pun:\n  '+SLOP_WORDS.join(', ')+'\n'+
+    '- Daftar larangan yang boleh ditulis hanyalah negative anti-slop yang saya berikan (plastic skin, airbrushed, dan seterusnya). Jangan mencampur kedua daftar itu.\n'+
     '- Jangan menulis "cantik", "sempurna", atau "mulus". Ganti dengan deskripsi fisik yang netral dan spesifik.\n'+
     '- Wajah harus asimetris wajar, bukan cermin kiri-kanan.\n'+
     '- Parameter engine yang disarankan: '+engineParams();
@@ -1612,7 +1613,13 @@ function audit(){
   push(allPrompts.length>0&&withTex===allPrompts.length,'Semua prompt memuat penanda tekstur kulit (pori / vellus / subsurface)'+(allPrompts.length?' — '+withTex+'/'+allPrompts.length:''), true);
   push(allPrompts.length>0&&withEye>=Math.ceil(allPrompts.length*0.5),'Mayoritas prompt memuat detail mata (iris / catchlight)'+(allPrompts.length?' — '+withEye+'/'+allPrompts.length:''), true);
   const slopHits=[...new Set(SLOP_WORDS.filter(w=>allPrompts.some(t=>new RegExp('\\b'+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i').test(t))))];
-  push(slopHits.length===0,slopHits.length?'Ada kata pemicu slop di prompt: '+slopHits.join(', '):'Tidak ada kata pemicu slop di prompt', true);
+  /* Sering muncul karena daftar kata terlarang ditulis ulang jadi negasi
+     ("no flawless, no 8k"). Katanya tetap masuk prompt, jadi tetap dihitung. */
+  const asNeg=slopHits.some(w=>allPrompts.some(t=>new RegExp('\\bno '+w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'i').test(t)));
+  push(slopHits.length===0, slopHits.length
+    ? 'Ada kata pemicu slop di prompt: '+slopHits.slice(0,6).join(', ')+(slopHits.length>6?', …':'')+
+      (asNeg?' — sebagian ditulis sebagai negasi ("no flawless"); kata terlarang seharusnya tidak disebut sama sekali':'')
+    : 'Tidak ada kata pemicu slop di prompt', true);
   const negOK=state.sheet.length&&state.sheet.every(s=>/plastic|airbrush|poreless|waxy/i.test(s.negative||''));
   push(!!negOK,'Semua shot punya negative anti-slop', true);
   if(hasRefs()) push(!!state.refs.pembeda,'Referensi sudah dibaca dan pembeda sudah diusulkan', true);
@@ -1702,11 +1709,20 @@ function audit(){
     /* Nol kamera sama merusaknya dengan dua: engine menebak sendiri dan hasil
        antar shot jadi tidak seragam. Kata "camera" saja tidak dihitung karena
        muncul juga di kalimat seperti "looking at the camera". */
+    /* Syarat lensa hanya untuk prompt GAMBAR. Prompt video menganimasikan start
+       frame, jadi lensanya sudah terwarisi dari frame itu — yang dibutuhkan di
+       sana adalah gerakan kamera, bukan spesifikasi lensa lagi. */
     const CAM_SPEC=/\b(shot on|photographed with|captured on|\d{2}mm|\blens\b|iphone \d|dslr|canon eos|sony zv|webcam|film stock|kodak)\b/i;
-    const noCam=allP.filter(x=>!CAM_SPEC.test(x.t));
+    const imgP=allP.filter(x=>!/\(video\)$/.test(x.n));
+    const noCam=imgP.filter(x=>!CAM_SPEC.test(x.t));
     push(noCam.length===0, noCam.length
-      ? noCam.length+' prompt tidak menyebut kamera/lensa sama sekali — engine akan menebak: '+noCam.slice(0,2).map(x=>x.n).join(', ')+(noCam.length>2?', …':'')
-      : 'Setiap prompt menyebut kamera/lensa secara eksplisit', true);
+      ? noCam.length+' prompt gambar tidak menyebut kamera/lensa — engine akan menebak: '+noCam.slice(0,2).map(x=>x.n).join(', ')+(noCam.length>2?', …':'')
+      : 'Setiap prompt gambar menyebut kamera/lensa secara eksplisit', true);
+    const MOVE_SPEC=/\b(dolly|orbit|tracking|handheld|static|tripod|pan\b|tilt|push-?in|pull-?out|arcing|locked-?off|whip)\b/i;
+    const noMove=state.scenes.filter(x=>x.prompt_video&&!MOVE_SPEC.test(x.prompt_video));
+    push(noMove.length===0, noMove.length
+      ? noMove.length+' prompt video tidak menyebut gerakan kamera'
+      : 'Setiap prompt video menyebut gerakan kamera', true);
     const LIGHT_SPEC=/\b(light|lighting|daylight|sunlight|backlit|rim ?light|softbox|overcast|neon|golden hour|illumination|shade)\b/i;
     const noLight=allP.filter(x=>!LIGHT_SPEC.test(x.t));
     push(noLight.length===0, noLight.length
