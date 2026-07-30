@@ -375,7 +375,7 @@ const state = {
   },
   /* Setelan render tahap 14. Gambar hasilnya TIDAK disimpan di sini —
      lihat renderStore. */
-  render:{ provider:'google', model:'gemini-2.5-flash-image', proxyModel:'gemini-2.5-flash-image', size:'2K', chain:true, extra:'', sheet:'rapat' },
+  render:{ provider:'google', model:'gemini-3.1-flash-image-preview', proxyModel:'gemini-2.5-flash-image', size:'2K', chain:true, extra:'', sheet:'rapat' },
   setup:{
     namaProject:'', gender:'Perempuan', rentangUsia:'22-26', etnisTarget:'Indonesia (Jawa/Sunda)',
     pasar:'Indonesia', bahasa:'Bahasa Indonesia', platform:'TikTok + YouTube Shorts',
@@ -1083,7 +1083,14 @@ const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|ex
    jadi yang bisa dipercaya hanya details-nya, bukan kalimatnya. */
 function quotaInfo(d){
   const det=(d&&d.error&&d.error.details)||[];
-  let hard=false, waitMs=0; const ids=[];
+  const msg=String((d&&d.error&&d.error.message)||'');
+  /* Google menaruh angka batasnya di TEKS pesan, bukan hanya di details:
+     "Quota exceeded for metric: …free_tier_requests, limit: 0".
+     "limit: 0" berarti jatahnya nol dari awal — bukan terpakai habis — dan
+     itu satu-satunya pembeda yang benar-benar bisa dipercaya. */
+  const limitNol=/\blimit:\s*0\b/.test(msg);
+  const tierGratisNol=limitNol&&/free_tier/i.test(msg);
+  let hard=limitNol, waitMs=0; const ids=[];
   det.forEach(x=>{
     (x.violations||[]).forEach(v=>{
       const q=String(v.quotaValue!=null?v.quotaValue:(v.quota_limit_value!=null?v.quota_limit_value:''));
@@ -1096,7 +1103,7 @@ function quotaInfo(d){
   });
   const id=ids.join(' ');
   return {
-    hard, waitMs, id,
+    hard, waitMs, id, tierGratisNol,
     /* quotaId Google menyebut satuannya sendiri — jauh lebih bisa dipercaya
        daripada menebak dari kalimat error, yang bunyinya sama untuk semua. */
     perHari:/PerDay/i.test(id), perMenit:/PerMinute/i.test(id),
@@ -1769,17 +1776,19 @@ function warnShort(got, want, satuan){
 let renderStore={ src:'', items:[], grid:'' };
 let renderAbort=false;
 
-/* Urutan sengaja dimulai dari yang BISA dipakai tanpa kartu kredit. Model
-   Gemini 3 Image berjatah NOL di tier gratis — bukan "sedikit", tapi nol —
-   jadi memakainya tanpa billing selalu berakhir 429 dan membuat orang mengira
-   API key-nya rusak lalu membuat key baru berkali-kali. */
+/* TIDAK ADA model gambar Gemini yang gratis lewat API. Sejak Maret 2026 Google
+   menghapus tier gratis untuk seluruh model gambar — balasannya berbunyi
+   "generate_content_free_tier_requests, limit: 0", dan angka nol itu berarti
+   jatahnya memang nol dari awal, bukan terpakai habis. Tanpa billing aktif,
+   ketiganya sama-sama gagal. Uji gratis hanya tersedia lewat antarmuka web AI
+   Studio, bukan API. Karena itu jalur proxy yang disarankan di panel. */
 const IMG_MODELS={
-  'gemini-2.5-flash-image':{name:'Nano Banana (Gemini 2.5 Flash Image) — GRATIS', tier:'gratis',
-    note:'Satu-satunya yang jalan tanpa billing: 10 gambar/menit, 500 gambar/hari, keluar di 1024px. Tekstur kulitnya sedikit di bawah model Gemini 3, tapi ini yang bisa langsung kamu pakai.'},
-  'gemini-3.1-flash-image-preview':{name:'Nano Banana 2 (Gemini 3.1 Flash Image) — butuh billing', tier:'bayar',
-    note:'Butuh billing aktif di Google Cloud. Cepat dan murah, tapi mengabaikan setelan resolusi — hasilnya selalu sekitar 1K.'},
-  'gemini-3-pro-image-preview':{name:'Nano Banana Pro (Gemini 3 Pro Image) — butuh billing', tier:'bayar',
-    note:'Butuh billing aktif di Google Cloud; jatah tier gratisnya nol. Paling patuh instruksi dan satu-satunya yang benar-benar menuruti resolusi 2K/4K. Paling mahal.'}
+  'gemini-3.1-flash-image-preview':{name:'Nano Banana 2 (Gemini 3.1 Flash Image)', tier:'bayar',
+    note:'Pengganti resmi Gemini 2.5 Flash Image. Cepat dan paling murah di antara ketiganya, tapi mengabaikan setelan resolusi — hasilnya selalu sekitar 1K. Butuh billing aktif.'},
+  'gemini-3-pro-image-preview':{name:'Nano Banana Pro (Gemini 3 Pro Image)', tier:'bayar',
+    note:'Paling patuh instruksi dan satu-satunya yang benar-benar menuruti resolusi 2K/4K. Paling mahal. Butuh billing aktif.'},
+  'gemini-2.5-flash-image':{name:'Nano Banana (Gemini 2.5 Flash Image) — lawas', tier:'bayar',
+    note:'Generasi lama yang dijadwalkan dimatikan Google pada 2 Oktober 2026, dan alias ini bisa diarahkan ke varian preview yang sudah dimatikan lebih dulu. Pilih hanya kalau dua model di atas tidak tersedia di akunmu. Butuh billing aktif.'}
 };
 /* Gemini hanya menerima rasio dari daftar tetap; 4:5 milik tool ini tidak ada
    di sana dan akan ditolak, jadi dipetakan ke tetangga terdekat. */
@@ -1819,10 +1828,13 @@ function imgErr(e, model){
   }
 
   if(e&&e.status===429){
+    /* "free_tier … limit: 0" adalah jawaban pasti, bukan dugaan: seluruh
+       model gambar Gemini memang tidak punya tier gratis di API. Mengganti
+       model atau membuat key baru tidak mengubah apa pun. */
+    if(q&&q.tierGratisNol)
+      return 'Jatah tier gratis untuk model gambar ini NOL — dan itu berlaku untuk SEMUA model gambar Gemini, bukan cuma yang kamu pilih. Google menghapus tier gratis untuk generate gambar lewat API; yang gratis tinggal antarmuka web AI Studio. Mengganti model atau membuat API key baru tidak akan mengubah hasilnya.\n\nDua jalan keluar: (1) aktifkan billing di project Google Cloud milik key ini, atau (2) ganti "Lewat mana" di atas ke Proxy OpenAI-compatible, supaya billing-nya ikut penyedia proxy.'+asli;
     if(q&&q.hard)
-      return (berbayar
-        ? 'Model ini berjatah NOL di tier gratis — butuh billing aktif di Google Cloud. Membuat API key baru tidak akan menolong. Ganti Model ke "Nano Banana (Gemini 2.5 Flash Image) — GRATIS", lalu ulangi.'
-        : 'Google melaporkan jatahmu untuk model ini NOL. Biasanya karena project Google Cloud-nya belum mengaktifkan Generative Language API, atau modelnya memang tidak tersedia di region akunmu.')+asli;
+      return 'Google melaporkan jatahmu untuk model ini NOL. Biasanya karena billing belum aktif di project Google Cloud milik key ini, Generative Language API belum diaktifkan, atau modelnya tidak tersedia di region akunmu.'+asli;
     if(q&&q.perHari)
       return 'Jatah HARIAN sudah habis (tier gratis 500 gambar/hari, dihitung per project Google Cloud — bukan per API key). Tunggu reset, atau pakai project Google Cloud lain.'+asli;
     if(q&&q.perMenit)
@@ -1934,7 +1946,7 @@ async function genImage(prompt, ar, refs){
   /* Tier gratis dibatasi 10 gambar per menit. Dua belas panel beruntun pasti
      menabraknya di panel ke-11, jadi jaraknya diatur sendiri di sini alih-alih
      menunggu ditolak lalu mengulang. */
-  const gap=(IMG_MODELS[model]||{}).tier==='gratis' ? 6500 : 1200;
+  const gap=1200;   /* tidak ada lagi tier gratis yang perlu dijeda 6,5 detik */
   const sisa=gap-(Date.now()-lastImgAt);
   if(lastImgAt&&sisa>0) await new Promise(r=>setTimeout(r,sisa));
   lastImgAt=Date.now(); imgCallCount++;
@@ -2671,8 +2683,8 @@ function mergeLoadedState(d){
   bumpAudit();
   if(!Array.isArray(state.uploads.refs)) state.uploads.refs=[];
   /* Project lama belum punya blok setelan render tahap 14. */
-  if(!state.render||typeof state.render!=='object') state.render={model:'gemini-2.5-flash-image',size:'2K',chain:true};
-  if(!IMG_MODELS[state.render.model]) state.render.model='gemini-2.5-flash-image';
+  if(!state.render||typeof state.render!=='object') state.render={model:'gemini-3.1-flash-image-preview',size:'2K',chain:true};
+  if(!IMG_MODELS[state.render.model]) state.render.model='gemini-3.1-flash-image-preview';
   if(state.render.provider!=='proxy') state.render.provider='google';
   if(typeof state.render.proxyModel!=='string'||!state.render.proxyModel) state.render.proxyModel='gemini-2.5-flash-image';
   if(typeof state.render.extra!=='string') state.render.extra='';
@@ -2682,7 +2694,14 @@ function mergeLoadedState(d){
      Dipindahkan SEKALI saja lalu ditandai — supaya pengguna yang memang
      punya billing dan sengaja memilih model berbayar tidak dipaksa balik
      setiap kali project dibuka. */
-  if(!state.render.fixed){ state.render.model='gemini-2.5-flash-image'; state.render.fixed=1; }
+  /* fixed=1 dulu memindahkan project ke gemini-2.5-flash-image dengan anggapan
+     model itu gratis. Anggapan itu keliru — tidak ada model gambar Gemini yang
+     gratis di API — dan modelnya juga dijadwalkan dimatikan. Putaran kedua
+     memindahkannya ke pengganti resmi. */
+  if(state.render.fixed!==2){
+    if(state.render.model==='gemini-2.5-flash-image') state.render.model='gemini-3.1-flash-image-preview';
+    state.render.fixed=2;
+  }
   if(!['1K','2K','4K'].includes(state.render.size)) state.render.size='2K';
   /* Project lama menyimpan referensi gaya sebagai teks bebas tanpa dropdown.
      Teksnya tidak boleh hilang — dipindahkan ke mode "custom" supaya tetap
@@ -3206,9 +3225,11 @@ function renderPanel(){
     const viaProxy=r.provider==='proxy';
     h+='<div class="card"><h3>API Gambar</h3>'+
       '<div class="field full"><label>Lewat mana</label><select data-path="render.provider">'+
-        '<option value="google"'+(viaProxy?'':' selected')+'>Google AI Studio — key sendiri</option>'+
+        '<option value="google"'+(viaProxy?'':' selected')+'>Google AI Studio — key sendiri, WAJIB billing aktif</option>'+
         '<option value="proxy"'+(viaProxy?' selected':'')+'>Proxy OpenAI-compatible (LiteLLM, KoboiLLM, dll) — billing ikut penyedia</option>'+
-      '</select></div><div class="grid two" style="margin-top:12px">'+
+      '</select>'+
+      (viaProxy?'':'<div class="hint" style="color:var(--amber)">Sejak Maret 2026 Google menghapus tier gratis untuk SEMUA model gambar di API — balasannya berbunyi <code>free_tier_requests, limit: 0</code>. Tanpa billing aktif di project Google Cloud, ketiga model di bawah sama-sama gagal, dan membuat API key baru tidak mengubah apa pun. Kalau kamu punya akses proxy, pakai pilihan kedua.</div>')+
+      '</div><div class="grid two" style="margin-top:12px">'+
       (viaProxy
         ? '<div class="field"><label>Base URL</label><input data-path="api.imgBase" value="'+esc(state.api.imgBase)+'" placeholder="https://….../v1">'+
             '<div class="hint">Harus berakhir di <code>/v1</code>.</div></div>'+
@@ -3251,7 +3272,7 @@ function renderPanel(){
       '</div>';
 
     if(jml){
-      h+='<div class="card"><h3>Hasil <span class="tag">'+ok+'/'+jml+' berhasil</span></h3>';
+      h+='<div class="card" id="hasilCard"><h3>Hasil <span class="tag">'+ok+'/'+jml+' berhasil</span></h3>';
       /* Pesan gagal ditampilkan UTUH di sini, bukan cuma terpotong di dalam
          sel — inilah satu-satunya tempat penyebabnya benar-benar terbaca. */
       const errs=[...new Set(renderStore.items.filter(x=>x.state==='gagal').map(x=>x.err))];
@@ -3507,10 +3528,18 @@ document.addEventListener('click', async e=>{
       renderStore={src:'tes', items:[{label:'Tes koneksi', state:'ok', img}], grid:''};
       toast('Berhasil. Konfigurasi gambar sudah benar.','ok');
     }catch(e){
-      renderStore={src:'tes', items:[{label:'Tes koneksi', state:'gagal', err:e.message||String(e)}], grid:''};
-      toast('Tes gagal — sebabnya ada di kartu Hasil.','err');
+      const m=e.message||String(e);
+      renderStore={src:'tes', items:[{label:'Tes koneksi', state:'gagal', err:m}], grid:''};
+      /* Kalimat pertama ikut ke toast supaya sebabnya terbaca tanpa scroll —
+         uji nyata menunjukkan pengguna berhenti di notifikasi dan tidak pernah
+         sampai ke kartu Hasil. */
+      toast('Tes gagal: '+m.split(/\n|\. /)[0].slice(0,120),'err');
     }
-    setBusy(false); renderPanel(); return;
+    setBusy(false); renderPanel();
+    /* Lompat sendiri ke kartu Hasil — menyuruh orang mencarinya bukan tugas
+       yang boleh dilempar ke pengguna. */
+    setTimeout(()=>{ const c=$('#hasilCard'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); }, 60);
+    return;
   }
   if(t.id==='btnRender'){ runRender($('#renderSrc')?.value||'pose'); return; }
   if(t.id==='btnRenderStop'){ renderAbort=true; toast('Dihentikan setelah gambar yang sedang jalan selesai.','ok'); return; }
