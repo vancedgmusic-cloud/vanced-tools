@@ -616,9 +616,14 @@ const MOTION={
    menahan diri lebih realistis daripada dinamis. Untuk b-roll produk,
    gerakan bebas justru bagus. */
 const SHOT_DISCIPLINE={
+  /* Klausa ini mengatur PEMAIN saja, bukan kamera. Lipsync rusak kalau KEPALA
+     banyak bergerak — bukan kalau kameranya bergerak. Dolly push-in pelan ke
+     talking head adalah bahasa film standar. Versi lama menempelkan "camera
+     held almost static" di sini, sehingga scene yang kameranya sudah dipilih
+     orbit atau tracking berisi dua perintah kamera yang bertabrakan. */
   tenang:{
     l:'Tenang — talking head / lipsync',
-    en:'restrained performance: minimal head movement, shoulders and torso nearly still, only small natural micro-expressions, expression shifting slowly rather than suddenly, no exaggerated gestures; camera held almost static'
+    en:'restrained performance: minimal head movement, shoulders and torso nearly still, only small natural micro-expressions, expression shifting slowly rather than suddenly, no exaggerated gestures'
   },
   sedang:{
     l:'Sedang — demo produk di tangan',
@@ -650,8 +655,23 @@ const CAM_MOVE=[
   'smooth arcing orbit around the subject',
   'tracking shot moving with the subject',
   'slow tilt revealing the subject bottom to top',
-  'whip pan into the next beat'
+  'whip pan into the next beat'   /* satu-satunya yang merusak lipsync */
 ];
+/* Dipakai di dua tempat — penegakan di normScene dan pemeriksaan di audit —
+   jadi definisinya harus satu, bukan dua yang bisa melenceng. */
+const MOVE_SPEC=/\b(dolly|orbit|tracking|handheld|static|tripod|pan\b|tilt|push-?in|pull-?out|arcing|locked-?off|whip)\b/i;
+
+/* Larangan teks tergambar tidak boleh dititipkan ke kepatuhan model. Nano
+   Banana dan sejenisnya rajin membakar caption ke dalam frame, dan uji nyata
+   menunjukkan model mematuhi aturan ini di Reference Sheet tapi melewatkannya
+   di SELURUH Scene Pack. Caption yang benar ditambahkan saat editing.
+   "no logo" sengaja tidak dimasukkan — label produk asli harus tetap boleh. */
+const TEXT_BAN='no burnt-in text, no captions, no subtitles, no lower-third, no watermark';
+const TEXT_BAN_RE=/no text|without text|no caption|no subtitle|no on-screen|no burnt-?in text/i;
+function banBurntText(p){
+  if(!p || TEXT_BAN_RE.test(p)) return p;
+  return p.replace(/[.;]\s*$/,'')+'. '+TEXT_BAN+'.';
+}
 
 /* Kosakata komposisi. Negative space penting untuk UGC karena caption dan
    sticker teks butuh ruang kosong yang sudah direncanakan, bukan sisa. */
@@ -1229,6 +1249,7 @@ const STAGE_TASK={
     'Aturan:\n'+
     '- Deskripsi fisik harus SANGAT spesifik dan terukur. Hindari kata umum seperti "cantik", "menarik", "biasa saja".\n'+
     '- Sertakan minimal 2 tanda unik permanen (mis. tahi lalat di posisi tertentu, freckles, lesung pipi sebelah, celah gigi kecil). Tanda unik ini adalah kunci utama konsistensi — sebut posisinya secara presisi.\n'+
+    '- SISI KIRI/KANAN wajib ditulis relatif terhadap KAMERA, bukan terhadap tubuh talent, dan wajib dieja begitu: tulis "camera-left" atau "camera-right", jangan hanya "left"/"right". Engine gambar membaca "her right cheek" secara tidak konsisten dan sering mencerminkannya, sehingga tanda unik berpindah sisi antar shot dan kemiripan langsung pecah di turnaround.\n'+
     '- Wajah harus terasa manusia nyata, bukan hasil AI yang terlalu mulus: sebutkan tekstur kulit, pori, sedikit asimetri.\n'+
     '- Umur tampak harus konsisten dengan rentang '+state.setup.rentangUsia+' tahun.\n'+
     '- FIELD identity_lock: tulis dalam BAHASA INGGRIS sebagai SATU baris padat berisi ciri paling mengunci, siap disalin ke depan setiap prompt. Format: "<nama>, <usia>yo <etnis> <gender>, <bentuk wajah>, <struktur tulang: garis rahang + tulang pipi>, <kulit>, <mata>, <rambut>, <tanda unik>, <tubuh>". Maksimal 65 kata.\n'+
@@ -1389,13 +1410,14 @@ function promptScenes(fb){
 
     '- disiplin: tentukan takaran gerak scene ini, isi dengan salah satu dari "tenang", "sedang", atau "dinamis".\n'+
     Object.keys(SHOT_DISCIPLINE).map(k=>'  '+k+' = '+SHOT_DISCIPLINE[k].l).join('\n')+'\n'+
-    '  ATURAN KERAS: setiap scene yang ADA DIALOGNYA wajib "tenang". Gerakan kepala berlebihan merusak sinkronisasi bibir dan itu penyebab gagal nomor satu di video UGC AI. Menahan diri lebih realistis daripada dinamis.\n'+
+    '  ATURAN KERAS: setiap scene yang ADA DIALOGNYA wajib "tenang". Gerakan kepala berlebihan merusak sinkronisasi bibir dan itu penyebab gagal nomor satu di video UGC AI. Menahan diri lebih realistis daripada dinamis. Ini membatasi PEMAIN saja — kameranya tetap boleh bergerak.\n'+
     '  Emosi mulai dari netral lalu naik perlahan — ekspresi dramatis sejak awal terbaca palsu.\n'+
     '  Scene b-roll tanpa dialog boleh "dinamis".\n'+
     '- Scene pertama wajib punya hook kuat di 3 detik pertama: sebutkan hook visual DAN hook verbal.\n'+
-    '- Scene terakhir wajib berisi CTA.\n'+
+    '- Scene terakhir wajib berisi CTA yang DITUJUKAN KE PENONTON, ditulis di dalam field dialog DAN di beat PAYOFF. Kalimat memuji produk BUKAN CTA. Contoh CTA benar: "link-nya udah aku taruh di bio, cek ya", "geser ke keranjang kuning sekarang", "simpan dulu videonya biar nggak lupa". Contoh yang SALAH dianggap CTA: "aku suka banget produk ini", "hasilnya oke".\n'+
     '- TANPA TEKS TERGAMBAR: prompt gambar dan video WAJIB melarang teks, caption, subtitle, dan lower-third muncul di dalam frame. Teks hasil generate hampir selalu rusak, dan caption yang benar ditambahkan saat editing — bukan dibakar ke dalam video. Sertakan larangan ini di setiap prompt.\n'+
-    '- setting: lokasi konkret yang masuk akal untuk '+state.setup.pasar+', bukan lokasi generik.\n\n'+
+    '- setting: lokasi konkret yang masuk akal untuk '+state.setup.pasar+', bukan lokasi generik.\n'+
+    '  Pencahayaan yang dipilih untuk talent ini adalah "'+rpick('cahaya').l+'", dan itu ditempel ke setiap prompt gambar. Kalau setting scene-nya DI DALAM RUANGAN, sebutkan dari mana cahaya itu masuk (mis. jendela besar di belakang subjek, pintu teras terbuka) supaya cahaya dan lokasinya tidak saling bertentangan. Jangan menulis ruangan yang "terang merata" lalu meminta cahaya berarah — engine akan menebak dan hasilnya campur aduk.\n\n'+
 
     'SLOT WAJIB TIAP SCENE\n'+
     '- aksi: SATU kata kerja fisik yang bisa dibaca instan, bukan pose diam. Contoh bagus: "menuang serum ke telapak tangan", "menepuk pipi dua kali", "membalik kemasan untuk baca komposisi". Contoh buruk: "berpose", "tersenyum".\n'+
@@ -1403,8 +1425,9 @@ function promptScenes(fb){
     '  sudut: '+COMPO.sudut.join(' / ')+'\n'+
     '  jarak: '+COMPO.jarak.join(' / ')+'\n'+
     '  framing: '+COMPO.aturan.join(' / ')+'\n'+
-    '  Minimal 2 scene WAJIB memakai framing bernegative space, karena caption dan sticker teks butuh ruang kosong yang direncanakan — bukan sisa.\n'+
+    '  Minimal 2 scene WAJIB menyisakan ruang untuk caption — pakai framing bernegative space, atau rule of thirds yang menaruh subjek di satu sisi. "centered symmetrical framing" tidak menyisakan ruang apa pun, jadi jangan dipakai lebih dari sekali.\n'+
     '- kamera: gerakan kamera spesifik, pakai kosakata ini: '+CAM_MOVE.join(' / ')+'\n'+
+    '  Gerakan kamera dan gerakan pemain adalah dua hal berbeda. Scene berdialog tetap BOLEH memakai dolly, orbit, tracking, atau handheld — yang harus ditahan adalah gerak kepala pemainnya, bukan kameranya. Hanya "whip pan" yang dilarang di scene berdialog karena motion blur-nya menyapu mulut dan merusak lipsync.\n'+
     '- beats: '+beatBrief()+'\n'+
     '  Tulis beats sebagai satu baris: "t=0–Xs HOOK: … | t=X–Ys BUILD: … | t=Y–Zs PAYOFF: …". Isi tiap beat dengan perubahan visual konkret, bukan deskripsi suasana.\n\n'+
 
@@ -1480,7 +1503,11 @@ function normScene(x,i){
   };
   if(String(s.dialog).trim()){
     s.disiplin='tenang';
+    /* Whip pan menyapu mulut dengan motion blur — satu-satunya gerakan kamera
+       yang benar-benar merusak lipsync, jadi diturunkan ke dolly pelan. */
+    if(/whip/i.test(s.kamera)) s.kamera='slow steady dolly push-in';
     if(s.prompt_video){
+      s.prompt_video=s.prompt_video.replace(/whip pan[^;.]*/gi,'slow steady dolly push-in');
       /* Model kadang sudah menulis klausa "sedang" atau "dinamis". Menambah
          klausa tenang tanpa membuangnya membuat prompt berisi dua perintah
          gerak yang bertabrakan — terlihat di output nyata. */
@@ -1489,13 +1516,43 @@ function normScene(x,i){
       });
       s.prompt_video=s.prompt_video
         .replace(/\b(moderate movement|free natural movement)\b[^;.]*[;.]?/gi,'')
+        /* sisa dari versi lama yang mengunci kamera lewat klausa gerak pemain */
+        .replace(/;?\s*camera held almost static\b/gi,'')
         .replace(/\s*;\s*;/g,';').replace(/\s{2,}/g,' ').trim();
       if(!/restrained|minimal head movement|nearly still/i.test(s.prompt_video)){
         s.prompt_video=s.prompt_video.replace(/[.;]\s*$/,'')+'; '+SHOT_DISCIPLINE.tenang.en+'.';
       }
     }
   }
+  /* Nol gerakan kamera sama merusaknya dengan dua: engine menebak sendiri.
+     Kalau model lupa menyebutnya, pakai gerakan yang sudah dipilih di field
+     kamera scene ini — jadi metadata dan prompt tidak pernah berbeda. */
+  if(s.prompt_video && s.kamera && !MOVE_SPEC.test(s.prompt_video)){
+    s.prompt_video=s.prompt_video.replace(/[.;]\s*$/,'')+'; '+s.kamera+'.';
+  }
+  s.prompt_image=banBurntText(s.prompt_image);
+  s.prompt_video=banBurntText(s.prompt_video);
   return s;
+}
+
+/* id shot diambil dari POSISI, bukan dari jawaban model. Uji nyata: model
+   mengisi "id" dengan teks label ("Turnaround - Tampak Depan"), sehingga
+   pemeriksaan keseragaman seed turnaround — yang mencocokkan id front/three/
+   side/back — tidak pernah jalan sama sekali dan diam-diam terlewat.
+   Pemetaan per posisi hanya dipakai kalau jumlahnya pas; kalau model
+   mengembalikan kurang, urutannya bergeser dan label bawaan justru salah. */
+function normSheetList(arr){
+  const aligned=arr.length===SHEET_SHOTS.length;
+  return arr.map((x,i)=>{
+    const t=aligned?(SHEET_SHOTS[i]||{}):{};
+    return {
+      id:t.id||x.id||('shot'+i),
+      label:t.label||x.label||('Shot '+(i+1)),
+      prompt:stripText(x.prompt), negative:stripText(x.negative), catatan:stripText(x.catatan),
+      /* seed yang sudah dicatat tidak boleh hilang saat generate ulang */
+      seed:(state.sheet[i]&&state.sheet[i].seed)||''
+    };
+  });
 }
 
 function normRepair(x,i){
@@ -1528,12 +1585,7 @@ async function runStage(id, fb){
       const d=parseJSONLoose(raw);
       const arr=Array.isArray(d.sheet)?d.sheet:[];
       if(!arr.length) throw new Error('AI tidak mengembalikan shot apa pun. Coba lagi.');
-      state.sheet=arr.map((x,i)=>({
-        id:x.id||SHEET_SHOTS[i]?.id||('shot'+i),
-        label:x.label||SHEET_SHOTS[i]?.label||('Shot '+(i+1)),
-        prompt:stripText(x.prompt), negative:stripText(x.negative), catatan:stripText(x.catatan),
-        seed:(state.sheet[i]&&state.sheet[i].seed)||''   /* seed yang sudah dicatat tidak hilang saat regenerate */
-      }));
+      state.sheet=normSheetList(arr);
       warnShort(state.sheet.length, SHEET_SHOTS.length, 'shot');
     } else if(id==='scenes'){
       const raw=await callAI(promptScenes(fb), 14000, null);
@@ -1573,7 +1625,7 @@ async function runAll(){
       setBusy(true,'Menyusun '+(STAGE_LABEL[id]||id)+'…');
       if(id==='sheet'){
         const d=parseJSONLoose(await callAI(promptSheet(''),12000,null));
-        state.sheet=(d.sheet||[]).map((x,i)=>({id:x.id||('shot'+i),label:x.label||('Shot '+(i+1)),prompt:stripText(x.prompt),negative:stripText(x.negative),catatan:stripText(x.catatan)}));
+        state.sheet=normSheetList(d.sheet||[]);
       } else if(id==='scenes'){
         const d=parseJSONLoose(await callAI(promptScenes(''),14000,null));
         state.scenes=(d.scenes||[]).map((x,i)=>normScene(x,i));
@@ -1653,8 +1705,11 @@ function audit(){
     ? 'Ada kata pemicu slop di prompt: '+slopHits.slice(0,6).join(', ')+(slopHits.length>6?', …':'')+
       (asNeg?' — sebagian ditulis sebagai negasi ("no flawless"); kata terlarang seharusnya tidak disebut sama sekali':'')
     : 'Tidak ada kata pemicu slop di prompt', true);
-  const negOK=state.sheet.length&&state.sheet.every(s=>/plastic|airbrush|poreless|waxy/i.test(s.negative||''));
-  push(!!negOK,'Semua shot punya negative anti-slop', true);
+  /* Engine tanpa field negative terpisah (Nano Banana, Gemini Image) memang
+     DIPERINTAHKAN oleh tool ini menyisipkan daftar anti-slop di dalam prompt.
+     Memeriksa field "negative" saja berarti menyalahkan model karena patuh. */
+  const negOK=state.sheet.length&&state.sheet.every(s=>/plastic|airbrush|poreless|waxy/i.test((s.negative||'')+' '+(s.prompt||'')));
+  push(!!negOK,'Semua shot punya negative anti-slop (di field negative atau inline di prompt)', true);
   at('refs');
   if(hasRefs()) push(!!state.refs.pembeda,'Referensi sudah dibaca dan pembeda sudah diusulkan', true);
 
@@ -1667,7 +1722,12 @@ function audit(){
   push(state.scenes.length>=3,'Scene Pack minimal 3 scene');
   const sceneLocked=state.scenes.length&&state.scenes.every(s=>lock&&s.prompt_image&&s.prompt_image.toLowerCase().includes(lock.slice(0,24).toLowerCase()));
   push(!!sceneLocked,'Semua prompt scene memuat Identity Lock', true);
-  const hasCTA=state.scenes.some(s=>/cta|link|keranjang|checkout|beli|klik/i.test(s.dialog+' '+s.use_case));
+  /* CTA paling sering mendarat di BEATS (kerangka PAYOFF memang menyebut CTA),
+     bukan di dialog — memeriksa dialog saja membuat scene yang sudah ber-CTA
+     tetap dinyatakan gagal. Kosakata juga diperluas ke ajakan bahasa Indonesia
+     yang sebenarnya dipakai kreator. */
+  const CTA_RE=/\bcta\b|link di bio|\blink\b|keranjang|checkout|\bbeli\b|\bklik\b|\bcek\b|swipe|geser|follow|simpan|share|kunjungi|mampir|mengajak|ajakan|\bmencoba\b/i;
+  const hasCTA=state.scenes.some(s=>CTA_RE.test(s.dialog+' '+s.use_case+' '+(s.beats||'')));
   push(!!hasCTA,'Ada scene dengan CTA yang jelas', true);
 
   /* Slot dari master formula: aksi, komposisi, beats, dan realisme gerak. */
@@ -1678,8 +1738,13 @@ function audit(){
     push(withAksi===state.scenes.length,'Semua scene punya kata kerja aksi — '+withAksi+'/'+state.scenes.length, true);
     const withKomp=state.scenes.filter(s=>String(s.komposisi||'').trim()).length;
     push(withKomp===state.scenes.length,'Semua scene punya komposisi eksplisit — '+withKomp+'/'+state.scenes.length, true);
-    const negSpace=state.scenes.filter(s=>/negative space/i.test(s.komposisi||'')).length;
-    push(negSpace>=2,'Minimal 2 scene menyediakan negative space untuk teks overlay — '+negSpace, true);
+    /* Framing rule-of-thirds SUDAH menyisakan ruang overlay di sisi seberang
+       subjek — dari 5 opsi framing di COMPO.aturan, hanya "centered
+       symmetrical" yang tidak. Mencocokkan frasa "negative space" saja
+       menyalahkan scene yang ruangnya sebenarnya sudah ada. */
+    const OVERLAY_ROOM=/negative space|rule of thirds/i;
+    const negSpace=state.scenes.filter(s=>OVERLAY_ROOM.test(s.komposisi||'')).length;
+    push(negSpace>=2,'Minimal 2 scene menyediakan ruang teks overlay (negative space atau rule of thirds) — '+negSpace, true);
     if(motionLock()){
       const mo=state.scenes.filter(s=>/inertia|motion blur|parallax|weight/i.test(s.prompt_video||'')).length;
       push(mo===state.scenes.length,'Semua prompt video memuat realisme gerak — '+mo+'/'+state.scenes.length, true);
@@ -1766,11 +1831,14 @@ function audit(){
     push(noCam.length===0, noCam.length
       ? noCam.length+' prompt gambar tidak menyebut kamera/lensa — engine akan menebak: '+noCam.slice(0,2).map(x=>x.n).join(', ')+(noCam.length>2?', …':'')
       : 'Setiap prompt gambar menyebut kamera/lensa secara eksplisit', true);
-    const MOVE_SPEC=/\b(dolly|orbit|tracking|handheld|static|tripod|pan\b|tilt|push-?in|pull-?out|arcing|locked-?off|whip)\b/i;
+    /* Prompt video milik tahap 09, bukan 08. Blok ini berada di dalam konteks
+       'sheet', jadi peringatannya dulu menyuruh perbaiki di tahap yang salah. */
+    at('scenes');
     const noMove=state.scenes.filter(x=>x.prompt_video&&!MOVE_SPEC.test(x.prompt_video));
     push(noMove.length===0, noMove.length
       ? noMove.length+' prompt video tidak menyebut gerakan kamera'
       : 'Setiap prompt video menyebut gerakan kamera', true);
+    at('sheet');
     const LIGHT_SPEC=/\b(light|lighting|daylight|sunlight|backlit|rim ?light|softbox|overcast|neon|golden hour|illumination|shade)\b/i;
     const noLight=allP.filter(x=>!LIGHT_SPEC.test(x.t));
     push(noLight.length===0, noLight.length
@@ -2092,8 +2160,12 @@ function mergeLoadedState(d){
   if(!MOTION.opt[state.realism.gerak]) state.realism.gerak='penuh';
   /* project lama bisa menyimpan durasi di atas batas engine */
   state.setup.durasi=Math.max(4, Math.min(MAX_CLIP, Math.round(+state.setup.durasi)||8));
-  /* project lama menyimpan scene tanpa slot aksi/komposisi/beats */
+  /* project lama menyimpan scene tanpa slot aksi/komposisi/beats. Menjalankan
+     normScene di sini juga berarti project lama langsung ikut mendapat
+     penegakan terbaru — larangan teks dan gerakan kamera — tanpa perlu
+     generate ulang tahap 09. */
   state.scenes=state.scenes.map((x,i)=>normScene(x,i));
+  state.sheet=normSheetList(state.sheet);
 }
 function saveProject(){
   const nm=(state.persona.nama_lengkap||state.setup.namaProject||'ai-talent').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
