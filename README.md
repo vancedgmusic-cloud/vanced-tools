@@ -29,6 +29,10 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 13 Audit & Ekspor | 42 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
 | 14 Render Gambar | Jalankan prompt jadi gambar langsung di browser — **Pose Sheet 12 panel** + character sheet gabungan untuk image reference engine video |
 
+**Dua jalur API di tahap 14.** *Google AI Studio* memakai key sendiri. *Proxy OpenAI-compatible* (LiteLLM, KoboiLLM, dsb.) memindahkan billing ke penyedia proxy — isi Base URL, key, dan nama model dari dashboard proxy.
+
+Model Gemini di LiteLLM **tidak bisa** lewat `/images/generations`: endpoint itu dirutekan ke Vertex Predict API yang menolak Gemini ([litellm#17923](https://github.com/BerriAI/litellm/issues/17923)). Karena itu tool memilih endpoint sendiri — nama model `imagen…` ke `/images/generations`, selain itu ke `/chat/completions`, tempat gambar dikembalikan sebagai data URI di dalam `message.content` (sebagian versi juga mengisi `message.images[]`; ketiga bentuk diurai). Tombol **Tes Koneksi** menembak satu gambar untuk memastikan key, model, dan endpoint benar sebelum menghabiskan 12 panggilan.
+
 **Catatan penting tahap 14.** Hanya `gemini-2.5-flash-image` (Nano Banana) yang punya tier gratis: 10 gambar/menit, 500 gambar/hari, dihitung **per project Google Cloud, bukan per API key**. Model Gemini 3 Image (`gemini-3-pro-image-preview`, `gemini-3.1-flash-image-preview`) berjatah **nol** di tier gratis dan butuh billing aktif — tanpa itu setiap panggilan dibalas 429 dengan pesan `"You exceeded your current quota, please check your plan and billing details"`, yang terbaca seperti API key rusak padahal bukan. Tool memisahkan dua jenis 429 lewat `quotaValue` di `error.details`: kuota nol dilempar langsung tanpa diulang, rate limit diulang sesuai `retryDelay` dari Google.
 
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.

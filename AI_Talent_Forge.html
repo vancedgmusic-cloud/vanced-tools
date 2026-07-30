@@ -368,11 +368,14 @@ const state = {
     /* Key khusus render gambar (tahap 14). Dipisah dari key teks karena
        provider teks bisa saja Claude atau Groq yang tidak bisa membuat
        gambar sama sekali. Kalau dikosongkan, key Gemini di atas dipakai. */
-    imgKey:''
+    imgKey:'',
+    /* Jalur proxy (LiteLLM / OpenAI-compatible). Dipakai kalau billing
+       gambar ditanggung penyedia proxy, bukan akun Google pribadi. */
+    imgBase:'', imgProxyKey:''
   },
   /* Setelan render tahap 14. Gambar hasilnya TIDAK disimpan di sini —
      lihat renderStore. */
-  render:{ model:'gemini-2.5-flash-image', size:'2K', chain:true },
+  render:{ provider:'google', model:'gemini-2.5-flash-image', proxyModel:'gemini-2.5-flash-image', size:'2K', chain:true, extra:'' },
   setup:{
     namaProject:'', gender:'Perempuan', rentangUsia:'22-26', etnisTarget:'Indonesia (Jawa/Sunda)',
     pasar:'Indonesia', bahasa:'Bahasa Indonesia', platform:'TikTok + YouTube Shorts',
@@ -1734,6 +1737,17 @@ let lastImgAt=0;
    penyebabnya modelnya memang tidak punya jatah gratis sama sekali. */
 function imgErr(msg, model){
   const berbayar=(IMG_MODELS[model]||{}).tier==='bayar';
+  if(model==='proxy'){
+    if(/KUOTA-NOL|429|quota|budget|RESOURCE_EXHAUSTED/i.test(msg))
+      return 'Proxy menolak karena kuota atau budget: '+msg.replace('KUOTA-NOL ','');
+    if(/Predict\/RawPredict|cannot be accessed through Vertex Predict/i.test(msg))
+      return 'Proxy merutekan model ini ke Vertex Predict API yang tidak mendukung Gemini. Ini bug yang diketahui di LiteLLM untuk /images/generations. Pastikan nama model yang kamu isi BUKAN diawali "imagen" supaya tool memakai /chat/completions.';
+    if(/401|403|Unauthorized|invalid.*key|authentication/i.test(msg))
+      return 'API key proxy ditolak. Periksa key dan Base URL-nya (harus berakhir di /v1).';
+    if(/404|not found|No deployments|does not exist/i.test(msg))
+      return 'Nama model tidak dikenal di proxy itu. Salin persis dari kolom "Model Information" di dashboard proxy — bukan teks abu-abu di bawahnya.';
+    return msg;
+  }
   if(/KUOTA-NOL/.test(msg)){
     return berbayar
       ? 'Model ini berjatah NOL di tier gratis — butuh billing aktif di Google Cloud. Membuat API key baru tidak akan menolong, hasilnya akan sama persis. Ganti Model ke "Nano Banana (Gemini 2.5 Flash Image) — GRATIS" di atas, lalu render ulang.'
@@ -1754,10 +1768,79 @@ function imgErr(msg, model){
 /* Satu panggilan = satu gambar. refs dipakai untuk mengunci identitas:
    panel pertama jadi acuan panel berikutnya, karena reference image mengunci
    wajah JAUH lebih kuat daripada teks prompt. */
+/* ---- jalur proxy OpenAI-compatible (LiteLLM dsb.) ----
+   Dipakai kalau billing gambar ditanggung penyedia proxy. Dua temuan yang
+   menentukan bentuk kode ini:
+
+   1) /images/generations TIDAK bisa dipakai untuk model Gemini di LiteLLM.
+      Endpoint itu dirutekan ke Vertex Predict API dan Gemini menolaknya
+      ("Gemini cannot be accessed through Vertex Predict/RawPredict API").
+      Jadi model Gemini lewat /chat/completions, dan hanya Imagen — yang
+      memang model Predict — lewat /images/generations.
+   2) Balasan chat menaruh gambar sebagai data URI DI DALAM message.content,
+      bukan di field tersendiri. Sebagian versi juga mengisi message.images.
+      Ketiga bentuk diurai di sini karena versi proxy tiap orang berbeda. */
+const isImagen=m=>/imagen/i.test(m||'');
+function proxyBase(){ return String(state.api.imgBase||'').replace(/\/+$/,''); }
+function extraParams(){
+  const t=String(state.render.extra||'').trim();
+  if(!t) return {};
+  try{ const o=JSON.parse(t); return (o&&typeof o==='object')?o:{}; }catch(_){ return {}; }
+}
+function pickImageFromChat(d){
+  const msg=((d.choices&&d.choices[0])||{}).message||{};
+  for(const it of (msg.images||[])){
+    const u=(it&&it.image_url&&it.image_url.url)||(it&&it.url)||'';
+    const m=/^data:([^;]+);base64,(.+)$/.exec(String(u));
+    if(m) return {mime:m[1], b64:m[2]};
+  }
+  let c=msg.content;
+  if(Array.isArray(c)) c=c.map(x=>(x&&(x.text||(x.image_url&&x.image_url.url)))||'').join('\n');
+  const m=/data:(image\/[a-z+]+);base64,([A-Za-z0-9+/=]+)/.exec(String(c||''));
+  return m ? {mime:m[1], b64:m[2]} : null;
+}
+async function genImageProxy(prompt, refs){
+  const base=proxyBase(), key=String(state.api.imgProxyKey||'').trim();
+  if(!base) throw new Error('Base URL proxy belum diisi.');
+  if(!key) throw new Error('API key proxy belum diisi.');
+  const model=String(state.render.proxyModel||'').trim();
+  if(!model) throw new Error('Nama model di proxy belum diisi.');
+  const H={'Content-Type':'application/json','Authorization':'Bearer '+key};
+
+  if(isImagen(model)){
+    const d=await postJSON(base+'/images/generations',{method:'POST',headers:H,
+      body:JSON.stringify(Object.assign({model, prompt, n:1, response_format:'b64_json'}, extraParams()))},'Image');
+    const it=(d.data&&d.data[0])||{};
+    if(it.b64_json) return {mime:'image/png', b64:it.b64_json};
+    throw new Error('Proxy tidak mengembalikan b64_json. Balasan: '+JSON.stringify(d).slice(0,220));
+  }
+
+  const content=[];
+  (refs||[]).forEach(r=>content.push({type:'image_url', image_url:{url:'data:'+r.mime+';base64,'+r.b64}}));
+  content.push({type:'text', text:(refs&&refs.length)
+    ? 'Use the attached image only as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. Do not restyle the person. Then produce this new frame:\n\n'+prompt
+    : prompt});
+  const d=await postJSON(base+'/chat/completions',{method:'POST',headers:H,
+    body:JSON.stringify(Object.assign({model, messages:[{role:'user',content}]}, extraParams()))},'Image');
+  const img=pickImageFromChat(d);
+  if(img) return img;
+  const txt=String((((d.choices&&d.choices[0])||{}).message||{}).content||'').slice(0,200);
+  throw new Error('Model membalas tanpa gambar. Isi balasannya: "'+txt+'" — pastikan nama model yang kamu isi adalah model GAMBAR, bukan model teks.');
+}
+
 async function genImage(prompt, ar, refs){
+  if(state.render.provider==='proxy'){
+    /* Proxy tidak punya batas 10/menit seperti tier gratis Google, tapi jeda
+       kecil tetap dipertahankan supaya tidak membanjiri antrean penyedia. */
+    const sisa=1200-(Date.now()-lastImgAt);
+    if(lastImgAt&&sisa>0) await new Promise(r=>setTimeout(r,sisa));
+    lastImgAt=Date.now();
+    try{ return await genImageProxy(prompt, refs); }
+    catch(e){ throw new Error(imgErr(e.message||String(e), 'proxy')); }
+  }
   const key=imgKey();
   if(!key) throw new Error('API key gambar belum diisi.');
-  const model=state.render.model||'gemini-3-pro-image-preview';
+  const model=state.render.model||'gemini-2.5-flash-image';
   const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(key);
   const parts=[];
   (refs||[]).forEach(r=>parts.push({inline_data:{mime_type:r.mime,data:r.b64}}));
@@ -1820,7 +1903,9 @@ function renderJobs(src){
 
 async function runRender(src){
   if(busy) return;
-  if(!imgKey()){ toast('Isi dulu API key gambar di tahap 14.','err'); return; }
+  if(state.render.provider==='proxy'){
+    if(!proxyBase()||!String(state.api.imgProxyKey||'').trim()){ toast('Isi dulu Base URL dan API key proxy.','err'); return; }
+  } else if(!imgKey()){ toast('Isi dulu API key gambar di tahap 14.','err'); return; }
   if(src==='pose'&&!String(state.dna.identity_lock||'').trim()){
     toast('Pose Sheet butuh Identity Lock. Generate dulu tahap 04.','err'); go('dna'); return;
   }
@@ -2487,6 +2572,9 @@ function mergeLoadedState(d){
   /* Project lama belum punya blok setelan render tahap 14. */
   if(!state.render||typeof state.render!=='object') state.render={model:'gemini-2.5-flash-image',size:'2K',chain:true};
   if(!IMG_MODELS[state.render.model]) state.render.model='gemini-2.5-flash-image';
+  if(state.render.provider!=='proxy') state.render.provider='google';
+  if(typeof state.render.proxyModel!=='string'||!state.render.proxyModel) state.render.proxyModel='gemini-2.5-flash-image';
+  if(typeof state.render.extra!=='string') state.render.extra='';
   /* Project yang tersimpan sebelum perbaikan ini memakai model berbayar
      sebagai default, dan dibiarkan begitu render-nya pasti gagal 429.
      Dipindahkan SEKALI saja lalu ditandai — supaya pengguna yang memang
@@ -3013,16 +3101,31 @@ function renderPanel(){
     const jml=renderStore.items.length;
     let h=head('14','Render Gambar','Jalankan prompt yang sudah disusun tahap 08, 09, atau Pose Sheet 12 panel langsung dari sini, lalu unduh hasilnya untuk dipakai sebagai image reference di engine video. Kalau kamu lebih suka merender di tempat lain, semua prompt tetap bisa disalin dari tahapnya masing-masing.');
 
-    h+='<div class="card"><h3>API Gambar <span class="tag">Google AI Studio</span></h3>'+
-      '<div class="grid two">'+
-        '<div class="field full"><label>API Key Gambar</label><input type="password" data-path="api.imgKey" value="'+esc(state.api.imgKey)+'" placeholder="'+(state.api.geminiKey?'kosongkan untuk memakai key Gemini yang sudah diisi di ⚙ API':'AIza…')+'">'+
-          '<div class="hint">Key dibuat gratis di aistudio.google.com/apikey. Sama seperti key teks: tidak pernah ditulis ke disk kecuali kamu menyalakan "ingat key" di ⚙ API, dan tidak pernah ikut ke file <code>.json</code>.</div></div>'+
-        '<div class="field"><label>Model</label><select data-path="render.model">'+optsObj(IMG_MODELS,r.model)+'</select>'+
-          '<div class="hint"'+((IMG_MODELS[r.model]||{}).tier==='bayar'?' style="color:var(--amber)"':'')+'>'+
-          esc((IMG_MODELS[r.model]||{}).note||'')+'</div></div>'+
-        '<div class="field"><label>Resolusi</label><select data-path="render.size">'+opts(['1K','2K','4K'],r.size)+'</select>'+
-          '<div class="hint">Hanya Nano Banana Pro yang benar-benar menuruti setelan ini; dua model lain selalu keluar sekitar 1K.</div></div>'+
+    const viaProxy=r.provider==='proxy';
+    h+='<div class="card"><h3>API Gambar</h3>'+
+      '<div class="field full"><label>Lewat mana</label><select data-path="render.provider">'+
+        '<option value="google"'+(viaProxy?'':' selected')+'>Google AI Studio — key sendiri</option>'+
+        '<option value="proxy"'+(viaProxy?' selected':'')+'>Proxy OpenAI-compatible (LiteLLM, KoboiLLM, dll) — billing ikut penyedia</option>'+
+      '</select></div><div class="grid two" style="margin-top:12px">'+
+      (viaProxy
+        ? '<div class="field"><label>Base URL</label><input data-path="api.imgBase" value="'+esc(state.api.imgBase)+'" placeholder="https://….../v1">'+
+            '<div class="hint">Harus berakhir di <code>/v1</code>.</div></div>'+
+          '<div class="field"><label>API Key Proxy</label><input type="password" data-path="api.imgProxyKey" value="'+esc(state.api.imgProxyKey)+'" placeholder="sk-…"></div>'+
+          '<div class="field full"><label>Nama Model di Proxy</label><input data-path="render.proxyModel" value="'+esc(r.proxyModel)+'" placeholder="gemini-2.5-flash-image">'+
+            '<div class="hint">Salin persis dari kolom <b>Model Information</b> di dashboard proxy (tulisan tebalnya), bukan teks abu-abu di bawahnya. Model bernama <code>imagen…</code> dikirim ke <code>/images/generations</code>; selain itu ke <code>/chat/completions</code>, karena model Gemini memang tidak bisa lewat endpoint images di LiteLLM.</div></div>'+
+          '<div class="field full"><label>Parameter Tambahan <span style="color:var(--faint);font-weight:400">— opsional</span></label><input data-path="render.extra" value="'+esc(r.extra||'')+'" placeholder=\'{"modalities":["image","text"]}\'>'+
+            '<div class="hint">JSON yang digabungkan ke body permintaan. Isi ini hanya kalau proxy-mu membalas teks tanpa gambar.</div></div>'
+        : '<div class="field full"><label>API Key Gambar</label><input type="password" data-path="api.imgKey" value="'+esc(state.api.imgKey)+'" placeholder="'+(state.api.geminiKey?'kosongkan untuk memakai key Gemini yang sudah diisi di ⚙ API':'AIza…')+'">'+
+            '<div class="hint">Key dibuat gratis di aistudio.google.com/apikey.</div></div>'+
+          '<div class="field"><label>Model</label><select data-path="render.model">'+optsObj(IMG_MODELS,r.model)+'</select>'+
+            '<div class="hint"'+((IMG_MODELS[r.model]||{}).tier==='bayar'?' style="color:var(--amber)"':'')+'>'+
+            esc((IMG_MODELS[r.model]||{}).note||'')+'</div></div>'+
+          '<div class="field"><label>Resolusi</label><select data-path="render.size">'+opts(['1K','2K','4K'],r.size)+'</select>'+
+            '<div class="hint">Hanya Nano Banana Pro yang benar-benar menuruti setelan ini; dua model lain selalu keluar sekitar 1K.</div></div>')+
       '</div>'+
+      '<div class="rowbtns"><button class="btn sm" id="btnTestImg">⚡ Tes Koneksi (1 gambar)</button></div>'+
+      '<div style="font-size:11px;color:var(--faint);margin-top:6px;line-height:1.45">Sekali panggilan untuk memastikan key, model, dan endpoint-nya benar — jauh lebih murah daripada mengetahuinya setelah 12 panel gagal.</div>'+
+      '<div class="note">Key tidak pernah ditulis ke disk kecuali kamu menyalakan "ingat key" di ⚙ API, dan tidak pernah ikut ke file <code>.json</code>.</div>'+
       '<div class="field full" style="margin-top:10px"><label><input type="checkbox" id="chkChain"'+(r.chain?' checked':'')+' style="width:auto;margin-right:7px">Kunci identitas dari panel pertama</label>'+
         '<div class="hint">Panel pertama yang berhasil dipakai sebagai reference image untuk sisanya. Reference image mengunci wajah jauh lebih kuat daripada teks prompt — matikan hanya kalau kamu memang ingin tiap gambar bebas.</div></div>'+
       '</div>';
@@ -3209,7 +3312,7 @@ document.addEventListener('change', e=>{
     if(applyRealismePreset()) toast('Kamera, cahaya, dan grain di tahap 05 disetel ke "'+state.setup.realisme+'".','ok');
     persistState(); renderRail(); renderPanel(); return;
   }
-  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='input.gayaRef'||p==='refmode'||p.startsWith('realism.')) renderPanel();
+  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='input.gayaRef'||p==='refmode'||p==='render.provider'||p==='render.model'||p.startsWith('realism.')) renderPanel();
 });
 document.addEventListener('click', async e=>{
   /* Lightbox: gambar bukan tombol, jadi tidak lolos filter di bawah. */
@@ -3280,6 +3383,18 @@ document.addEventListener('click', async e=>{
   if(t.id==='btnCopyTalent'){
     try{ await navigator.clipboard.writeText(talentBlock()); toast('Talent Block tersalin — tempel ke Framework Brain Director.','ok'); }
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
+  }
+  if(t.id==='btnTestImg'){
+    setBusy(true,'Menguji koneksi gambar…');
+    try{
+      const img=await genImage('A plain studio photograph of a single ripe red apple on a light grey seamless backdrop, soft even lighting, sharp focus.', '1:1', null);
+      renderStore={src:'tes', items:[{label:'Tes koneksi', state:'ok', img}], grid:''};
+      toast('Berhasil. Konfigurasi gambar sudah benar.','ok');
+    }catch(e){
+      renderStore={src:'tes', items:[{label:'Tes koneksi', state:'gagal', err:e.message||String(e)}], grid:''};
+      toast('Tes gagal — sebabnya ada di kartu Hasil.','err');
+    }
+    setBusy(false); renderPanel(); return;
   }
   if(t.id==='btnRender'){ runRender($('#renderSrc')?.value||'pose'); return; }
   if(t.id==='btnRenderStop'){ renderAbort=true; toast('Dihentikan setelah gambar yang sedang jalan selesai.','ok'); return; }
