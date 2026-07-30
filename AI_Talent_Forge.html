@@ -353,16 +353,16 @@ const state = {
   refmode:'komposit',
   realism:{
     tekstur:'detail', garis:'normal', imperfeksi:'ringan', kilap:'natural',
-    kamera:'iphone', cahaya:'jendela', grain:'halus', tubuh:'natural', gerak:'penuh'
+    kamera:'iphone', cahaya:'jendela', grain:'halus', tubuh:'natural', gerak:'penuh', bobot:'sedang'
   },
   refs:{}, persona:{}, dna:{}, wardrobe:{}, voice:{}, content:{}, compliance:{},
-  sheet:[], scenes:[],
+  sheet:[], scenes:[], repair:[],
   done:{}, dirty:{}
 };
 /* Bagian state yang membentuk sebuah project (semua kecuali api). Disalin
    sekali di sini supaya membuat project kosong tidak perlu menduplikasi
    daftar nilai default — kalau ada field baru, otomatis ikut. */
-const PROJECT_KEYS=['setup','input','refmode','realism','uploads','refs','persona','dna','wardrobe','voice','content','compliance','sheet','scenes','done','dirty'];
+const PROJECT_KEYS=['setup','input','refmode','realism','uploads','refs','persona','dna','wardrobe','voice','content','compliance','sheet','scenes','repair','done','dirty'];
 const DEFAULTS=JSON.parse(JSON.stringify(PROJECT_KEYS.reduce((o,k)=>(o[k]=state[k],o),{})));
 
 let currentStep='setup', busy=false;
@@ -380,14 +380,15 @@ const STEPS=[
   {id:'voice',      no:'07', label:'Voice & Speech',    group:'Karakter', ai:true},
   {id:'sheet',      no:'08', label:'Reference Sheet',   group:'Produksi', ai:true},
   {id:'scenes',     no:'09', label:'Scene Pack',        group:'Produksi', ai:true},
-  {id:'content',    no:'10', label:'Content Engine',    group:'Distribusi', ai:true},
-  {id:'compliance', no:'11', label:'Compliance',        group:'Distribusi', ai:true},
-  {id:'export',     no:'12', label:'Audit & Ekspor',    group:'Distribusi'}
+  {id:'repair',     no:'10', label:'Perbaikan & Seed',  group:'Produksi', ai:true},
+  {id:'content',    no:'11', label:'Content Engine',    group:'Distribusi', ai:true},
+  {id:'compliance', no:'12', label:'Compliance',        group:'Distribusi', ai:true},
+  {id:'export',     no:'13', label:'Audit & Ekspor',    group:'Distribusi'}
 ];
 /* refs sengaja tidak masuk AI_ORDER: tahap itu hanya jalan kalau ada gambar
    referensi yang diunggah, jadi "Generate Semua" tidak boleh menggagalkannya. */
-const AI_ORDER=['persona','dna','wardrobe','voice','sheet','scenes','content','compliance'];
-const STAGE_LABEL={refs:'Bacaan Referensi',persona:'Persona Core',dna:'Character DNA',wardrobe:'Wardrobe & Style',voice:'Voice & Speech',sheet:'Reference Sheet',scenes:'Scene Pack',content:'Content Engine',compliance:'Compliance'};
+const AI_ORDER=['persona','dna','wardrobe','voice','sheet','scenes','repair','content','compliance'];
+const STAGE_LABEL={refs:'Bacaan Referensi',persona:'Persona Core',dna:'Character DNA',wardrobe:'Wardrobe & Style',voice:'Voice & Speech',sheet:'Reference Sheet',scenes:'Scene Pack',repair:'Perbaikan & Seed',content:'Content Engine',compliance:'Compliance'};
 
 /* ---------------- definisi field ---------------- */
 const F = {
@@ -651,6 +652,56 @@ const COMPO={
   aturan:['rule of thirds with the subject on the left third','rule of thirds with the subject on the right third','centered symmetrical framing','generous negative space on the upper third for text overlay','generous negative space on the right for text overlay']
 };
 
+/* ---------------- pembobotan frasa per engine ----------------
+   Tiap engine punya sintaks penekanan sendiri, dan aturannya tidak bisa
+   ditukar. Yang paling sering bikin prompt ditolak: di Midjourney jumlah
+   seluruh bobot WAJIB tetap positif, jadi bobot negatif tidak boleh
+   melebihi total bobot positifnya. */
+const WEIGHT_PROFILES={
+  midjourney:{
+    dukung:true,
+    cara:'Pisahkan frasa dengan :: lalu beri angka di belakangnya. Angka bersifat RELATIF antar frasa, bukan absolut — frasa tanpa angka dianggap berbobot 1.',
+    aman:'Praktis 1,5–3 untuk penekanan. Di atas itu frasa lain mulai terabaikan.',
+    negatif:'Bobot negatif boleh, mis. plastic skin::-0.5. Tapi JUMLAH seluruh bobot wajib tetap positif — kalau negatif, Midjourney menolak promptnya. --no X setara dengan X::-0.5.',
+    contoh:(f,n)=>f+'::'+n+' :: unretouched raw photograph::'+Math.max(1,+(n-0.5).toFixed(1))+' :: plastic airbrushed skin::-0.5'
+  },
+  sdxl:{
+    dukung:true,
+    cara:'Bungkus frasa dengan tanda kurung lalu beri angka setelah titik dua: (frasa:1.3). Yang negatif TIDAK ditulis di sini — taruh di field negative prompt terpisah.',
+    aman:'Rentang aman 0,7–1,5. Di luar itu kualitas mulai rusak. Catatan penting: di SDXL penekanan berpengaruh JAUH lebih lemah daripada di SD1.5, jadi jangan berharap banyak dari angka saja — LoRA kulit dan ADetailer lebih menentukan.',
+    negatif:'Pakai field negative prompt, bukan bobot negatif. ComfyUI memakai bobot literal, sementara A1111 menormalkan jumlah bobot ke 1,0 — angka yang sama terasa lebih kuat di ComfyUI.',
+    contoh:(f,n)=>'('+f+':'+n+'), (unretouched raw photograph:'+Math.max(1,+(n-0.1).toFixed(1))+')'
+  }
+};
+const WEIGHT_FALLBACK={
+  dukung:false,
+  cara:'Engine ini tidak punya sintaks bobot. Penekanan dilakukan lewat POSISI — frasa realisme paling penting ditaruh di awal kalimat, bukan di ujung — dan lewat penyebutan ulang yang terukur di satu tempat lain.',
+  aman:'Jangan mengulang lebih dari dua kali; pengulangan berlebihan membuat hasil kaku.',
+  negatif:'Tulis larangan sebagai kalimat eksplisit, mis. "not a render, no beauty filter".',
+  contoh:(f)=>f+' — deskripsi ini ditaruh di depan, sebelum aksi dan setting.'
+};
+const BOBOT={
+  mati:{l:'Mati', n:0},
+  sedang:{l:'Sedang (disarankan)', n:{midjourney:2, sdxl:1.25}},
+  kuat:{l:'Kuat', n:{midjourney:3, sdxl:1.45}}
+};
+function wprof(){ return WEIGHT_PROFILES[state.setup.imgEngine]||WEIGHT_FALLBACK; }
+function bobotN(){
+  const b=BOBOT[state.realism.bobot]||BOBOT.sedang;
+  if(!b.n) return 0;
+  return (typeof b.n==='object') ? (b.n[state.setup.imgEngine]||0) : b.n;
+}
+/* Frasa realisme paling menentukan — inilah yang layak diberi bobot. */
+function coreRealismPhrase(){
+  return REALISM_SHORT.tekstur[rcfg().tekstur] || 'visible skin pores, fine vellus hair';
+}
+function weightedSnippet(){
+  const p=wprof(), n=bobotN();
+  if(state.realism.bobot==='mati') return '';
+  if(!p.dukung) return p.contoh(coreRealismPhrase());
+  return p.contoh(coreRealismPhrase(), n);
+}
+
 /* Detail yang paling sering gagal di hasil AI, jadi selalu diminta eksplisit. */
 const EYE_DETAIL='eyes with crisp iris fibre detail and a visible limbal ring, fine sclera vascularity, a wet corneal reflection, catchlights that match the shape and direction of the key light, pupil dilation consistent with the ambient level, individually separated lower lashes';
 const HAIR_DETAIL='individual flyaway hairs breaking the silhouette, a natural parting with visible scalp, slight frizz and irregular strand clumping rather than uniform styled hair';
@@ -724,6 +775,44 @@ function engineParams(){
   if(e==='sdxl') return 'CFG 3.5–5 · pakai skin/detail LoRA + ADetailer untuk wajah · upscaler yang mempertahankan detail';
   return 'Sertakan negative/larangan anti-slop di prompt karena engine ini tidak punya field negative terpisah.';
 }
+
+/* ---------------- perbaikan bagian yang gagal ----------------
+   Generate ulang seluruh frame karena satu tangan rusak itu pemborosan, dan
+   hasilnya jadi frame yang berbeda — padahal identitas sudah pas. Inpaint
+   terarah memperbaiki bagian itu saja tanpa menyentuh sisanya. */
+const REPAIR_TARGETS=[
+  {id:'tangan',  label:'Tangan & Jari',       why:'Jari berlebih, menyatu, atau bengkok. Kegagalan paling sering dan paling cepat terlihat.'},
+  {id:'mata',    label:'Mata',                why:'Iris rata tanpa serat, pantulan tidak cocok arah cahaya, tatapan terasa mati.'},
+  {id:'gigi',    label:'Gigi & Mulut',        why:'Gigi menyatu jadi satu lempeng atau putih seragam tidak wajar.'},
+  {id:'kulit',   label:'Kulit Kehilangan Tekstur', why:'Pori dan bulu halus hilang, biasanya terjadi setelah upscale.'},
+  {id:'rambut',  label:'Tepi Rambut',         why:'Helai menyatu jadi lempengan, garis rambut terlihat digambar.'},
+  {id:'produk',  label:'Produk & Teks Label', why:'Tulisan di kemasan kacau atau logo meleleh.'}
+];
+/* Angka-angka ini dari praktik yang sudah mapan: denoise 0,35–0,45 menjaga
+   hasil inpaint tetap menyatu dengan pencahayaan aslinya. Di 0,8 tambalannya
+   terlihat seperti tempelan dari foto lain. */
+const REPAIR_SETTINGS=[
+  ['Denoise inpaint', '0,35–0,45', 'Titik aman. Di bawah 0,3 nyaris tidak berubah; di atas 0,6 tambalan mulai lepas dari pencahayaan asli.'],
+  ['Dua lintasan', '0,4 lalu 0,5', 'Lintasan pertama membetulkan bentuk, kedua menambah detail. Lebih rapi daripada sekali dengan denoise tinggi.'],
+  ['Model deteksi wajah', 'face_yolov8n.pt', 'Untuk ADetailer. Otomatis mendeteksi lalu inpaint area wajah di resolusi lebih tinggi.'],
+  ['Model deteksi tangan', 'hand_yolov8n.pt', 'Wajib dinyalakan terpisah — deteksi wajah tidak mencakup tangan.'],
+  ['Resolusi crop', '512 atau 768', 'Area dipotong lalu diproses di resolusi ini, jadi detailnya jauh lebih padat sebelum ditempel kembali.'],
+  ['Mask blur', '4–8 px', 'Menyamarkan batas tambalan. Terlalu kecil menyisakan garis jahitan.']
+];
+
+/* ---------------- strategi seed ----------------
+   PENTING: seed itu jangkar TAMPILAN, bukan jangkar IDENTITAS. Seed yang sama
+   dengan prompt berbeda akan langsung menyimpang begitu pose, cahaya, atau
+   framing diubah. Identitas tetap dijaga oleh reference adapter, bukan seed.
+   Ini sengaja ditulis eksplisit karena keliru soal ini bikin orang membuang
+   waktu mengejar konsistensi lewat seed yang memang tidak bisa. */
+const SEED_RULES=[
+  ['Rentang nilai', '0 – 4.294.967.295', 'Angka bulat. Catat yang berhasil, karena tanpa dicatat tidak bisa dibuat ulang.'],
+  ['Seed BUKAN pengunci wajah', 'jangan salah harap', 'Seed mengunci komposisi, palet, dan mood — bukan identitas. Wajah tetap dikunci oleh Identity Lock plus reference adapter (--cref di Midjourney, Redux di Flux, IP-Adapter/InstantID/PuLID di ComfyUI).'],
+  ['Turnaround: kunci seed', 'pakai seed yang sama', 'Untuk 4 sudut turnaround, pencahayaan dan latar wajib identik dan hanya sudut yang berubah — di situlah seed tetap membantu. Tetap harap ada penyimpangan; perbaiki sisanya lewat inpaint.'],
+  ['Scene: bebaskan seed', 'jangan dikunci', 'Setiap scene punya setting, pose, dan cahaya berbeda. Mengunci seed di sini justru melawan variasi yang kamu butuhkan, tanpa memberi konsistensi wajah apa pun.'],
+  ['Uji perubahan prompt', 'kunci seed', 'Saat membandingkan dua versi prompt, kunci seed supaya yang berubah hanya promptnya. Ini pemakaian seed yang paling berguna.']
+];
 
 const ARKETIPE=[
   'auto','Bestie yang jujur','Ahli / Educator','Girl-next-door','Pemula yang belajar bareng',
@@ -1090,6 +1179,37 @@ function promptStage(id, fb){
     JSON_RULE+'\nSkema wajib (isi semua field, jangan ada yang kosong):\n'+schemaOf(fields);
 }
 
+function weightBrief(){
+  const p=wprof(), snip=weightedSnippet();
+  if(state.realism.bobot==='mati') return 'PEMBOBOTAN: dimatikan. Tulis frasa realisme tanpa sintaks bobot apa pun.';
+  return 'PEMBOBOTAN FRASA REALISME ('+imgEngine().name+')\n'+
+    '- Cara: '+p.cara+'\n'+
+    '- Batas aman: '+p.aman+'\n'+
+    '- Negatif: '+p.negatif+'\n'+
+    (snip?'- Terapkan penekanan pada frasa tekstur kulit dengan pola persis seperti ini:\n  '+snip+'\n':'')+
+    '- Jangan membobot lebih dari 3 frasa dalam satu prompt. Membobot segalanya sama dengan tidak membobot apa pun.';
+}
+
+/* --- perbaikan terarah --- */
+function promptRepair(fb){
+  const ie=imgEngine();
+  return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+
+    'TUGAS: Buat Repair Kit — prompt inpaint terarah untuk memperbaiki bagian yang gagal TANPA generate ulang seluruh frame.\n'+
+    'Buat tepat '+REPAIR_TARGETS.length+' entri, satu untuk setiap target:\n'+
+    REPAIR_TARGETS.map((t,i)=>(i+1)+'. '+t.label+' — masalah khasnya: '+t.why).join('\n')+'\n\n'+
+    'Aturan:\n'+
+    '- prompt: BAHASA INGGRIS, sintaks '+ie.name+'. Ini prompt untuk area termasked saja, BUKAN seluruh frame. Karena itu jangan menyertakan setting, pose, atau wardrobe — cukup deskripsi bagian yang diperbaiki, sangat detail.\n'+
+    '- Sertakan ciri dari Character DNA yang relevan dengan bagian itu saja (mis. untuk mata: warna dan bentuk mata dari DNA; untuk tangan: bentuk kuku dan aksesoris tetap).\n'+
+    '- JANGAN menyalin seluruh Identity Lock ke prompt inpaint — area masked terlalu kecil, dan menyebut ciri yang tidak terlihat di area itu justru membuat model menggambar ulang hal yang salah.\n'+
+    '- negative: larangan spesifik untuk kegagalan target itu (mis. untuk tangan: extra fingers, fused fingers, malformed hand).\n'+
+    '- denoise: angka rekomendasi dalam rentang 0.3–0.5, disesuaikan per target. Bagian berstruktur keras seperti tangan butuh lebih tinggi daripada penambahan tekstur kulit.\n'+
+    '- catatan: satu kalimat bahasa Indonesia berisi cara memasking area itu dengan benar.\n'+
+    fbLine(fb)+'\n\n'+
+    JSON_RULE+'\nSkema wajib:\n'+
+    '{"repair":[{"id":"","label":"","prompt":"","negative":"","denoise":"","catatan":""}]}\n'+
+    'Isi "id" dan "label" persis seperti daftar di atas, urut, tepat '+REPAIR_TARGETS.length+' entri.';
+}
+
 /* --- reference sheet --- */
 const SHEET_SHOTS=[
   {id:'front',   label:'Turnaround — Tampak Depan',   brief:'potret setengah badan menghadap lurus ke kamera, ekspresi netral, pencahayaan merata tanpa bayangan keras, latar polos abu-abu terang'},
@@ -1105,7 +1225,7 @@ const SHEET_SHOTS=[
 ];
 function promptSheet(fb){
   const ie=imgEngine();
-  return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+realismBrief()+'\n\n'+
+  return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+realismBrief()+'\n\n'+weightBrief()+'\n\n'+
     'TUGAS: Buat Reference Sheet Pack — kumpulan prompt gambar siap pakai untuk membangun aset identitas talent ini di '+ie.name+'.\n'+
     'Kamu harus menghasilkan tepat '+SHEET_SHOTS.length+' prompt, satu untuk setiap shot berikut:\n'+
     SHEET_SHOTS.map((s,n)=>(n+1)+'. '+s.label+' — '+s.brief).join('\n')+'\n\n'+
@@ -1135,7 +1255,7 @@ const SCENE_USECASE=[
 function sceneCount(){ return Math.max(3,Math.min(10,Math.round(+state.setup.jumlahScene)||6)); }
 function promptScenes(fb){
   const ie=imgEngine(), ve=vidEngine(), n=sceneCount();
-  return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+realismBrief()+'\n\n'+
+  return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+realismBrief()+'\n\n'+weightBrief()+'\n\n'+
     'TUGAS: Buat Scene Pack — '+n+' scene siap produksi untuk konten UGC / affiliate memakai talent ini.\n'+
     'Gunakan use case berikut sebagai acuan, ambil '+n+' pertama dan sesuaikan dengan niche:\n'+
     SCENE_USECASE.slice(0,n).map((u,i)=>(i+1)+'. '+u).join('\n')+'\n\n'+
@@ -1187,6 +1307,7 @@ function promptScenes(fb){
 function hasContent(id){
   if(id==='sheet') return state.sheet.length>0;
   if(id==='scenes') return state.scenes.length>0;
+  if(id==='repair') return state.repair.length>0;
   const o=state[id]; return !!(o&&Object.keys(o).some(k=>String(o[k]||'').trim()));
 }
 function markDownstream(fromId){
@@ -1235,6 +1356,18 @@ function normScene(x,i){
   return s;
 }
 
+function normRepair(x,i){
+  const t=REPAIR_TARGETS[i]||{};
+  const dn=parseFloat(String(x.denoise||'').replace(',','.'));
+  return {
+    id:x.id||t.id||('r'+i), label:x.label||t.label||('Perbaikan '+(i+1)),
+    prompt:stripText(x.prompt), negative:stripText(x.negative),
+    /* jaga denoise di rentang yang tidak merusak hasil */
+    denoise:(isFinite(dn)&&dn>0) ? String(Math.min(0.6, Math.max(0.25, dn))) : '0.4',
+    catatan:stripText(x.catatan)
+  };
+}
+
 function warnShort(got, want, satuan){
   if(got<want) toast('AI hanya mengembalikan '+got+' dari '+want+' '+satuan+'. Klik Generate Ulang untuk melengkapi.','err');
 }
@@ -1256,7 +1389,8 @@ async function runStage(id, fb){
       state.sheet=arr.map((x,i)=>({
         id:x.id||SHEET_SHOTS[i]?.id||('shot'+i),
         label:x.label||SHEET_SHOTS[i]?.label||('Shot '+(i+1)),
-        prompt:stripText(x.prompt), negative:stripText(x.negative), catatan:stripText(x.catatan)
+        prompt:stripText(x.prompt), negative:stripText(x.negative), catatan:stripText(x.catatan),
+        seed:(state.sheet[i]&&state.sheet[i].seed)||''   /* seed yang sudah dicatat tidak hilang saat regenerate */
       }));
       warnShort(state.sheet.length, SHEET_SHOTS.length, 'shot');
     } else if(id==='scenes'){
@@ -1266,6 +1400,12 @@ async function runStage(id, fb){
       if(!arr.length) throw new Error('AI tidak mengembalikan scene apa pun. Coba lagi.');
       state.scenes=arr.map((x,i)=>normScene(x,i));
       warnShort(state.scenes.length, sceneCount(), 'scene');
+    } else if(id==='repair'){
+      const d=parseJSONLoose(await callAI(promptRepair(fb), 5000, null));
+      const arr=Array.isArray(d.repair)?d.repair:[];
+      if(!arr.length) throw new Error('AI tidak mengembalikan entri perbaikan apa pun. Coba lagi.');
+      state.repair=arr.map((x,i)=>normRepair(x,i));
+      warnShort(state.repair.length, REPAIR_TARGETS.length, 'entri perbaikan');
     } else {
       const raw=await callAI(promptStage(id, fb), 4000, imgs);
       const d=parseJSONLoose(raw);
@@ -1295,6 +1435,9 @@ async function runAll(){
       } else if(id==='scenes'){
         const d=parseJSONLoose(await callAI(promptScenes(''),14000,null));
         state.scenes=(d.scenes||[]).map((x,i)=>normScene(x,i));
+      } else if(id==='repair'){
+        const d=parseJSONLoose(await callAI(promptRepair(''),5000,null));
+        state.repair=(d.repair||[]).map((x,i)=>normRepair(x,i));
       } else {
         const imgs=(id==='dna'||id==='persona')?visionCapableImages():null;
         const d=parseJSONLoose(await callAI(promptStage(id,''),4000,imgs));
@@ -1381,6 +1524,14 @@ function audit(){
     push(!!restrained||!state.scenes.some(s=>String(s.dialog||'').trim()),'Prompt video scene berdialog memuat klausa menahan gerak', true);
   }
 
+  push(state.repair.length>=REPAIR_TARGETS.length,'Repair Kit lengkap ('+state.repair.length+'/'+REPAIR_TARGETS.length+' target)', true);
+  const badDn=state.repair.filter(x=>{ const n=parseFloat(x.denoise); return !isFinite(n)||n<0.25||n>0.6; });
+  push(badDn.length===0,'Semua denoise perbaikan di rentang wajar 0,25–0,6', true);
+  /* Turnaround butuh seed identik; scene tidak. Diperiksa terpisah karena
+     inilah satu-satunya tempat seed benar-benar menolong. */
+  const turn=state.sheet.filter(x=>/^(front|three|side|back)$/.test(x.id));
+  const tSeeds=[...new Set(turn.map(x=>String(x.seed||'').trim()).filter(Boolean))];
+  if(turn.length && tSeeds.length) push(tSeeds.length===1,'Seed turnaround seragam'+(tSeeds.length>1?' — ada '+tSeeds.length+' seed berbeda, pencahayaan dan latar akan meleset':''), true);
   push(!!state.content.pilar,'Content pillars sudah disusun');
   push(!!state.compliance.disclosure_id && !!state.compliance.disclosure_en,'Disclosure AI tersedia dalam 2 bahasa');
   push(!!state.compliance.checklist,'Checklist sebelum posting sudah ada');
@@ -1413,6 +1564,8 @@ function mdDoc(){
   m+='Setelan: '+['tekstur','garis','imperfeksi','kilap','tubuh','kamera','cahaya','grain']
       .map(g=>REALISM[g].label+' = '+rpick(g).l).join(' · ')+'\n\n';
   m+='**Realism Lock (versi '+(short?'ringkas':'penuh')+', ditempel ke setiap prompt)**\n\n```\n'+realismLock(short?'short':'full')+'\n```\n\n';
+  if(weightedSnippet()) m+='**Pembobotan frasa ('+ie.name+')**\n\n```\n'+weightedSnippet()+'\n```\n\n'+
+    '- Cara: '+wprof().cara+'\n- Batas aman: '+wprof().aman+'\n- Negatif: '+wprof().negatif+'\n\n';
   if(motionLock()) m+='**Motion Lock (khusus prompt video)**\n\n```\n'+motionLock()+'\n```\n\n';
   m+='**Struktur BEATS**\n\n```\n'+beatBrief()+'\n```\n\n';
   m+='**Negative anti-slop**\n\n```\n'+ANTI_SLOP_NEG+'\n```\n\n';
@@ -1446,6 +1599,25 @@ function mdDoc(){
       m+='**Video prompt ('+ve.name+')**\n\n```\n'+x.prompt_video+'\n```\n\n';
     });
   }
+  if(state.repair.length){
+    m+='## Repair Kit\n\n';
+    state.repair.forEach((x,i)=>{
+      m+='### '+(i+1)+'. '+x.label+' (denoise '+x.denoise+')\n\n```\n'+x.prompt+'\n```\n\n';
+      if(x.negative) m+='**Negative:** `'+x.negative+'`\n\n';
+      if(x.catatan) m+='_'+x.catatan+'_\n\n';
+    });
+    m+='**Setelan inpaint**\n\n';
+    REPAIR_SETTINGS.forEach(r=>{ m+='- **'+r[0]+':** `'+r[1]+'` — '+r[2]+'\n'; });
+    m+='\n';
+  }
+  const seeded=state.sheet.filter(x=>String(x.seed||'').trim());
+  m+='## Strategi Seed\n\n';
+  SEED_RULES.forEach(r=>{ m+='- **'+r[0]+':** `'+r[1]+'` — '+r[2]+'\n'; });
+  if(seeded.length){
+    m+='\n**Seed tercatat**\n\n';
+    seeded.forEach(x=>{ m+='- '+x.label+': `'+x.seed+'`\n'; });
+  }
+  m+='\n';
   m+=sec('Content Engine',F.content,state.content);
   m+=sec('Compliance',F.compliance,state.compliance);
 
@@ -1650,6 +1822,7 @@ function mergeLoadedState(d){
   if(typeof d.refmode==='string') state.refmode=d.refmode;
   if(Array.isArray(d.sheet)) state.sheet=d.sheet;
   if(Array.isArray(d.scenes)) state.scenes=d.scenes;
+  if(Array.isArray(d.repair)) state.repair=d.repair.map((x,i)=>normRepair(x,i)); else state.repair=[];
   if(!Array.isArray(state.uploads.refs)) state.uploads.refs=[];
   /* setelan realisme lama / rusak dikembalikan ke opsi yang valid */
   Object.keys(REALISM).forEach(g=>{ if(!REALISM[g].opt[state.realism[g]]) state.realism[g]=Object.keys(REALISM[g].opt)[0]; });
@@ -1904,6 +2077,23 @@ function renderPanel(){
       '<div class="rowbtns"><button class="btn sm" id="btnCopyNeg">⧉ Salin Negative</button></div>'+
       '<div class="hint" style="margin-top:9px">Jangan menambahkan kata bertema tekstur (mis. <code>detailed skin</code>) ke daftar ini — itu justru membuang tekstur yang susah payah diminta.</div></div>';
 
+    const wp=wprof();
+    h+='<div class="card"><h3>Pembobotan Frasa <span class="tag">'+esc(imgEngine().name)+'</span></h3>'+
+      '<div class="grid two"><div class="field"><label>Penekanan Frasa Realisme</label><select data-path="realism.bobot">'+
+      Object.keys(BOBOT).map(k=>'<option value="'+k+'"'+(state.realism.bobot===k?' selected':'')+'>'+esc(BOBOT[k].l)+'</option>').join('')+
+      '</select></div></div>'+
+      (wp.dukung
+        ? '<div class="hint" style="margin-top:10px"><b>Cara:</b> '+esc(wp.cara)+'</div>'+
+          '<div class="hint" style="margin-top:6px"><b>Batas aman:</b> '+esc(wp.aman)+'</div>'+
+          '<div class="hint" style="margin-top:6px"><b>Negatif:</b> '+esc(wp.negatif)+'</div>'
+        : '<div class="pill warn" style="margin-top:10px">Engine ini tidak punya sintaks bobot</div>'+
+          '<div class="hint" style="margin-top:8px">'+esc(wp.cara)+'</div>')+
+      (weightedSnippet()
+        ? '<div class="meta" style="margin:12px 0 5px">POLA YANG DIPAKAI</div><div class="lockbox">'+esc(weightedSnippet())+'</div>'+
+          '<div class="rowbtns"><button class="btn sm" id="btnCopyWeight">⧉ Salin Pola</button></div>'
+        : '')+
+      '</div>';
+
     h+='<div class="card"><h3>Parameter Engine <span class="tag">'+esc(imgEngine().name)+'</span></h3>'+
       '<div class="lockbox">'+esc(engineParams())+'</div>'+
       '<div class="hint" style="margin-top:9px">Prompt saja tidak cukup — parameter ini yang menentukan seberapa "mentah" hasilnya. Di Midjourney <code>--style raw</code> wajib, tanpa itu gaya bawaan membuat orang terlihat seperti lukisan.</div></div>';
@@ -1920,8 +2110,8 @@ function renderPanel(){
   else if(currentStep==='dna')     p.innerHTML=stageAIPanel('dna','04','Character DNA','Cetak biru fisik yang mengunci wajah. Tahap paling penting — Identity Lock dari sini dipakai di setiap prompt gambar dan video.');
   else if(currentStep==='wardrobe')p.innerHTML=stageAIPanel('wardrobe','06','Wardrobe & Style','Sistem pakaian agar tampilan tetap khas tapi tidak monoton. Wardrobe Lock jadi penanda kedua setelah wajah.');
   else if(currentStep==='voice')   p.innerHTML=stageAIPanel('voice','07','Voice & Speech','Identitas suara untuk voice over dan lipsync, lengkap dengan prompt siap tempel ke tool voice design.');
-  else if(currentStep==='content') p.innerHTML=stageAIPanel('content','10','Content Engine','Positioning, pilar konten, dan bank ide Shorts serta longform supaya talent ini punya bahan produksi berkelanjutan.');
-  else if(currentStep==='compliance') p.innerHTML=stageAIPanel('compliance','11','Compliance','Aturan pengungkapan AI dan afiliasi. Talent ini bukan manusia nyata — pengungkapan yang jelas melindungi kamu dan akunmu.');
+  else if(currentStep==='content') p.innerHTML=stageAIPanel('content','11','Content Engine','Positioning, pilar konten, dan bank ide Shorts serta longform supaya talent ini punya bahan produksi berkelanjutan.');
+  else if(currentStep==='compliance') p.innerHTML=stageAIPanel('compliance','12','Compliance','Aturan pengungkapan AI dan afiliasi. Talent ini bukan manusia nyata — pengungkapan yang jelas melindungi kamu dan akunmu.');
 
   else if(currentStep==='sheet'){
     let h=head('08','Reference Sheet','Paket prompt untuk membangun aset identitas: turnaround, ekspresi, full body, tangan. Hasil dari sini dipakai sebagai reference image atau dataset LoRA.');
@@ -1988,9 +2178,56 @@ function renderPanel(){
     p.innerHTML=h;
   }
 
+  else if(currentStep==='repair'){
+    let h=head('10','Perbaikan & Seed','Hasil generate hampir selalu ada yang gagal di satu bagian — biasanya tangan atau mata. Generate ulang seluruh frame karena itu memberi frame yang berbeda, padahal identitasnya sudah pas. Di sini caranya memperbaiki bagian itu saja.');
+
+    h+='<div class="lock"><h4>🎯 Strategi Seed</h4>'+
+      '<p>Satu hal yang paling sering disalahpahami: <b>seed adalah jangkar tampilan, bukan jangkar identitas.</b> Mengejar konsistensi wajah lewat seed akan membuang waktu — itu tugas Identity Lock plus reference adapter.</p>'+
+      '<div class="scroll-x"><table class="mini">'+
+      SEED_RULES.map(r=>'<tr><th style="width:150px">'+esc(r[0])+'</th><td style="width:150px"><code>'+esc(r[1])+'</code></td><td>'+esc(r[2])+'</td></tr>').join('')+
+      '</table></div></div>';
+
+    if(state.sheet.length){
+      h+='<div class="card"><h3>Catatan Seed per Shot <span class="tag">turnaround wajib seed sama</span></h3>'+
+        '<p style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Catat seed yang berhasil di sini. Tanpa dicatat, hasil bagus tidak bisa dibuat ulang. Ikut tersimpan di project.</p>'+
+        '<div class="scroll-x"><table class="mini"><tr><th>Shot</th><th style="width:180px">Seed</th></tr>'+
+        state.sheet.map((x,i)=>'<tr><td>'+esc(x.label)+'</td><td>'+
+          '<input data-path="sheet.'+i+'.seed" value="'+esc(x.seed||'')+'" placeholder="mis. 1284937501" inputmode="numeric"></td></tr>').join('')+
+        '</table></div></div>';
+    }
+
+    h+='<div class="card"><h3>Setelan Inpaint <span class="tag">angka acuan</span></h3>'+
+      '<div class="scroll-x"><table class="mini">'+
+      REPAIR_SETTINGS.map(r=>'<tr><th style="width:150px">'+esc(r[0])+'</th><td style="width:130px"><code>'+esc(r[1])+'</code></td><td>'+esc(r[2])+'</td></tr>').join('')+
+      '</table></div>'+
+      '<div class="hint" style="margin-top:10px">Denoise adalah tuas terpenting di sini. Di 0,8 tambalan terlihat seperti tempelan dari foto lain karena pencahayaannya tidak lagi menyatu.</div></div>';
+
+    if(!state.dna.identity_lock){
+      h+='<div class="card"><div class="empty"><p>Character DNA belum ada. Prompt perbaikan butuh ciri fisik dari DNA supaya bagian yang ditambal tetap milik talent yang sama.</p>'+
+         '<button class="btn primary" data-go="dna">← Ke Character DNA</button></div></div>';
+    } else if(!state.repair.length){
+      h+='<div class="card"><div class="empty"><p>Belum ada prompt perbaikan. Generate untuk membuat '+REPAIR_TARGETS.length+' prompt inpaint terarah.</p>'+
+         '<button class="btn primary" data-gen="repair">⚡ Generate Repair Kit</button></div></div>';
+    } else {
+      state.repair.forEach((x,i)=>{
+        const t=REPAIR_TARGETS.find(r=>r.id===x.id);
+        h+='<div class="card"><h3>'+(i+1)+'. '+esc(x.label)+'<span class="tag">denoise '+esc(x.denoise)+'</span></h3>'+
+          (t?'<div class="hint" style="margin-bottom:10px">Masalah khas: '+esc(t.why)+'</div>':'')+
+          '<div class="promptbox">'+esc(x.prompt)+'</div>'+
+          (x.negative?'<div class="meta" style="margin:11px 0 5px">NEGATIVE</div><div class="promptbox" style="max-height:110px">'+esc(x.negative)+'</div>':'')+
+          '<div class="rowbtns"><button class="btn sm" data-copy="repair.'+i+'.prompt">⧉ Prompt</button>'+
+          (x.negative?'<button class="btn sm" data-copy="repair.'+i+'.negative">⧉ Negative</button>':'')+'</div>'+
+          (x.catatan?'<div class="hint" style="margin-top:9px">💡 '+esc(x.catatan)+'</div>':'')+
+          '</div>';
+      });
+      h+='<div class="card">'+genBar('repair')+'</div>';
+    }
+    p.innerHTML=h;
+  }
+
   else if(currentStep==='export'){
     const a=audit(), fail=a.filter(x=>!x.ok);
-    let h=head('12','Audit & Ekspor','Periksa kelengkapan, lalu ekspor. Talent Block di bawah dirancang untuk ditempel langsung ke field talent di Framework Brain Director.');
+    let h=head('13','Audit & Ekspor','Periksa kelengkapan, lalu ekspor. Talent Block di bawah dirancang untuk ditempel langsung ke field talent di Framework Brain Director.');
     h+='<div class="card"><h3>Audit Konsistensi <span class="tag">'+(a.length-fail.length)+'/'+a.length+' lolos</span></h3>';
     a.forEach(x=>{
       const ic=x.ok?'✅':(x.warn?'⚠️':'❌');
@@ -2019,7 +2256,7 @@ function renderPanel(){
       '<div class="checkrow"><span class="ic">7</span><span>Kalau hasilnya terasa AI: kurangi gerak kepala, pendekkan dialog, mulai dari ekspresi netral. Gerak berlebihan dan dialog kepanjangan adalah dua penyebab gagal paling umum.</span></div>'+
       '<div class="checkrow"><span class="ic">8</span><span>Opsional: upscale hasil terbaik di Topaz Video AI atau sejenisnya. Ingat, upscaling menaikkan resolusi tapi tidak memperbaiki gerak yang tidak wajar — sumbernya yang menentukan.</span></div>'+
       '<div class="checkrow"><span class="ic">9</span><span>Bawa Talent Block ke Framework Brain Director untuk merakit storyboard affiliate per produk.</span></div>'+
-      '<div class="checkrow"><span class="ic">10</span><span>Pasang disclosure dari tahap 11 di bio, caption, dan on-screen sebelum posting pertama.</span></div>'+
+      '<div class="checkrow"><span class="ic">10</span><span>Pasang disclosure dari tahap 12 di bio, caption, dan on-screen sebelum posting pertama.</span></div>'+
       '</div>';
     p.innerHTML=h;
   }
@@ -2131,7 +2368,7 @@ document.addEventListener('input', e=>{
   /* Realism Lock ikut tertanam di dalam prompt sheet & scenes, jadi mengubah
      setelan realisme membuat prompt yang sudah jadi kedaluwarsa. */
   if(p.startsWith('realism.')){
-    ['sheet','scenes'].forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
+    ['sheet','scenes','repair'].forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
     renderRail();
   }
   if(p==='refmode'&&hasContent('refs')) state.dirty.refs=true;
@@ -2183,6 +2420,10 @@ document.addEventListener('click', async e=>{
   }
   if(t.id==='btnCopyMotion'){
     try{ await navigator.clipboard.writeText(motionLock()); toast('Motion Lock tersalin.','ok'); }
+    catch(err){ toast('Clipboard diblokir browser.','err'); } return;
+  }
+  if(t.id==='btnCopyWeight'){
+    try{ await navigator.clipboard.writeText(weightedSnippet()); toast('Pola pembobotan tersalin.','ok'); }
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
   }
   if(t.id==='btnCopyNeg'){

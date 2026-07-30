@@ -9,7 +9,7 @@ Membangun AI influencer / virtual talent dari nol sampai siap produksi: persona,
 
 Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director, sehingga talent yang sama dipakai lintas kedua tool.
 
-**13 tahap:**
+**14 tahap:**
 
 | Tahap | Isi |
 |---|---|
@@ -23,9 +23,10 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 07 Voice & Speech | Karakter suara, filler words, catchphrase, voice design prompt |
 | 08 Reference Sheet | 10 prompt: turnaround 4 sudut, ekspresi, close-up, full body, tangan |
 | 09 Scene Pack | Scene UGC/affiliate siap produksi + prompt gambar, video, dialog |
-| 10 Content Engine | Positioning, content pillars, bank ide Shorts & longform, monetisasi |
-| 11 Compliance | Disclosure AI + afiliasi, aturan klaim, checklist sebelum posting |
-| 12 Audit & Ekspor | 28 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
+| 10 Perbaikan & Seed | Prompt inpaint terarah per bagian gagal + strategi seed + catatan seed |
+| 11 Content Engine | Positioning, content pillars, bank ide Shorts & longform, monetisasi |
+| 12 Compliance | Disclosure AI + afiliasi, aturan klaim, checklist sebelum posting |
+| 13 Audit & Ekspor | 31 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
 
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.
 
@@ -52,9 +53,17 @@ Detail yang paling sering gagal diminta eksplisit: iris + limbal ring + catchlig
 
 **Gerbang siap dianimasikan.** Frame yang diunggah sebagai *start frame* mengunci karakter jauh lebih kuat daripada teks prompt mana pun, jadi kualitasnya menentukan seluruh video. Reference Sheet menampilkan lima syarat kelulusan: wajah utuh tidak terpotong rapat, mata & mulut tajam tidak terhalang (syarat lipsync), tidak bergaya artistik, pencahayaan wajar, dan lolos sekilas pandang sebagai foto sungguhan.
 
+**Pembobotan frasa per engine.** Sintaks penekanan tidak bisa ditukar antar engine, jadi tool menyesuaikannya otomatis. Midjourney memakai `::` dengan bobot relatif — dan **jumlah seluruh bobot wajib tetap positif**, kalau tidak promptnya ditolak; tool menjaga itu. SDXL memakai `(frasa:1.3)` dengan rentang aman 0,7–1,5, negatifnya ke field terpisah. Engine bahasa natural seperti Flux tidak punya sintaks bobot sama sekali — di sana penekanan lewat posisi frasa, dan tool mengatakannya terus terang alih-alih memalsukan sintaks yang tidak ada.
+
+Catatan jujur untuk SDXL: penekanan di SDXL berpengaruh jauh lebih lemah daripada di SD1.5. LoRA kulit dan ADetailer lebih menentukan daripada angka bobot.
+
+**Perbaikan terarah, bukan generate ulang.** Satu tangan rusak tidak layak dibayar dengan frame baru yang identitasnya sudah pas. Tahap 10 menghasilkan prompt inpaint untuk 6 titik gagal tersering (tangan, mata, gigi, kulit kehilangan tekstur, tepi rambut, teks label), masing-masing dengan denoise rekomendasi. Angka acuan: **denoise 0,35–0,45**; di 0,8 tambalan lepas dari pencahayaan aslinya. Prompt inpaint sengaja **tidak** memuat Identity Lock penuh — area masked terlalu kecil, dan menyebut ciri yang tidak terlihat di situ membuat model menggambar ulang hal yang salah.
+
+**Strategi seed — dengan koreksi penting.** Seed adalah jangkar **tampilan**, bukan jangkar **identitas**. Seed sama dengan prompt berbeda langsung menyimpang begitu pose, cahaya, atau framing berubah. Jadi: kunci seed untuk 4 sudut turnaround (di sana hanya sudut yang berubah) dan saat menguji dua versi prompt; **bebaskan** seed untuk scene, karena mengunci di sana melawan variasi yang dibutuhkan tanpa memberi konsistensi wajah apa pun. Wajah tetap dikunci Identity Lock plus reference adapter. Audit memeriksa seed turnaround seragam.
+
 **Kontinuitas gambar → video.** Prompt video wajib mewarisi subjek, wardrobe, setting, dan komposisi dari prompt gambar scene yang sama. Yang boleh ditambahkan hanya gerakan kamera, perkembangan aksi sesuai beats, perilaku partikel, dan realisme gerak.
 
-**Cara kerja konsistensi wajah.** Tahap 04 menghasilkan satu baris padat berisi ciri paling mengunci (Identity Lock). Baris itu ditempel otomatis di depan **setiap** prompt gambar dan video, diperkuat Negative Lock (`do not change: ...`) dan Wardrobe Lock. Audit di tahap 12 memverifikasi setiap prompt benar-benar memuatnya — termasuk memeriksa penanda tekstur kulit, detail mata, dan ada-tidaknya kata pemicu slop.
+**Cara kerja konsistensi wajah.** Tahap 04 menghasilkan satu baris padat berisi ciri paling mengunci (Identity Lock). Baris itu ditempel otomatis di depan **setiap** prompt gambar dan video, diperkuat Negative Lock (`do not change: ...`) dan Wardrobe Lock. Audit di tahap 13 memverifikasi setiap prompt benar-benar memuatnya — termasuk memeriksa penanda tekstur kulit, detail mata, dan ada-tidaknya kata pemicu slop.
 
 **Engine yang didukung** — sintaks prompt menyesuaikan otomatis:
 - Gambar: Flux.2, Midjourney v7 (`--cref`/`--sref`), SDXL/Pony, Nano Banana, Seedream 4, Qwen-Image, Ideogram v3
@@ -100,6 +109,7 @@ Riset yang mendasari struktur tool ini:
 - [Aturan disclosure AI influencer](https://www.auditsocials.com/blog/ai-generated-influencer-content-compliance-disclosure-rules-2026) · [evaluasi FTC atas konten influencer AI](https://www.disclosurefacts.com/blog/why-ai-generated-influencer-content-may-violate-ftc-rules)
 - [Prompt Engineering Masterclass](docs/prompt-engineering-masterclass.md) (dokumen internal) — master formula IMAGE/VIDEO. Yang diambil: slot BEATS bertimestamp, physics gerak, komposisi eksplisit + negative space, dan aturan kontinuitas still→video. Catatan: contoh prompt di dokumen itu memakai `ultra-realistic` / `hyper-realistic` yang justru masuk daftar kata terlarang di tool ini — yang bekerja pada contoh tersebut adalah detail spesifiknya, bukan buzzword-nya.
 - [Ultra-Realistic AI UGC Character Guide](docs/ultra-realistic-ugc-guide.md) (dokumen internal). Yang diambil: disiplin gerak per shot, gerbang siap-dianimasikan, alur start-frame, dan aturan dialog untuk lipsync. Panduan ini menyadarkan satu konflik nyata — prinsip "less movement = more realism" untuk talking-head berlawanan dengan dorongan sinematik dari masterclass, dan itu diselesaikan lewat disiplin gerak per shot alih-alih satu aturan untuk semua scene.
+- [Multi-prompt & weights Midjourney](https://docs.midjourney.com/hc/en-us/articles/32658968492557-Multi-Prompts-Weights) · [bobot prompt SDXL](https://apatero.com/blog/prompt-weighting-syntax-complete-guide-2025) · [ADetailer untuk wajah & tangan](https://stable-diffusion-art.com/adetailer/) · [seed Midjourney](https://docs.midjourney.com/hc/en-us/articles/32604356340877-Seeds) — seed adalah jangkar gaya, bukan jangkar identitas
 - [Strategi Shorts vs longform](https://influenceflow.io/resources/youtube-shorts-and-long-form-video-strategy-the-complete-2026-creators-guide-1/) · [monetisasi Shorts 2026](https://www.ssemble.com/blog/youtube-shorts-monetization-guide-2026)
 
 Khusus realisme & anti-slop:
