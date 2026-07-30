@@ -1231,7 +1231,8 @@ const STAGE_TASK={
     '- Sertakan minimal 2 tanda unik permanen (mis. tahi lalat di posisi tertentu, freckles, lesung pipi sebelah, celah gigi kecil). Tanda unik ini adalah kunci utama konsistensi — sebut posisinya secara presisi.\n'+
     '- Wajah harus terasa manusia nyata, bukan hasil AI yang terlalu mulus: sebutkan tekstur kulit, pori, sedikit asimetri.\n'+
     '- Umur tampak harus konsisten dengan rentang '+state.setup.rentangUsia+' tahun.\n'+
-    '- FIELD identity_lock: tulis dalam BAHASA INGGRIS sebagai SATU baris padat berisi ciri paling mengunci, siap disalin ke depan setiap prompt. Format: "<nama>, <usia>yo <etnis> <gender>, <bentuk wajah>, <kulit>, <mata>, <rambut>, <tanda unik>, <tubuh>". Maksimal 60 kata.\n'+
+    '- FIELD identity_lock: tulis dalam BAHASA INGGRIS sebagai SATU baris padat berisi ciri paling mengunci, siap disalin ke depan setiap prompt. Format: "<nama>, <usia>yo <etnis> <gender>, <bentuk wajah>, <struktur tulang: garis rahang + tulang pipi>, <kulit>, <mata>, <rambut>, <tanda unik>, <tubuh>". Maksimal 65 kata.\n'+
+    '  Bagian struktur tulang WAJIB ada dan spesifik (mis. "soft rounded jawline with a slightly recessed chin, low flat cheekbones"). Ini yang membuat wajah tetap dikenali saat sudut kamera berubah — warna mata dan rambut tidak bisa melakukan itu.\n'+
     '- FIELD negative_lock: tulis dalam BAHASA INGGRIS, daftar hal yang tidak boleh berubah, format "do not change: ...". Ini akan dipakai sebagai pengingat anti-drift.\n'+
     '- Deskripsi kulit WAJIB menyebut tekstur nyata: pori terlihat, bulu vellus halus, variasi pigmen, sedikit kemerahan. Jangan sekali-kali menulis kulit "mulus", "sempurna", atau "flawless" — itu yang bikin hasil akhir terlihat plastik.\n'+
     '- Deskripsi mata WAJIB menyebut detail iris, limbal ring, dan pantulan cahaya.\n'+
@@ -1623,6 +1624,10 @@ function audit(){
 
   const lock=String(state.dna.identity_lock||'');
   push(lock.length>0 && lock.split(/\s+/).length<=70,'Identity Lock ringkas (≤70 kata) — kunci yang terlalu panjang justru melemahkan konsistensi', true);
+  /* Struktur tulang adalah sinyal identitas yang paling bertahan saat sudut
+     kamera berubah — jauh lebih kuat dari warna mata atau rambut. */
+  push(/\bjaw|jawline|cheekbone|chin|brow ridge|bone structure\b/i.test(lock),
+    'Identity Lock menyebut struktur tulang (rahang / tulang pipi) — penjaga kemiripan saat sudut berubah', true);
   push(!!String(state.dna.tanda_unik||'').trim(),'Ada tanda unik permanen sebagai jangkar konsistensi');
   push(!!String(state.dna.negative_lock||'').trim(),'Negative Lock sudah ada untuk menahan drift');
   at('wardrobe');

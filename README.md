@@ -26,7 +26,7 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 10 Perbaikan & Seed | Prompt inpaint terarah per bagian gagal + strategi seed + catatan seed |
 | 11 Content Engine | Positioning, content pillars, bank ide Shorts & longform, monetisasi |
 | 12 Compliance | Disclosure AI + afiliasi, aturan klaim, checklist sebelum posting |
-| 13 Audit & Ekspor | 41 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
+| 13 Audit & Ekspor | 42 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
 
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.
 
