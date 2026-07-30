@@ -236,6 +236,13 @@ footer .hintline{font-size:11.5px;color:var(--faint);flex:1;min-width:120px}
 .checkrow{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 .checkrow:last-child{border-bottom:none}
 .checkrow .ic{flex:none;width:16px;font-size:13px;line-height:1.4}
+.fixlink{
+  display:inline-block;margin-left:7px;font-family:var(--mono);font-size:10.5px;
+  letter-spacing:.04em;color:var(--teal);text-decoration:none;white-space:nowrap;
+  border-bottom:1px dotted currentColor;
+}
+.fixlink:hover{color:var(--text)}
+.fixlink:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 
 table.mini{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
 table.mini th,table.mini td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -1590,21 +1597,32 @@ function auditCached(){
 
 function audit(){
   const out=[];
-  const push=(ok,msg,warn)=>out.push({ok,msg,warn:!!warn});
+  /* Tiap pemeriksaan membawa tahap tempat memperbaikinya, supaya baris audit
+     yang gagal bisa langsung diklik menuju panel yang benar. Tanpa ini user
+     tahu ada masalah tapi tidak tahu harus ke mana. */
+  let ctx=null;
+  const at=id=>{ ctx=id; };
+  const push=(ok,msg,warn)=>out.push({ok,msg,warn:!!warn,stage:ctx});
 
+  at('input');
   push(!!state.input.niche.trim(),'Niche talent sudah diisi');
+  at('persona');
   push(!!state.persona.nama_lengkap,'Persona Core sudah dibuat');
+  at('dna');
   push(!!state.dna.identity_lock,'Identity Lock sudah ada');
 
   const lock=String(state.dna.identity_lock||'');
   push(lock.length>0 && lock.split(/\s+/).length<=70,'Identity Lock ringkas (≤70 kata) — kunci yang terlalu panjang justru melemahkan konsistensi', true);
   push(!!String(state.dna.tanda_unik||'').trim(),'Ada tanda unik permanen sebagai jangkar konsistensi');
   push(!!String(state.dna.negative_lock||'').trim(),'Negative Lock sudah ada untuk menahan drift');
+  at('wardrobe');
   push(!!state.wardrobe.wardrobe_lock,'Wardrobe Lock sudah ditentukan');
+  at('voice');
   push(!!state.voice.voice_design_prompt,'Voice Design Prompt siap dipakai');
 
   /* Realisme: cek prompt benar-benar membawa penanda tekstur, bukan cuma
      mengandalkan setelan di panel. */
+  at('sheet');
   const allPrompts=[...state.sheet.map(s=>s.prompt||''), ...state.scenes.map(s=>s.prompt_image||'')];
   const texRe=/\bpore|vellus|peach fuzz|subsurface|skin texture|unretouched\b/i;
   const eyeRe=/\biris|limbal|catchlight|sclera\b/i;
@@ -1622,12 +1640,15 @@ function audit(){
     : 'Tidak ada kata pemicu slop di prompt', true);
   const negOK=state.sheet.length&&state.sheet.every(s=>/plastic|airbrush|poreless|waxy/i.test(s.negative||''));
   push(!!negOK,'Semua shot punya negative anti-slop', true);
+  at('refs');
   if(hasRefs()) push(!!state.refs.pembeda,'Referensi sudah dibaca dan pembeda sudah diusulkan', true);
 
+  at('sheet');
   push(state.sheet.length>=8,'Reference Sheet lengkap (minimal 8 shot)');
   const sheetLocked=state.sheet.length&&state.sheet.every(s=>lock&&s.prompt&&s.prompt.toLowerCase().includes(lock.slice(0,24).toLowerCase()));
   push(!!sheetLocked,'Semua prompt Reference Sheet memuat Identity Lock', true);
 
+  at('scenes');
   push(state.scenes.length>=3,'Scene Pack minimal 3 scene');
   const sceneLocked=state.scenes.length&&state.scenes.every(s=>lock&&s.prompt_image&&s.prompt_image.toLowerCase().includes(lock.slice(0,24).toLowerCase()));
   push(!!sceneLocked,'Semua prompt scene memuat Identity Lock', true);
@@ -1661,14 +1682,17 @@ function audit(){
     push(!!restrained||!state.scenes.some(s=>String(s.dialog||'').trim()),'Prompt video scene berdialog memuat klausa menahan gerak', true);
   }
 
+  at('repair');
   push(state.repair.length>=REPAIR_TARGETS.length,'Repair Kit lengkap ('+state.repair.length+'/'+REPAIR_TARGETS.length+' target)', true);
   const badDn=state.repair.filter(x=>{ const n=parseFloat(x.denoise); return !isFinite(n)||n<0.25||n>0.6; });
   push(badDn.length===0,'Semua denoise perbaikan di rentang wajar 0,25–0,6', true);
   /* Turnaround butuh seed identik; scene tidak. Diperiksa terpisah karena
      inilah satu-satunya tempat seed benar-benar menolong. */
+  at('repair');
   const turn=state.sheet.filter(x=>/^(front|three|side|back)$/.test(x.id));
   const tSeeds=[...new Set(turn.map(x=>String(x.seed||'').trim()).filter(Boolean))];
   if(turn.length && tSeeds.length) push(tSeeds.length===1,'Seed turnaround seragam'+(tSeeds.length>1?' — ada '+tSeeds.length+' seed berbeda, pencahayaan dan latar akan meleset':''), true);
+  at('scenes');
   if(state.scenes.length){
     const wb=wordBudget();
     const overrun=state.scenes.filter(x=>{ const w=String(x.dialog||'').trim().split(/\s+/).filter(Boolean).length; return w>wb.max; });
@@ -1680,10 +1704,12 @@ function audit(){
       ? textLeak.length+' scene belum melarang teks tergambar di dalam frame'
       : 'Semua scene melarang teks tergambar di dalam frame', true);
   }
+  at('content');
   push(!!state.content.mix,'Rencana produksi per format UGC sudah ada', true);
   /* Satu prompt hanya boleh punya SATU kamera dan SATU pencahayaan. Dua-duanya
      membuat engine menebak, dan hasilnya campuran yang tidak diminta. Ini cacat
      yang benar-benar muncul di output nyata sebelum blok realisme dipecah. */
+  at('sheet');
   const CAM_FAM=[[/iphone|front camera|selfie/i,'ponsel'],[/dslr|canon|85mm|portrait lens/i,'DSLR'],
     /* batas kata wajib: tanpa \b, "portra" ikut cocok di dalam kata "portrait"
        sehingga setiap prompt ber-"portrait lens" salah dianggap film */
@@ -1738,12 +1764,15 @@ function audit(){
       ? salahUrut.length+' prompt menaruh blok realisme sebelum komposisi — isi shot jadi kehilangan bobot'
       : 'Isi shot mendahului blok realisme di semua prompt', true);
   }
+  at('scenes');
   const dblDis=state.scenes.filter(x=>{ const t=x.prompt_video||'';
     return /restrained|minimal head movement/i.test(t) && /moderate movement|free natural movement/i.test(t); });
   push(dblDis.length===0, dblDis.length
     ? dblDis.length+' prompt video memuat dua klausa gerak yang bertabrakan'
     : 'Tidak ada prompt video dengan klausa gerak bertabrakan', true);
+  at('content');
   push(!!state.content.pilar,'Content pillars sudah disusun');
+  at('compliance');
   push(!!state.compliance.disclosure_id && !!state.compliance.disclosure_en,'Disclosure AI tersedia dalam 2 bahasa');
   push(!!state.compliance.checklist,'Checklist sebelum posting sudah ada');
 
@@ -2490,7 +2519,12 @@ function renderPanel(){
     h+='<div class="card"><h3>Audit Konsistensi <span class="tag">'+(a.length-fail.length)+'/'+a.length+' lolos</span></h3>';
     a.forEach(x=>{
       const ic=x.ok?'✅':(x.warn?'⚠️':'❌');
-      h+='<div class="checkrow"><span class="ic">'+ic+'</span><span>'+esc(x.msg)+'</span></div>';
+      const st=x.stage&&STEPS.find(z=>z.id===x.stage);
+      /* hanya yang bermasalah dibuat bisa diklik — yang lolos tidak perlu aksi */
+      const tuju=(!x.ok&&st)
+        ? ' <a href="#" class="fixlink" data-go="'+st.id+'">→ perbaiki di tahap '+st.no+'</a>'
+        : '';
+      h+='<div class="checkrow"><span class="ic">'+ic+'</span><span>'+esc(x.msg)+tuju+'</span></div>';
     });
     h+='</div>';
 
