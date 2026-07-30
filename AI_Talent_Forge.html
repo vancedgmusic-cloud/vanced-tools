@@ -356,7 +356,7 @@ const state = {
     imgEngine:'flux', vidEngine:'veo', voiceEngine:'elevenlabs',
     realisme:'UGC realistis (kamera HP)', rasio:'9:16', jumlahScene:6, durasi:8
   },
-  input:{ niche:'', produk:'', audiens:'', arketipe:'auto', referensi:'', catatan:'' },
+  input:{ niche:'', produk:'', audiens:'', arketipe:'auto', gayaRef:'auto', referensi:'', catatan:'' },
   uploads:{ refs:[] },
   refmode:'komposit',
   realism:{
@@ -500,6 +500,7 @@ const IMG_ENGINES={
   midjourney:{name:'Midjourney v7', syntax:'Frasa padat bahasa Inggris dipisah koma, diakhiri parameter. Selalu akhiri dengan: --ar {RASIO} --style raw --v 7', ref:'Kunci wajah pakai --cref <url> --cw 100, kunci gaya pakai --sref <url>.'},
   sdxl:{name:'SDXL / Pony / Illustrious', syntax:'Gaya tag bahasa Inggris dipisah koma, dari umum ke detail. Sertakan juga negative prompt terpisah.', ref:'Pakai LoRA karakter + IP-Adapter FaceID / InstantID / PuLID untuk kunci wajah.'},
   nanobanana:{name:'Nano Banana Pro / Gemini Image', syntax:'Instruksi natural bahasa Inggris, boleh menyebut aksi edit eksplisit. Deskriptif dan spesifik.', ref:'Tekstur kulit dan akurasi wajah paling kuat untuk pemula; sangat menjaga identitas lewat reference image — sebut eksplisit "keep the same face".'},
+  gptimage:{name:'GPT Image 2.0', syntax:'Instruksi natural bahasa Inggris berupa kalimat perintah yang jelas dan berurutan, dibaca seperti brief ke fotografer. JANGAN memakai gaya tag dipisah koma dan jangan memakai parameter CLI — engine ini justru melemah kalau diberi tumpukan kata kunci.', ref:'Kepatuhan instruksi paling tinggi di antara semua engine, jadi slot komposisi dan wardrobe benar-benar dituruti. Kunci wajah lewat reference image plus kalimat eksplisit "keep the same face, same person, do not restyle". Filter kontennya paling ketat — deskripsi tubuh yang terlalu rinci bisa ditolak, jadi jaga bahasa tubuh tetap netral.'},
   higgsfield:{name:'Higgsfield Soul', syntax:'Kalimat natural bahasa Inggris, deskriptif gaya potret lifestyle.', ref:'Pencahayaan bersih dan konsistensi antar-generasi bagus. Alternatif kuat untuk potret lifestyle.'},
   seedream:{name:'Seedream 4', syntax:'Kalimat natural bahasa Inggris, deskriptif sinematik.', ref:'Dukung multi-reference image.'},
   qwen:{name:'Qwen-Image', syntax:'Kalimat natural bahasa Inggris, deskriptif.', ref:'Bagus untuk dataset LoRA dan teks dalam gambar.'},
@@ -904,6 +905,30 @@ const SEED_RULES=[
   ['Uji perubahan prompt', 'kunci seed', 'Saat membandingkan dua versi prompt, kunci seed supaya yang berubah hanya promptnya. Ini pemakaian seed yang paling berguna.']
 ];
 
+/* Referensi gaya sebelumnya cuma kolom teks kosong, dan kolom kosong hampir
+   selalu dibiarkan kosong — padahal gaya visual ikut menentukan wardrobe,
+   palet warna, makeup, dan setting scene. Opsi "auto" membuat AI yang memilih
+   ketika pengguna tidak punya preferensi, jadi slot ini tidak lagi hilang
+   diam-diam. "en" dipakai di prompt, "name" hanya label untuk pengguna. */
+const GAYA_REF={
+  auto:{name:'Auto — biar AI yang menentukan', en:''},
+  cleangirl:{name:'Clean girl — natural, warna netral', en:'clean-girl aesthetic: neutral and earth-tone wardrobe, minimal jewellery, slicked or softly tucked hair, bare-skin makeup with glossy lips, uncluttered bright interiors'},
+  softfem:{name:'Soft feminine — pastel, hangat', en:'soft feminine aesthetic: pastel and blush palette, flowing fabrics, delicate gold jewellery, warm diffused interiors, gentle rounded shapes'},
+  modest:{name:'Modest / hijab — tertutup, elegan', en:'modest fashion: hijab or covered styling, long sleeves and loose silhouettes, layered neutral and muted-jewel palette, elegant draping, no skin exposure beyond face and hands'},
+  streetwear:{name:'Streetwear — urban, oversized', en:'streetwear aesthetic: oversized silhouettes, graphic layers, sneakers, denim and cargo textures, urban concrete and shopfront backdrops, confident casual posture'},
+  koreanchic:{name:'Korean chic — minimalis, tone lembut', en:'Korean minimal aesthetic: crisp tailored basics, muted beige and off-white palette, soft straight hair, dewy skin, clean bright cafe and studio interiors'},
+  oldmoney:{name:'Old money — quiet luxury', en:'quiet-luxury aesthetic: unbranded tailored pieces, cream navy and camel palette, natural fabrics, restrained gold jewellery, warm wood and linen interiors'},
+  sporty:{name:'Sporty — activewear, energik', en:'sporty athleisure aesthetic: fitted activewear, technical fabrics, high ponytail, fresh no-makeup look, gym and outdoor-track settings, energetic posture'},
+  cozy:{name:'Homey — hangat, santai di rumah', en:'homey cozy aesthetic: knitwear and loungewear, warm amber palette, soft lamps and daylight, lived-in bedroom and kitchen settings, relaxed unposed body language'},
+  bold:{name:'Bold — warna berani, Y2K', en:'bold colourful aesthetic: saturated colour blocking, playful Y2K accessories, statement makeup, high-contrast graphic backdrops, expressive posture'},
+  custom:{name:'Tulis sendiri…', en:''}
+};
+function gayaRefEN(){
+  const k=state.input.gayaRef||'auto';
+  if(k==='custom') return String(state.input.referensi||'').trim();
+  return (GAYA_REF[k]||{}).en||'';
+}
+
 const ARKETIPE=[
   'auto','Bestie yang jujur','Ahli / Educator','Girl-next-door','Pemula yang belajar bareng',
   'Reviewer skeptis','Kakak yang ngasih saran','Hype / high energy','Kalem & aesthetic',
@@ -1179,7 +1204,9 @@ function buildContext(){
   if(i.produk) c+='- Kategori produk yang akan dipromosikan: '+i.produk+'\n';
   if(i.audiens) c+='- Target audiens: '+i.audiens+'\n';
   if(i.arketipe&&i.arketipe!=='auto') c+='- Arketipe yang diminta: '+i.arketipe+'\n';
-  if(i.referensi) c+='- Referensi gaya: '+i.referensi+'\n';
+  const gr=gayaRefEN();
+  if(gr) c+='- Referensi gaya: '+gr+'\n';
+  else c+='- Referensi gaya: BELUM DITENTUKAN — kamu yang memilih arah gaya visual yang paling cocok dengan niche dan audiens di atas, lalu pakai arah itu secara KONSISTEN di wardrobe, palet warna, makeup, dan setting scene.\n';
   if(i.catatan) c+='- Catatan khusus: '+i.catatan+'\n';
 
   if(state.refs.wajah) c+='\nBACAAN GAMBAR REFERENSI\n'+kvText(F.refs,state.refs)+'\n';
@@ -1348,16 +1375,26 @@ function promptRepair(fb){
 }
 
 /* --- reference sheet --- */
+/* Sebagian shot MENUNTUT kondisi pengambilan sendiri yang menimpa Blok B.
+   Sebelumnya aturan itu cuma disebut generik ("kalau shot-nya menuntut kondisi
+   lain…") dan model dibiarkan menebak shot mana yang dimaksud — hasilnya
+   Talking Head UGC bisa berisi kamera ponsel DAN stok film sekaligus. Sekarang
+   penimpanya disebut per shot. */
 const SHEET_SHOTS=[
-  {id:'front',   label:'Turnaround — Tampak Depan',   brief:'potret setengah badan menghadap lurus ke kamera, ekspresi netral, pencahayaan merata tanpa bayangan keras, latar polos abu-abu terang'},
-  {id:'three',   label:'Turnaround — 3/4',            brief:'potret setengah badan sudut tiga-perempat, ekspresi netral, pencahayaan dan latar identik dengan tampak depan'},
-  {id:'side',    label:'Turnaround — Samping',        brief:'potret profil samping penuh, ekspresi netral, pencahayaan dan latar identik'},
-  {id:'back',    label:'Turnaround — Belakang',       brief:'tampak belakang setengah badan untuk mengunci potongan dan tekstur rambut, latar identik'},
+  {id:'front',   label:'Turnaround — Tampak Depan',   cam:'pencahayaan studio rata tanpa bayangan keras dan latar polos — JANGAN pakai Blok B',
+   brief:'potret setengah badan menghadap lurus ke kamera, ekspresi netral, pencahayaan merata tanpa bayangan keras, latar polos abu-abu terang'},
+  {id:'three',   label:'Turnaround — 3/4',            cam:'sama persis dengan tampak depan — JANGAN pakai Blok B',
+   brief:'potret setengah badan sudut tiga-perempat, ekspresi netral, pencahayaan dan latar identik dengan tampak depan'},
+  {id:'side',    label:'Turnaround — Samping',        cam:'sama persis dengan tampak depan — JANGAN pakai Blok B',
+   brief:'potret profil samping penuh, ekspresi netral, pencahayaan dan latar identik'},
+  {id:'back',    label:'Turnaround — Belakang',       cam:'sama persis dengan tampak depan — JANGAN pakai Blok B',
+   brief:'tampak belakang setengah badan untuk mengunci potongan dan tekstur rambut, latar identik'},
   {id:'closeup', label:'Close-up Wajah',              brief:'close-up wajah sangat detail, fokus tajam pada mata, tekstur kulit, dan seluruh tanda unik, pencahayaan lembut'},
   {id:'expr',    label:'Lembar Ekspresi',             brief:'kisi 4 panel berisi empat ekspresi berbeda dari orang yang sama: senyum lebar, terkejut, berpikir, dan tertawa; wajah identik di keempat panel'},
   {id:'full',    label:'Full Body',                   brief:'foto seluruh badan berdiri natural, memperlihatkan proporsi tubuh dan tinggi, mengenakan signature look'},
   {id:'hands',   label:'Tangan & Detail',             brief:'close-up kedua tangan memegang benda kecil, memperlihatkan bentuk jari, kuku, dan aksesoris tetap'},
-  {id:'talking', label:'Talking Head UGC',            brief:'potret setengah badan gaya selfie kamera depan ponsel, memegang kamera, sedang bicara ke kamera di ruangan indoor terang'},
+  {id:'talking', label:'Talking Head UGC',            cam:'WAJIB kamera depan ponsel (mis. "shot on an iPhone 15 Pro front camera") — JANGAN pakai Blok B dan JANGAN menyebut stok film, grain film, atau lensa DSLR di prompt ini. Ponsel dan film adalah dua medium berbeda; menyebut keduanya membuat engine menebak',
+   brief:'potret setengah badan gaya selfie kamera depan ponsel, memegang kamera, sedang bicara ke kamera di ruangan indoor terang'},
   {id:'lifestyle',label:'Lifestyle B-roll',           brief:'potret candid sedang beraktivitas sehari-hari sesuai niche, tidak melihat kamera, cahaya alami'}
 ];
 function promptSheet(fb){
@@ -1365,7 +1402,7 @@ function promptSheet(fb){
   return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+realismBrief()+'\n\n'+weightBrief()+'\n\n'+
     'TUGAS: Buat Reference Sheet Pack — kumpulan prompt gambar siap pakai untuk membangun aset identitas talent ini di '+ie.name+'.\n'+
     'Kamu harus menghasilkan tepat '+SHEET_SHOTS.length+' prompt, satu untuk setiap shot berikut:\n'+
-    SHEET_SHOTS.map((s,n)=>(n+1)+'. '+s.label+' — '+s.brief).join('\n')+'\n\n'+
+    SHEET_SHOTS.map((s,n)=>(n+1)+'. '+s.label+' — '+s.brief+(s.cam?'\n   KAMERA & CAHAYA SHOT INI: '+s.cam:'')).join('\n')+'\n\n'+
     'Aturan mutlak:\n'+
     '- SETIAP prompt WAJIB diawali dengan Identity Lock persis seperti yang ada di Character DNA, tanpa diubah satu kata pun. Ini yang membuat wajah tetap sama.\n'+
     '- Setiap prompt WAJIB menyebut ulang seluruh tanda unik permanen secara eksplisit.\n'+
@@ -1790,10 +1827,24 @@ function audit(){
      membuat engine menebak, dan hasilnya campuran yang tidak diminta. Ini cacat
      yang benar-benar muncul di output nyata sebelum blok realisme dipecah. */
   at('sheet');
-  const CAM_FAM=[[/iphone|front camera|selfie/i,'ponsel'],[/dslr|canon|85mm|portrait lens/i,'DSLR'],
-    /* batas kata wajib: tanpa \b, "portra" ikut cocok di dalam kata "portrait"
-       sehingga setiap prompt ber-"portrait lens" salah dianggap film */
-    [/\b35mm\b|kodak|\bportra\b|analog film/i,'film'],
+  /* Keluarga kamera = MEDIUM pengambilan, bukan panjang fokus dan bukan gaya
+     framing. Dua false positive yang benar-benar muncul di output nyata:
+
+     1. "\b35mm\b" ikut cocok pada "shot on a 35mm lens" — itu panjang fokus,
+        bukan stok film. Lebih parah lagi, frasa itu justru DICONTOHKAN oleh
+        instruksi tool ini sendiri sebagai cara menulis satu kamera yang benar,
+        jadi model yang patuh malah dituduh memakai dua kamera. Sekarang
+        keluarga film menuntut konteks stok ("35mm film", nama stok), bukan
+        angka milimeternya.
+     2. "selfie" itu gaya framing — selfie-style framing bisa diambil dengan
+        kamera apa pun. Yang menentukan bodi hanyalah penyebutan perangkatnya.
+
+     Batas kata pada "portra" tetap wajib: tanpa \b ia ikut cocok di dalam kata
+     "portrait", sehingga setiap prompt ber-"portrait lens" dianggap film. */
+  const CAM_FAM=[
+    [/iphone|front camera|phone camera|smartphone|android phone/i,'ponsel'],
+    [/dslr|mirrorless|\bcanon\b|nikon|sony a7|85mm|portrait lens/i,'DSLR'],
+    [/\b35mm film\b|kodak|\bportra\b|analog film|film stock|cinestill|fujifilm|ektar/i,'film'],
     [/webcam|laptop camera/i,'webcam'],[/sony zv|vlogging camera/i,'vlog']];
   /* Taksonomi cahaya diperbaiki setelah terbukti menghasilkan false positive.
      Jendela itu BUKAAN, bukan sumber — "morning light from a window" dan
@@ -2155,6 +2206,12 @@ function mergeLoadedState(d){
   if(Array.isArray(d.repair)) state.repair=d.repair.map((x,i)=>normRepair(x,i)); else state.repair=[];
   bumpAudit();
   if(!Array.isArray(state.uploads.refs)) state.uploads.refs=[];
+  /* Project lama menyimpan referensi gaya sebagai teks bebas tanpa dropdown.
+     Teksnya tidak boleh hilang — dipindahkan ke mode "custom" supaya tetap
+     terpakai dan tetap bisa diedit. */
+  if(!GAYA_REF[state.input.gayaRef]){
+    state.input.gayaRef = String(state.input.referensi||'').trim() ? 'custom' : 'auto';
+  }
   /* setelan realisme lama / rusak dikembalikan ke opsi yang valid */
   Object.keys(REALISM).forEach(g=>{ if(!REALISM[g].opt[state.realism[g]]) state.realism[g]=Object.keys(REALISM[g].opt)[0]; });
   if(!MOTION.opt[state.realism.gerak]) state.realism.gerak='penuh';
@@ -2351,7 +2408,13 @@ function renderPanel(){
       '<div class="field full"><label>Kategori Produk yang Akan Dipromosikan</label><textarea data-path="input.produk" placeholder="mis. serum, sunscreen, cleanser — produk lokal harga 50–150rb">'+esc(i.produk)+'</textarea></div>'+
       '<div class="field full"><label>Target Audiens</label><textarea data-path="input.audiens" placeholder="mis. perempuan 17–24, pelajar & mahasiswa, budget terbatas, aktif di TikTok malam hari">'+esc(i.audiens)+'</textarea></div>'+
       '<div class="field"><label>Arketipe Karakter</label><select data-path="input.arketipe">'+opts(ARKETIPE,i.arketipe)+'</select><div class="hint">Pilih "auto" agar AI menentukan arketipe paling pas untuk niche.</div></div>'+
-      '<div class="field"><label>Referensi Gaya</label><input data-path="input.referensi" value="'+esc(i.referensi)+'" placeholder="mis. gaya konten ala clean-girl, warna netral"></div>'+
+      '<div class="field"><label>Referensi Gaya</label><select data-path="input.gayaRef">'+optsObj(GAYA_REF,i.gayaRef||'auto')+'</select>'+
+        '<div class="hint">'+((i.gayaRef||'auto')==='auto'
+          ? 'AI akan memilih arah gaya visual yang paling cocok dengan niche dan audiens, lalu memakainya konsisten di wardrobe, palet, makeup, dan setting.'
+          : (i.gayaRef==='custom' ? 'Tulis gayanya di kolom sebelah — makin konkret makin terarah.' : esc((GAYA_REF[i.gayaRef]||{}).en||'')))+'</div></div>'+
+      (i.gayaRef==='custom'
+        ? '<div class="field"><label>Gaya Sendiri</label><input data-path="input.referensi" value="'+esc(i.referensi)+'" placeholder="mis. gaya konten ala clean-girl, warna netral"></div>'
+        : '')+
       '<div class="field full"><label>Catatan Khusus</label><textarea data-path="input.catatan" placeholder="Hal yang wajib ada atau wajib dihindari.">'+esc(i.catatan)+'</textarea></div>'+
     '</div></div>'+
     '<div class="rowbtns"><button class="btn primary" id="btnGenAll2">⚡ Generate Semua Tahap</button></div>';
@@ -2782,7 +2845,7 @@ document.addEventListener('change', e=>{
     if(applyRealismePreset()) toast('Kamera, cahaya, dan grain di tahap 05 disetel ke "'+state.setup.realisme+'".','ok');
     persistState(); renderRail(); renderPanel(); return;
   }
-  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='refmode'||p.startsWith('realism.')) renderPanel();
+  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='input.gayaRef'||p==='refmode'||p.startsWith('realism.')) renderPanel();
 });
 document.addEventListener('click', async e=>{
   const t=e.target.closest('button,a[data-go]'); if(!t) return;

@@ -80,7 +80,7 @@ Catatan jujur untuk SDXL: penekanan di SDXL berpengaruh jauh lebih lemah daripad
 **Cara kerja konsistensi wajah.** Tahap 04 menghasilkan satu baris padat berisi ciri paling mengunci (Identity Lock). Baris itu ditempel otomatis di depan **setiap** prompt gambar dan video, diperkuat Negative Lock (`do not change: ...`) dan Wardrobe Lock. Audit di tahap 13 memverifikasi setiap prompt benar-benar memuatnya — termasuk memeriksa penanda tekstur kulit, detail mata, dan ada-tidaknya kata pemicu slop.
 
 **Engine yang didukung** — sintaks prompt menyesuaikan otomatis:
-- Gambar: Flux.2, Midjourney v7 (`--cref`/`--sref`), SDXL/Pony, Nano Banana, Seedream 4, Qwen-Image, Ideogram v3
+- Gambar: Flux.2, Midjourney v7 (`--cref`/`--sref`), SDXL/Pony, Nano Banana, GPT Image 2.0, Higgsfield Soul, Seedream 4, Qwen-Image, Ideogram v3
 - Video: Veo 3.1, Kling 3.0, Seedance 2.0, Runway Gen-4, Wan 2.5, Hailuo
 
 **Provider AI:** Claude (bawaan Claude.ai / API key), Gemini, Groq, OpenRouter, atau endpoint OpenAI-compatible mana pun.
