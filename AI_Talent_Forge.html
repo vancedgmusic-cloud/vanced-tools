@@ -185,6 +185,21 @@ main{overflow-y:auto;padding:22px 26px 60px}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .thumb button{position:absolute;top:2px;right:2px;width:17px;height:17px;border-radius:4px;border:none;background:#000A;color:#fff;font-size:11px;line-height:1;display:grid;place-items:center}
 
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px;margin-top:12px}
+.rcell{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden;aspect-ratio:3/4}
+.rcell img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
+.rcell .cap{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(transparent,#000C);padding:14px 6px 5px;font-size:10px;color:#EAEDF4;pointer-events:none}
+.rcell .num{position:absolute;top:4px;left:5px;font-family:var(--mono);font-size:9.5px;background:#000A;color:#fff;border-radius:3px;padding:1px 4px}
+.rcell .dl{position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:4px;border:none;background:#000A;color:#fff;font-size:11px;line-height:1;display:grid;place-items:center;cursor:pointer}
+.rcell.pending{display:grid;place-items:center;font-family:var(--mono);font-size:10px;color:var(--faint)}
+.rcell.failed{border-color:var(--red);display:grid;place-items:center;padding:8px;text-align:center;font-size:10.5px;line-height:1.4;color:var(--red);aspect-ratio:3/4;overflow:hidden}
+.gridprev{max-width:100%;border:1px solid var(--line);border-radius:var(--r-sm);display:block;margin-top:10px}
+.lightbox{position:fixed;inset:0;background:#050609ee;display:none;align-items:center;justify-content:center;z-index:80;padding:18px;cursor:zoom-out}
+.lightbox.open{display:flex}
+.lightbox img{max-width:100%;max-height:100%;object-fit:contain;border-radius:var(--r-sm)}
+.prog{height:5px;background:var(--panel3);border-radius:3px;overflow:hidden;margin-top:10px}
+.prog i{display:block;height:100%;background:var(--teal);transition:width .25s}
+
 .revbox{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)}
 .revbox .row{display:flex;gap:8px;align-items:flex-end}
 .revbox .row .field{flex:1}
@@ -311,6 +326,7 @@ table.mini td{color:var(--text)}
 </div>
 
 <div id="toasts"></div>
+<div class="lightbox" id="lightbox"><img id="lightboxImg" alt=""></div>
 
 <script>
 /* ============================================================
@@ -348,8 +364,15 @@ const state = {
     geminiKey:'', geminiModel:'gemini-2.5-flash',
     groqKey:'', groqModel:'llama-3.3-70b-versatile',
     orKey:'', orModel:'openai/gpt-4o-mini',
-    customBase:'https://api.openai.com/v1', customKey:'', customModel:'gpt-4o-mini'
+    customBase:'https://api.openai.com/v1', customKey:'', customModel:'gpt-4o-mini',
+    /* Key khusus render gambar (tahap 14). Dipisah dari key teks karena
+       provider teks bisa saja Claude atau Groq yang tidak bisa membuat
+       gambar sama sekali. Kalau dikosongkan, key Gemini di atas dipakai. */
+    imgKey:''
   },
+  /* Setelan render tahap 14. Gambar hasilnya TIDAK disimpan di sini —
+     lihat renderStore. */
+  render:{ model:'gemini-3-pro-image-preview', size:'2K', chain:true },
   setup:{
     namaProject:'', gender:'Perempuan', rentangUsia:'22-26', etnisTarget:'Indonesia (Jawa/Sunda)',
     pasar:'Indonesia', bahasa:'Bahasa Indonesia', platform:'TikTok + YouTube Shorts',
@@ -391,7 +414,8 @@ const STEPS=[
   {id:'repair',     no:'10', label:'Perbaikan & Seed',  group:'Produksi', ai:true},
   {id:'content',    no:'11', label:'Content Engine',    group:'Distribusi', ai:true},
   {id:'compliance', no:'12', label:'Compliance',        group:'Distribusi', ai:true},
-  {id:'export',     no:'13', label:'Audit & Ekspor',    group:'Distribusi'}
+  {id:'export',     no:'13', label:'Audit & Ekspor',    group:'Distribusi'},
+  {id:'render',     no:'14', label:'Render Gambar',     group:'Distribusi'}
 ];
 /* refs sengaja tidak masuk AI_ORDER: tahap itu hanya jalan kalau ada gambar
    referensi yang diunggah, jadi "Generate Semua" tidak boleh menggagalkannya. */
@@ -646,6 +670,46 @@ const ANIMATE_GATE=[
   'Pencahayaan wajar dengan bayangan alami',
   'Sekilas pandang lolos sebagai foto sungguhan'
 ];
+
+/* ---------------- pose sheet 12 panel ----------------
+   Dipakai tahap 14. Isinya dipilih untuk kebutuhan REFERENSI VIDEO, bukan
+   sekadar variasi cantik: empat sudut kepala mengunci bentuk wajah dari segala
+   arah, tampak belakang mengunci rambut, dua sudut kamera mengunci proporsi
+   saat kamera tidak sejajar mata, dua ekspresi bicara menyiapkan lipsync, satu
+   close-up mengunci tekstur kulit, dan satu full body mengunci proporsi tubuh.
+   Pencahayaan dan latar dipaksa identik di kedua belas panel — justru itu yang
+   membuatnya jadi character sheet, bukan sekadar dua belas foto berbeda. */
+const POSE_SHEET=[
+  {id:'p01', l:'Depan netral',    en:'facing the camera straight on, neutral relaxed expression, eyes looking into the lens'},
+  {id:'p02', l:'3/4 kiri',        en:'head and shoulders turned three-quarters toward camera-left, neutral expression, eyes to the lens'},
+  {id:'p03', l:'3/4 kanan',       en:'head and shoulders turned three-quarters toward camera-right, neutral expression, eyes to the lens'},
+  {id:'p04', l:'Profil kiri',     en:'full profile facing camera-left, neutral expression, jawline and nose bridge clearly readable'},
+  {id:'p05', l:'Profil kanan',    en:'full profile facing camera-right, neutral expression, jawline and nose bridge clearly readable'},
+  {id:'p06', l:'Belakang',        en:'seen from directly behind, showing the full hair shape, length, parting and how it falls on the shoulders'},
+  {id:'p07', l:'Sudut rendah',    en:'photographed from slightly below eye level looking up, chin lifted a little, neutral expression'},
+  {id:'p08', l:'Sudut tinggi',    en:'photographed from slightly above eye level looking down, chin lowered a little, neutral expression'},
+  {id:'p09', l:'Senyum bergigi',  en:'facing the camera with an open genuine smile showing the teeth, eyes crinkling naturally at the corners'},
+  {id:'p10', l:'Sedang bicara',   en:'facing the camera caught mid-sentence with the mouth open in speech, eyebrows slightly raised, natural asymmetric mouth shape'},
+  {id:'p11', l:'Close-up kulit',  en:'tight close-up of the face filling the frame, sharp focus on the eyes and the surface of the skin'},
+  {id:'p12', l:'Seluruh badan',   en:'full-length standing shot from head to feet, arms relaxed at the sides, weight resting naturally on one leg'}
+];
+/* Kondisi pengambilan yang WAJIB sama di kedua belas panel. Tanpa ini tiap
+   panel punya cahaya dan latarnya sendiri, dan hasilnya tidak bisa dipakai
+   sebagai referensi identitas. */
+const POSE_BASE='neutral even studio lighting from the front with no harsh shadows, plain light grey seamless backdrop, identical lighting and identical background in this frame as in every other frame of the set, shot on an 85mm lens at eye level unless the pose says otherwise';
+function posePrompt(p){
+  const lock=String(state.dna.identity_lock||'').trim();
+  const wl=String(state.wardrobe.wardrobe_lock||'').trim();
+  const look=String(state.wardrobe.signature_look||'').trim();
+  return [
+    lock, p.en,
+    look?('wardrobe: '+look):'',
+    wl?('always wearing '+wl):'',
+    POSE_BASE,
+    realismSkin('full').replace(/\.$/,''),
+    'no: '+ANTI_SLOP_NEG
+  ].filter(Boolean).join('. ')+'.';
+}
 
 /* Gerakan kamera — dipilih AI per scene, daftar ini jadi kosakata bakunya. */
 const CAM_MOVE=[
@@ -1520,7 +1584,9 @@ function setBusy(b, text){
   $('#statusline').classList.toggle('busy', b);
   $('#statustext').textContent = b?(text||'Memproses…'):'Siap';
   document.querySelectorAll('button').forEach(x=>{
-    if(x.id==='btnApi'||x.id==='btnCloseApi') return;
+    /* Tombol hentikan render HARUS tetap hidup saat sibuk — kalau ikut mati,
+       render 12 panel tidak punya jalan keluar sama sekali. */
+    if(x.id==='btnApi'||x.id==='btnCloseApi'||x.id==='btnRenderStop') return;
     x.disabled=b;
   });
 }
@@ -1606,6 +1672,150 @@ function normRepair(x,i){
 
 function warnShort(got, want, satuan){
   if(got<want) toast('AI hanya mengembalikan '+got+' dari '+want+' '+satuan+'. Klik Generate Ulang untuk melengkapi.','err');
+}
+
+/* ================= tahap 14 — render gambar =================
+   Gambar hasil render SENGAJA tidak masuk ke `state`. Satu gambar 2K base64
+   berukuran 2–4 MB; dua belas panel langsung melampaui kuota localStorage
+   (5–10 MB) dan akan mematikan autosave seluruh project — persis kegagalan
+   yang sudah pernah terjadi waktu gambar referensi belum dikecilkan. Jadi
+   hasil render hidup di memori saja dan harus diunduh. */
+let renderStore={ src:'', items:[], grid:'' };
+let renderAbort=false;
+
+const IMG_MODELS={
+  'gemini-3-pro-image-preview':{name:'Nano Banana Pro (Gemini 3 Pro Image)', note:'Paling patuh instruksi dan satu-satunya yang benar-benar menuruti resolusi 2K/4K. Paling mahal.'},
+  'gemini-3.1-flash-image-preview':{name:'Nano Banana 2 (Gemini 3.1 Flash Image)', note:'Cepat dan murah. Mengabaikan setelan resolusi — hasilnya selalu sekitar 1K.'},
+  'gemini-2.5-flash-image':{name:'Nano Banana (Gemini 2.5 Flash Image)', note:'Generasi lama, paling murah. Tekstur kulitnya di bawah dua model di atas.'}
+};
+/* Gemini hanya menerima rasio dari daftar tetap; 4:5 milik tool ini tidak ada
+   di sana dan akan ditolak, jadi dipetakan ke tetangga terdekat. */
+const IMG_RATIO={'9:16':'9:16','16:9':'16:9','1:1':'1:1','4:5':'3:4','4:3':'4:3','3:4':'3:4'};
+function imgKey(){ return String(state.api.imgKey||state.api.geminiKey||'').trim(); }
+
+/* Satu panggilan = satu gambar. refs dipakai untuk mengunci identitas:
+   panel pertama jadi acuan panel berikutnya, karena reference image mengunci
+   wajah JAUH lebih kuat daripada teks prompt. */
+async function genImage(prompt, ar, refs){
+  const key=imgKey();
+  if(!key) throw new Error('API key gambar belum diisi.');
+  const model=state.render.model||'gemini-3-pro-image-preview';
+  const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(key);
+  const parts=[];
+  (refs||[]).forEach(r=>parts.push({inline_data:{mime_type:r.mime,data:r.b64}}));
+  if(refs&&refs.length) parts.push({text:'Use the attached image only as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. Do not restyle the person. Then produce this new frame:\n\n'+prompt});
+  else parts.push({text:prompt});
+  const body={
+    contents:[{role:'user',parts}],
+    /* TEXT wajib ikut disertakan — meminta IMAGE saja membuat seluruh
+       permintaan ditolak, bukan menghasilkan gambar tanpa teks. */
+    generationConfig:{ responseModalities:['TEXT','IMAGE'], imageConfig:{ aspectRatio:ar, imageSize:state.render.size||'2K' } }
+  };
+  const d=await postJSON(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)},'Image');
+  const blocked=(d.promptFeedback&&d.promptFeedback.blockReason)||'';
+  const c=(d.candidates&&d.candidates[0])||null;
+  const ps=(c&&c.content&&c.content.parts)||[];
+  const hit=ps.map(p=>p.inlineData||p.inline_data).find(Boolean);
+  if(!hit){
+    const why=blocked||(c&&c.finishReason)||'tidak ada gambar di balasan';
+    if(/SAFETY|PROHIBITED|BLOCK/i.test(why)) throw new Error('Ditolak filter keamanan ('+why+'). Perlonggar deskripsi tubuh atau pakaian, lalu coba lagi.');
+    throw new Error('Engine tidak mengembalikan gambar ('+why+').');
+  }
+  return { mime:hit.mimeType||hit.mime_type||'image/png', b64:hit.data };
+}
+
+const dataURL=o=>'data:'+o.mime+';base64,'+o.b64;
+function downloadDataURL(name, url){
+  const a=document.createElement('a'); a.href=url; a.download=name; a.click();
+}
+function renderBase(){
+  return (state.persona.nama_lengkap||state.setup.namaProject||'talent').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+}
+
+/* Daftar sumber prompt: pose sheet baru, atau prompt yang sudah jadi di
+   tahap 08 dan 09 — supaya tidak ada prompt yang harus ditulis dua kali. */
+function renderSources(){
+  const out=[{v:'pose', l:'Pose Sheet 12 panel — untuk referensi video', n:12}];
+  state.sheet.forEach((s,i)=>{ if(s.prompt) out.push({v:'sheet:'+i, l:'Tahap 08 · '+s.label, n:1}); });
+  state.scenes.forEach((s,i)=>{ if(s.prompt_image) out.push({v:'scene:'+i, l:'Tahap 09 · '+s.nama, n:1}); });
+  return out;
+}
+function renderJobs(src){
+  if(src==='pose') return POSE_SHEET.map(p=>({label:p.l, prompt:posePrompt(p), ar:'3:4'}));
+  const ar=IMG_RATIO[ratio()]||'9:16';
+  const m=/^(sheet|scene):(\d+)$/.exec(src||'');
+  if(!m) return [];
+  const i=+m[2];
+  if(m[1]==='sheet'){ const s=state.sheet[i]; return s?[{label:s.label, prompt:s.prompt, ar}]:[]; }
+  const s=state.scenes[i]; return s?[{label:s.nama, prompt:s.prompt_image, ar}]:[];
+}
+
+async function runRender(src){
+  if(busy) return;
+  if(!imgKey()){ toast('Isi dulu API key gambar di tahap 14.','err'); return; }
+  if(src==='pose'&&!String(state.dna.identity_lock||'').trim()){
+    toast('Pose Sheet butuh Identity Lock. Generate dulu tahap 04.','err'); go('dna'); return;
+  }
+  const jobs=renderJobs(src);
+  if(!jobs.length){ toast('Tidak ada prompt untuk dirender.','err'); return; }
+  renderAbort=false;
+  renderStore={ src, items:jobs.map(j=>({label:j.label, prompt:j.prompt, state:'pending'})), grid:'' };
+  setBusy(true,'Render 0/'+jobs.length+'…'); renderPanel();
+  let anchor=null;   /* panel pertama yang berhasil, jadi acuan identitas */
+  for(let i=0;i<jobs.length;i++){
+    if(renderAbort){ renderStore.items.slice(i).forEach(x=>{ if(x.state==='pending') x.state='batal'; }); break; }
+    setBusy(true,'Render '+(i+1)+'/'+jobs.length+' — '+jobs[i].label+'…');
+    renderPanel();
+    try{
+      const refs=(state.render.chain&&anchor)?[anchor]:null;
+      const img=await genImage(jobs[i].prompt, jobs[i].ar, refs);
+      renderStore.items[i].state='ok';
+      renderStore.items[i].img=img;
+      if(!anchor) anchor=img;
+    }catch(e){
+      renderStore.items[i].state='gagal';
+      renderStore.items[i].err=e.message||String(e);
+    }
+    renderPanel();
+  }
+  const ok=renderStore.items.filter(x=>x.state==='ok').length;
+  if(src==='pose'&&ok>1){
+    try{ renderStore.grid=await composeGrid(renderStore.items.filter(x=>x.state==='ok')); }catch(_){}
+  }
+  setBusy(false); renderPanel();
+  toast(ok+' dari '+jobs.length+' gambar berhasil.', ok===jobs.length?'ok':'err');
+}
+
+/* Grid disusun di canvas, BUKAN diminta ke engine sebagai satu gambar
+   12 panel. Alasannya kualitas: satu gambar 12 panel membagi resolusi ke
+   dua belas, jadi tiap wajah hanya dapat sekitar seperduabelas piksel dan
+   terlalu lunak untuk dipakai sebagai referensi video. Merender terpisah lalu
+   menyusunnya di sini membuat tiap panel tetap resolusi penuh dan tetap bisa
+   diunduh satuan. */
+function composeGrid(items, cols=3, cellW=512){
+  return new Promise((res,rej)=>{
+    const cellH=Math.round(cellW*4/3), gap=10, rows=Math.ceil(items.length/cols);
+    const cv=document.createElement('canvas');
+    cv.width=cols*cellW+(cols+1)*gap; cv.height=rows*cellH+(rows+1)*gap;
+    const ctx=cv.getContext('2d');
+    ctx.fillStyle='#12151B'; ctx.fillRect(0,0,cv.width,cv.height);
+    let left=items.length;
+    if(!left) return rej(new Error('kosong'));
+    items.forEach((it,i)=>{
+      const im=new Image();
+      im.onload=()=>{
+        const x=gap+(i%cols)*(cellW+gap), y=gap+Math.floor(i/cols)*(cellH+gap);
+        const s=Math.max(cellW/im.width, cellH/im.height);
+        const w=im.width*s, h=im.height*s;
+        ctx.save(); ctx.beginPath(); ctx.rect(x,y,cellW,cellH); ctx.clip();
+        ctx.drawImage(im, x+(cellW-w)/2, y+(cellH-h)/2, w, h);
+        ctx.restore();
+        if(!--left) res(cv.toDataURL('image/png'));
+      };
+      im.onerror=()=>{ if(!--left) res(cv.toDataURL('image/png')); };
+      im.src=dataURL(it.img);
+    });
+  });
 }
 
 async function runStage(id, fb){
@@ -2206,6 +2416,10 @@ function mergeLoadedState(d){
   if(Array.isArray(d.repair)) state.repair=d.repair.map((x,i)=>normRepair(x,i)); else state.repair=[];
   bumpAudit();
   if(!Array.isArray(state.uploads.refs)) state.uploads.refs=[];
+  /* Project lama belum punya blok setelan render tahap 14. */
+  if(!state.render||typeof state.render!=='object') state.render={model:'gemini-3-pro-image-preview',size:'2K',chain:true};
+  if(!IMG_MODELS[state.render.model]) state.render.model='gemini-3-pro-image-preview';
+  if(!['1K','2K','4K'].includes(state.render.size)) state.render.size='2K';
   /* Project lama menyimpan referensi gaya sebagai teks bebas tanpa dropdown.
      Teksnya tidak boleh hilang — dipindahkan ke mode "custom" supaya tetap
      terpakai dan tetap bisa diedit. */
@@ -2265,11 +2479,19 @@ function railStatus(s){
     if(!gagal.length) return 'ok';
     return gagal.some(x=>!x.warn) ? 'bad' : 'dirty';
   }
+  /* Hasil render memang hilang saat halaman dimuat ulang, jadi titik ini
+     jujur ikut mati — itu justru pengingat bahwa gambarnya belum diunduh. */
+  if(s.id==='render'){
+    if(renderStore.items.some(x=>x.state==='gagal')) return 'dirty';
+    return renderStore.items.some(x=>x.state==='ok') ? 'ok' : '';
+  }
   return '';
 }
 function railHint(st, id){
   if(st==='ok') return 'siap';
-  if(st==='dirty') return id==='export' ? 'ada peringatan di audit' : 'perlu regenerasi — bahan di atasnya berubah';
+  if(st==='dirty') return id==='export' ? 'ada peringatan di audit'
+    : id==='render' ? 'ada gambar yang gagal dirender'
+    : 'perlu regenerasi — bahan di atasnya berubah';
   if(st==='bad') return 'ada pemeriksaan yang gagal';
   return 'belum ada isi';
 }
@@ -2710,6 +2932,66 @@ function renderPanel(){
       '</div>';
     p.innerHTML=h;
   }
+
+  else if(currentStep==='render'){
+    const r=state.render, srcs=renderSources(), cur=renderStore.src||'pose';
+    const ok=renderStore.items.filter(x=>x.state==='ok').length;
+    const jml=renderStore.items.length;
+    let h=head('14','Render Gambar','Jalankan prompt yang sudah disusun tahap 08, 09, atau Pose Sheet 12 panel langsung dari sini, lalu unduh hasilnya untuk dipakai sebagai image reference di engine video. Kalau kamu lebih suka merender di tempat lain, semua prompt tetap bisa disalin dari tahapnya masing-masing.');
+
+    h+='<div class="card"><h3>API Gambar <span class="tag">Google AI Studio</span></h3>'+
+      '<div class="grid two">'+
+        '<div class="field full"><label>API Key Gambar</label><input type="password" data-path="api.imgKey" value="'+esc(state.api.imgKey)+'" placeholder="'+(state.api.geminiKey?'kosongkan untuk memakai key Gemini yang sudah diisi di ⚙ API':'AIza…')+'">'+
+          '<div class="hint">Key dibuat gratis di aistudio.google.com/apikey. Sama seperti key teks: tidak pernah ditulis ke disk kecuali kamu menyalakan "ingat key" di ⚙ API, dan tidak pernah ikut ke file <code>.json</code>.</div></div>'+
+        '<div class="field"><label>Model</label><select data-path="render.model">'+optsObj(IMG_MODELS,r.model)+'</select>'+
+          '<div class="hint">'+esc((IMG_MODELS[r.model]||{}).note||'')+'</div></div>'+
+        '<div class="field"><label>Resolusi</label><select data-path="render.size">'+opts(['1K','2K','4K'],r.size)+'</select>'+
+          '<div class="hint">Hanya Nano Banana Pro yang benar-benar menuruti setelan ini; dua model lain selalu keluar sekitar 1K.</div></div>'+
+      '</div>'+
+      '<div class="field full" style="margin-top:10px"><label><input type="checkbox" id="chkChain"'+(r.chain?' checked':'')+' style="width:auto;margin-right:7px">Kunci identitas dari panel pertama</label>'+
+        '<div class="hint">Panel pertama yang berhasil dipakai sebagai reference image untuk sisanya. Reference image mengunci wajah jauh lebih kuat daripada teks prompt — matikan hanya kalau kamu memang ingin tiap gambar bebas.</div></div>'+
+      '</div>';
+
+    h+='<div class="card"><h3>Yang Dirender</h3>'+
+      '<div class="field full"><label>Sumber Prompt</label><select id="renderSrc">'+
+        srcs.map(s=>'<option value="'+esc(s.v)+'"'+(s.v===cur?' selected':'')+'>'+esc(s.l)+(s.n>1?' ('+s.n+' gambar)':'')+'</option>').join('')+
+      '</select></div>'+
+      '<div class="rowbtns">'+
+        '<button class="btn primary" id="btnRender">▶ Render Sekarang</button>'+
+        (busy?'<button class="btn" id="btnRenderStop">■ Hentikan</button>':'')+
+      '</div>'+
+      (jml?'<div class="prog"><i style="width:'+Math.round((renderStore.items.filter(x=>x.state!=='pending').length/jml)*100)+'%"></i></div>':'')+
+      '<div class="note">Pose Sheet menghabiskan 12 panggilan API sekali jalan — perkirakan 2–4 menit dan biaya sesuai tarif model yang kamu pilih. Gambar hasil render <b>hanya ada di memori</b> dan hilang kalau halaman ditutup atau dimuat ulang, karena satu gambar 2K terlalu besar untuk penyimpanan browser dan akan mematikan autosave seluruh project. Unduh dulu yang kamu mau pakai.</div>'+
+      '</div>';
+
+    if(jml){
+      h+='<div class="card"><h3>Hasil <span class="tag">'+ok+'/'+jml+' berhasil</span></h3><div class="rgrid">'+
+        renderStore.items.map((it,i)=>{
+          if(it.state==='ok') return '<div class="rcell"><img src="'+dataURL(it.img)+'" data-zoom="'+i+'" alt="'+esc(it.label)+'">'+
+            '<span class="num">'+String(i+1).padStart(2,'0')+'</span><button class="dl" data-dl="'+i+'" title="Unduh">↓</button>'+
+            '<span class="cap">'+esc(it.label)+'</span></div>';
+          if(it.state==='gagal') return '<div class="rcell failed" title="'+esc(it.err||'')+'">'+esc(it.label)+'<br>'+esc((it.err||'gagal').slice(0,70))+'</div>';
+          if(it.state==='batal') return '<div class="rcell pending">dibatalkan</div>';
+          return '<div class="rcell pending">menunggu…</div>';
+        }).join('')+'</div>';
+      if(ok) h+='<div class="rowbtns"><button class="btn" id="btnDlAll">↓ Unduh semua satuan ('+ok+')</button></div>';
+      h+='</div>';
+    }
+
+    if(renderStore.grid){
+      h+='<div class="card"><h3>Character Sheet — 1 gambar gabungan</h3>'+
+        '<p style="font-size:12.5px;color:var(--muted)">Inilah yang ditempel ke engine video sebagai satu image reference. Disusun di browser dari panel resolusi penuh, bukan diminta ke engine sebagai satu gambar 12 panel — kalau diminta begitu, tiap wajah cuma dapat seperduabelas piksel dan jadi terlalu lunak untuk dipakai referensi.</p>'+
+        '<img class="gridprev" src="'+renderStore.grid+'" data-zoomgrid="1" alt="Character sheet">'+
+        '<div class="rowbtns"><button class="btn primary" id="btnDlGrid">↓ Unduh Character Sheet (PNG)</button></div></div>';
+    }
+
+    h+='<div class="card"><h3>Dua cara memakainya</h3><div class="checks">'+
+      '<div class="checkrow"><span class="ic">A</span><span><b>Ambil langsung dari sini.</b> Render Pose Sheet, unduh <b>Character Sheet</b> gabungan, lalu unggah satu file itu ke '+esc(vidEngine().name)+' sebagai image reference. Untuk start frame satu scene tertentu, render sumber "Tahap 09" dan unduh panelnya satuan.</span></div>'+
+      '<div class="checkrow"><span class="ic">B</span><span><b>Salin prompt ke tempat lain.</b> Semua prompt tetap ada di tahap 08 dan 09 lengkap dengan tombol salin, jadi kamu bisa merender di Midjourney, ComfyUI, atau layanan mana pun tanpa key di sini.</span></div>'+
+      '<div class="checkrow"><span class="ic">!</span><span>Panel <b>Sedang bicara</b> dan <b>Senyum bergigi</b> memang disertakan untuk lipsync — engine video butuh contoh mulut terbuka, bukan hanya ekspresi netral.</span></div>'+
+      '</div></div>';
+    p.innerHTML=h;
+  }
   /* Tanpa terkecuali — inilah jaring yang mencegah tahap tanpa jalan keluar. */
   p.insertAdjacentHTML('beforeend', stepNav());
 }
@@ -2840,6 +3122,7 @@ document.addEventListener('input', e=>{
 });
 document.addEventListener('change', e=>{
   if(e.target.id==='chkRemember'){ state.api.remember=e.target.checked; persistKeys(); renderApiModal(); return; }
+  if(e.target.id==='chkChain'){ state.render.chain=e.target.checked; persistState(); return; }
   const p=e.target.dataset.path; if(!p) return;
   if(p==='setup.realisme'){
     if(applyRealismePreset()) toast('Kamera, cahaya, dan grain di tahap 05 disetel ke "'+state.setup.realisme+'".','ok');
@@ -2848,6 +3131,18 @@ document.addEventListener('change', e=>{
   if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='input.gayaRef'||p==='refmode'||p.startsWith('realism.')) renderPanel();
 });
 document.addEventListener('click', async e=>{
+  /* Lightbox: gambar bukan tombol, jadi tidak lolos filter di bawah. */
+  const lb=$('#lightbox');
+  if(e.target.id==='lightbox'||e.target.id==='lightboxImg'){ lb.classList.remove('open'); return; }
+  const zi=e.target.dataset&&e.target.dataset.zoom;
+  if(zi!=null&&zi!==''){
+    const it=renderStore.items[+zi];
+    if(it&&it.img){ $('#lightboxImg').src=dataURL(it.img); lb.classList.add('open'); }
+    return;
+  }
+  if(e.target.dataset&&e.target.dataset.zoomgrid&&renderStore.grid){
+    $('#lightboxImg').src=renderStore.grid; lb.classList.add('open'); return;
+  }
   const t=e.target.closest('button,a[data-go]'); if(!t) return;
   if(t.dataset.go){ e.preventDefault(); go(t.dataset.go); return; }
   if(t.id==='btnMenu'){ toggleRail(); return; }
@@ -2904,6 +3199,26 @@ document.addEventListener('click', async e=>{
   if(t.id==='btnCopyTalent'){
     try{ await navigator.clipboard.writeText(talentBlock()); toast('Talent Block tersalin — tempel ke Framework Brain Director.','ok'); }
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
+  }
+  if(t.id==='btnRender'){ runRender($('#renderSrc')?.value||'pose'); return; }
+  if(t.id==='btnRenderStop'){ renderAbort=true; toast('Dihentikan setelah gambar yang sedang jalan selesai.','ok'); return; }
+  if(t.dataset.dl){
+    const it=renderStore.items[+t.dataset.dl];
+    if(it&&it.img) downloadDataURL(renderBase()+'-'+String(+t.dataset.dl+1).padStart(2,'0')+'.png', dataURL(it.img));
+    return;
+  }
+  if(t.id==='btnDlAll'){
+    /* Diberi jeda karena browser membatalkan unduhan beruntun yang terlalu rapat. */
+    renderStore.items.forEach((it,i)=>{
+      if(it.state!=='ok') return;
+      setTimeout(()=>downloadDataURL(renderBase()+'-'+String(i+1).padStart(2,'0')+'.png', dataURL(it.img)), i*350);
+    });
+    toast('Mengunduh satu per satu — izinkan kalau browser bertanya soal banyak file.','ok');
+    return;
+  }
+  if(t.id==='btnDlGrid'){
+    if(renderStore.grid) downloadDataURL(renderBase()+'-character-sheet.png', renderStore.grid);
+    return;
   }
   if(t.id==='btnMdDown'){ download(fileBase()+'.md', mdDoc(), 'text/markdown'); return; }
   if(t.id==='btnMdCopy'){

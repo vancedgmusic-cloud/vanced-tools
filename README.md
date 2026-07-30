@@ -9,7 +9,7 @@ Membangun AI influencer / virtual talent dari nol sampai siap produksi: persona,
 
 Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director, sehingga talent yang sama dipakai lintas kedua tool.
 
-**14 tahap:**
+**15 tahap:**
 
 | Tahap | Isi |
 |---|---|
@@ -27,6 +27,7 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 11 Content Engine | Positioning, content pillars, bank ide Shorts & longform, monetisasi |
 | 12 Compliance | Disclosure AI + afiliasi, aturan klaim, checklist sebelum posting |
 | 13 Audit & Ekspor | 42 pemeriksaan konsistensi, realisme, struktur & lipsync, Talent Block, ekspor MD/JSON |
+| 14 Render Gambar | Jalankan prompt jadi gambar langsung di browser — **Pose Sheet 12 panel** + character sheet gabungan untuk image reference engine video |
 
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.
 
