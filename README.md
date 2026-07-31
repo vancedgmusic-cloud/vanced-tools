@@ -13,8 +13,8 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 
 | Tahap | Isi |
 |---|---|
-| 00 Setup Talent | Gender, usia, etnis, pasar, platform, engine gambar/video, rasio |
-| 01 Brief & Niche | Niche, kategori produk, audiens, arketipe |
+| 00 Setup Talent | Gender, usia, etnis, pasar, platform, rasio — **engine gambar mengikuti model render tahap 14 otomatis** |
+| 01 Brief & Niche | Niche, kategori produk, audiens, arketipe — bisa **diisi otomatis dari screenshot halaman produk** |
 | 02 Referensi Visual | Unggah acuan (Pinterest/IG), AI baca jadi deskripsi fisik + **pembeda** |
 | 03 Persona Core | Nama, backstory, kepribadian, tone of voice, pantangan |
 | 04 Character DNA | Cetak biru fisik + **Identity Lock** & **Negative Lock** |
@@ -44,6 +44,10 @@ Tidak ada rotasi otomatis per tahap. Penyedia berbeda menghasilkan kualitas berb
 Model Gemini di LiteLLM **tidak bisa** lewat `/images/generations`: endpoint itu dirutekan ke Vertex Predict API yang menolak Gemini ([litellm#17923](https://github.com/BerriAI/litellm/issues/17923)). Karena itu tool memilih endpoint sendiri — nama model `imagen…` ke `/images/generations`, selain itu ke `/chat/completions`, tempat gambar dikembalikan sebagai data URI di dalam `message.content` (sebagian versi juga mengisi `message.images[]`; ketiga bentuk diurai). Tombol **Tes Koneksi** menembak satu gambar untuk memastikan key, model, dan endpoint benar sebelum menghabiskan 12 panggilan.
 
 **Catatan penting tahap 14.** Sejak Maret 2026 Google **menghapus tier gratis untuk seluruh model gambar** di Gemini API. Balasannya berbunyi `generate_content_free_tier_requests, limit: 0` — angka nol berarti jatahnya nol dari awal, bukan terpakai habis, sehingga mengganti model atau membuat API key baru tidak mengubah apa pun. Uji gratis hanya tersedia lewat antarmuka web AI Studio, bukan API. Jalur Google karena itu **wajib billing aktif**; kalau tidak, pakai jalur proxy. Tool membedakan tiga bentuk 429 — `limit: 0` pada metrik `free_tier` (jatah nol, tidak diulang), `quotaId` ber-`PerDay` (jatah harian, tidak diulang), dan `PerMinute` (rate limit, diulang sesuai `retryDelay` dari Google) — dan **selalu menampilkan pesan asli penyedia** di bawah tafsirannya, karena tafsiran yang meleset pernah menutupi satu-satunya petunjuk yang benar.
+
+**Engine gambar mengikuti model render.** Pilihan engine di tahap 00 hanya menentukan SINTAKS prompt yang ditulis tahap 08 dan 09; yang benar-benar merender dipilih di tahap 14. Kalau keduanya berbeda — prompt bergaya Midjourney dirender di Gemini — separuh instruksinya terbuang. Karena itu tahap 00 mengikuti model tahap 14 secara otomatis, dan mengubah model render menandai tahap 08, 09, 10 sebagai kedaluwarsa. Centang bisa dimatikan untuk alur kerja yang menulis prompt di sini tapi merendernya di tempat lain.
+
+**Brief otomatis dari produk.** Tahap 01 menerima sampai tiga screenshot halaman produk marketplace atau papan Pinterest, lalu mengisi sendiri Niche, Kategori Produk, Target Audiens, Referensi Gaya, dan Catatan. Link tidak dilayani dan itu disengaja: browser dilarang mengambil isi halaman situs lain, dan model di balik API teks tidak bisa membuka halaman web — memaksakan link hanya menghasilkan karangan yang terdengar meyakinkan. Usulan untuk tahap 00 ditampilkan terpisah dengan tombol terima/abaikan, tidak pernah menimpa diam-diam.
 
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.
 

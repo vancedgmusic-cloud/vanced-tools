@@ -391,7 +391,7 @@ const state = {
     namaProject:'', gender:'Perempuan', rentangUsia:'22-26', etnisTarget:'Indonesia (Jawa/Sunda)',
     pasar:'Indonesia', bahasa:'Bahasa Indonesia', platform:'TikTok + YouTube Shorts',
     imgEngine:'flux', vidEngine:'veo', voiceEngine:'elevenlabs',
-    realisme:'UGC realistis (kamera HP)', rasio:'9:16', jumlahScene:6, durasi:8
+    realisme:'UGC realistis (kamera HP)', rasio:'9:16', jumlahScene:6, durasi:8, engineAuto:true
   },
   input:{ niche:'', produk:'', audiens:'', arketipe:'auto', gayaRef:'auto', referensi:'', catatan:'' },
   uploads:{ refs:[], brief:[] },
@@ -544,6 +544,7 @@ const IMG_ENGINES={
   sdxl:{name:'SDXL / Pony / Illustrious', syntax:'Gaya tag bahasa Inggris dipisah koma, dari umum ke detail. Sertakan juga negative prompt terpisah.', ref:'Pakai LoRA karakter + IP-Adapter FaceID / InstantID / PuLID untuk kunci wajah.'},
   nanobanana:{name:'Nano Banana Pro / Gemini Image', syntax:'Instruksi natural bahasa Inggris, boleh menyebut aksi edit eksplisit. Deskriptif dan spesifik.', ref:'Tekstur kulit dan akurasi wajah paling kuat untuk pemula; sangat menjaga identitas lewat reference image — sebut eksplisit "keep the same face".'},
   gptimage:{name:'GPT Image 2.0', syntax:'Instruksi natural bahasa Inggris berupa kalimat perintah yang jelas dan berurutan, dibaca seperti brief ke fotografer. JANGAN memakai gaya tag dipisah koma dan jangan memakai parameter CLI — engine ini justru melemah kalau diberi tumpukan kata kunci.', ref:'Kepatuhan instruksi paling tinggi di antara semua engine, jadi slot komposisi dan wardrobe benar-benar dituruti. Kunci wajah lewat reference image plus kalimat eksplisit "keep the same face, same person, do not restyle". Filter kontennya paling ketat — deskripsi tubuh yang terlalu rinci bisa ditolak, jadi jaga bahasa tubuh tetap netral.'},
+  imagen:{name:'Imagen 4 (Google)', syntax:'Kalimat deskriptif bahasa Inggris yang padat, satu paragraf. Tidak ada field negative terpisah dan tidak ada sintaks bobot — semua larangan ditulis sebagai kalimat.', ref:'TIDAK menerima reference image sama sekali, jadi wajah tidak bisa dikunci antar shot dan hasil tidak bisa dikoreksi ulang. Pakai hanya kalau konsistensi wajah tidak penting.'},
   higgsfield:{name:'Higgsfield Soul', syntax:'Kalimat natural bahasa Inggris, deskriptif gaya potret lifestyle.', ref:'Pencahayaan bersih dan konsistensi antar-generasi bagus. Alternatif kuat untuk potret lifestyle.'},
   seedream:{name:'Seedream 4', syntax:'Kalimat natural bahasa Inggris, deskriptif sinematik.', ref:'Dukung multi-reference image.'},
   qwen:{name:'Qwen-Image', syntax:'Kalimat natural bahasa Inggris, deskriptif.', ref:'Bagus untuk dataset LoRA dan teks dalam gambar.'},
@@ -1494,6 +1495,44 @@ function hasRefs(){ return state.uploads.refs.length>0; }
 /* ---------------- konteks & prompt builder ---------------- */
 const HEADER='Kamu adalah AI Character Director spesialis pembuatan AI influencer / virtual talent untuk konten UGC, affiliate, dan YouTube. Kamu paham betul cara menjaga konsistensi wajah dan identitas karakter lintas ratusan generasi gambar dan video. Penalaranmu tajam, spesifik, dan tidak pernah generik. Semua output berbahasa Indonesia natural, KECUALI field prompt gambar/video/voice-design yang wajib bahasa Inggris karena dipakai langsung di engine generatif.';
 const JSON_RULE='Balas HANYA dengan satu objek JSON valid. Tanpa markdown, tanpa penjelasan, tanpa teks lain.';
+
+/* Sintaks prompt di tahap 08 dan 09 ditentukan oleh ENGINE, sedangkan yang
+   benar-benar merender dipilih di tahap 14. Dua hal itu harus cocok: menulis
+   prompt bergaya Midjourney lalu merendernya di Gemini berarti membuang
+   separuh instruksinya. Pemetaan ini yang menyambungkan keduanya. */
+const PETA_ENGINE=[
+  [/gpt-image/i,                         'gptimage'],
+  [/imagen/i,                            'imagen'],
+  [/gemini|nano-?banana/i,               'nanobanana'],
+  [/flux/i,                              'flux'],
+  [/midjourney/i,                        'midjourney'],
+  [/sdxl|pony|illustrious|stable-?diffusion/i,'sdxl'],
+  [/seedream/i,                          'seedream'],
+  [/qwen/i,                              'qwen'],
+  [/ideogram/i,                          'ideogram'],
+  [/higgsfield/i,                        'higgsfield']
+];
+function modelRenderAktif(){
+  return state.render.provider==='proxy'
+    ? String(state.render.proxyModel||'')
+    : String(state.render.model||'');
+}
+function engineDariModel(nama){
+  const m=String(nama||'');
+  for(const [re,id] of PETA_ENGINE) if(re.test(m)) return id;
+  return null;
+}
+/* Dipanggil setiap kali model render berubah. Mengembalikan true kalau engine
+   benar-benar bergeser, supaya pemanggilnya bisa menandai tahap penghasil
+   prompt sebagai kedaluwarsa. */
+function syncEngineDariRender(){
+  if(state.setup.engineAuto===false) return false;
+  const id=engineDariModel(modelRenderAktif());
+  if(!id||!IMG_ENGINES[id]||id===state.setup.imgEngine) return false;
+  state.setup.imgEngine=id;
+  ['sheet','scenes','repair'].forEach(x=>{ if(hasContent(x)) state.dirty[x]=true; });
+  return true;
+}
 
 function imgEngine(){ return IMG_ENGINES[state.setup.imgEngine]||IMG_ENGINES.flux; }
 function vidEngine(){ return VID_ENGINES[state.setup.vidEngine]||VID_ENGINES.veo; }
@@ -3217,6 +3256,8 @@ function mergeLoadedState(d){
   if(typeof state.render.extra!=='string') state.render.extra='';
   if(!Array.isArray(state.api.book)) state.api.book=[];
   if(!Array.isArray(state.uploads.brief)) state.uploads.brief=[];
+  if(typeof state.setup.engineAuto!=='boolean') state.setup.engineAuto=true;
+  syncEngineDariRender();
   if(!state.voiceCfg||typeof state.voiceCfg!=='object') state.voiceCfg={model:'gpt-4o-mini-tts',voice:'nova',speed:1};
   if(!TTS_VOICES[state.voiceCfg.voice]) state.voiceCfg.voice='nova';
   if(!['auto','chat','images'].includes(state.render.endpoint)) state.render.endpoint='auto';
@@ -3480,7 +3521,14 @@ function renderPanel(){
       '<div class="field full"><label>Platform</label><input data-path="setup.platform" value="'+esc(s.platform)+'" placeholder="TikTok + YouTube Shorts + Instagram Reels"></div>'+
     '</div></div>'+
     '<div class="card"><h3>Engine Produksi <span class="tag">memengaruhi sintaks prompt</span></h3><div class="grid two">'+
-      '<div class="field"><label>Engine Gambar</label><select data-path="setup.imgEngine">'+optsObj(IMG_ENGINES,s.imgEngine)+'</select>'+
+      '<div class="field"><label>Engine Gambar</label>'+
+        '<select data-path="setup.imgEngine"'+(s.engineAuto!==false?' disabled':'')+'>'+optsObj(IMG_ENGINES,s.imgEngine)+'</select>'+
+        '<label style="display:flex;gap:7px;align-items:flex-start;font-size:11.5px;color:var(--muted);margin-top:7px;cursor:pointer">'+
+          '<input type="checkbox" id="chkEngineAuto"'+(s.engineAuto!==false?' checked':'')+' style="width:auto;margin-top:2px">'+
+          'Ikuti model yang dipakai di tahap 14</label>'+
+        '<div class="hint">'+(s.engineAuto!==false
+          ? 'Terkunci ke model render: <b>'+esc(modelRenderAktif()||'belum dipilih')+'</b>. Pilihan ini hanya menentukan SINTAKS prompt yang ditulis tahap 08 dan 09 — yang benar-benar merender dipilih di tahap 14. Kalau keduanya beda, separuh instruksi prompt jadi terbuang.'
+          : 'Manual. Pakai ini kalau kamu menulis prompt untuk dirender di tempat lain, mis. Midjourney, dan tidak memakai tahap 14.')+'</div>'+
         '<div class="hint">'+esc(imgEngine().ref)+'</div></div>'+
       '<div class="field"><label>Engine Video</label><select data-path="setup.vidEngine">'+optsObj(VID_ENGINES,s.vidEngine)+'</select>'+
         '<div class="hint">'+esc(vidEngine().ref)+'</div></div>'+
@@ -4097,12 +4145,25 @@ document.addEventListener('input', e=>{
     renderRail();
   }
   if(p==='refmode'&&hasContent('refs')) state.dirty.refs=true;
+  /* Model render ditulis lewat listener ini, bukan lewat 'change' — kolomnya
+     bisa berupa input teks yang 'change'-nya baru menyala saat blur. */
+  if(p==='render.model'||p==='render.proxyModel'||p==='render.provider'){
+    if(syncEngineDariRender()){
+      toast('Engine Gambar di tahap 00 ikut disetel ke "'+IMG_ENGINES[state.setup.imgEngine].name+'".','ok');
+      renderRail();
+    }
+  }
   if(p.startsWith('api.')) persistKeys(); else persistState();
   if(p==='setup.namaProject'||p==='persona.nama_lengkap') renderProjLabel();
 });
 document.addEventListener('change', e=>{
   if(e.target.id==='chkRemember'){ state.api.remember=e.target.checked; persistKeys(); renderApiModal(); return; }
   if(e.target.id==='chkChain'){ state.render.chain=e.target.checked; persistState(); return; }
+  if(e.target.id==='chkEngineAuto'){
+    state.setup.engineAuto=e.target.checked;
+    if(syncEngineDariRender()) toast('Engine Gambar disetel ke "'+IMG_ENGINES[state.setup.imgEngine].name+'" mengikuti tahap 14.','ok');
+    persistState(); renderRail(); renderPanel(); return;
+  }
   /* Memilih dari buku hanya MENGISI dua kolom — modelnya tetap dipilih
      terpisah, karena penyedia yang sama dipakai untuk keperluan berbeda. */
   if(e.target.id==='bookTeks'||e.target.id==='bookGambar'||e.target.id==='bookSuara'){
@@ -4119,6 +4180,12 @@ document.addEventListener('change', e=>{
   if(p==='setup.realisme'){
     if(applyRealismePreset()) toast('Kamera, cahaya, dan grain di tahap 05 disetel ke "'+state.setup.realisme+'".','ok');
     persistState(); renderRail(); renderPanel(); return;
+  }
+  if(p==='render.model'||p==='render.proxyModel'||p==='render.provider'){
+    if(syncEngineDariRender()){
+      toast('Engine Gambar di tahap 00 ikut disetel ke "'+IMG_ENGINES[state.setup.imgEngine].name+'".','ok');
+      renderRail(); persistState();
+    }
   }
   if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='input.gayaRef'||p==='refmode'||p==='render.provider'||p==='render.model'||p==='render.sheet'||p.startsWith('realism.')) renderPanel();
 });
