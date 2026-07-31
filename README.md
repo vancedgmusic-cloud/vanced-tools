@@ -20,7 +20,7 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 | 04 Character DNA | Cetak biru fisik + **Identity Lock** & **Negative Lock** |
 | 05 Realisme | Kontrol anti-slop → **Realism Lock** + negative + parameter engine |
 | 06 Wardrobe & Style | Signature look, capsule wardrobe, palet warna, **Wardrobe Lock** |
-| 07 Voice & Speech | Karakter suara, filler words, catchphrase, voice design prompt |
+| 07 Voice & Speech | Karakter suara, filler words, catchphrase, voice design prompt + **TTS** — bunyikan sample line-nya langsung di aplikasi |
 | 08 Reference Sheet | 10 prompt: turnaround 4 sudut, ekspresi, close-up, full body, tangan |
 | 09 Scene Pack | Scene UGC/affiliate siap produksi + prompt gambar, video, dialog |
 | 10 Perbaikan & Seed | Prompt inpaint terarah per bagian gagal + strategi seed + catatan seed |
@@ -32,6 +32,12 @@ Hasil akhirnya adalah **Talent Block** yang ditempel ke Framework Brain Director
 **Dua paket gambar, dua tujuan berbeda.** *Pose Sheet 12 panel* adalah lembar REFERENSI: cahaya dan latar dipaksa rata dan identik di kedua belas panel supaya yang terbaca engine video hanya identitasnya. Dua belas panel dirender terpisah pada resolusi penuh lalu disusun jadi satu kanvas 1536x2732 — meminta engine membuat satu gambar 12 panel membagi resolusi ke dua belas dan tiap wajah jadi terlalu lunak untuk dipakai referensi. Gaya *rapat* (default) tanpa sekat dan tanpa teks apa pun; gaya *berlabel* menambah gutter dan nama pose untuk dibaca manusia, dan sengaja tidak disarankan sebagai referensi video karena teks di dalam frame ikut terbaca sebagai isi gambar.
 
 *Foto Single 5 pose* adalah foto KONTEN yang berdiri sendiri — hero portrait, tawa candid, pegang produk, jalan outdoor, dan selfie UGC. Masing-masing punya komposisi dan rasio sendiri dan memakai kondisi pengambilan pilihan pengguna di tahap 05, bukan studio rata. Khusus panel selfie, Blok B diganti kamera ponsel karena ponsel dan stok film adalah dua medium yang tidak boleh disebut bersamaan.
+
+**Tiga key terpisah, satu buku provider.** Teks (tahap 02–12), gambar (tahap 14), dan suara (tahap 07) memakai key sendiri-sendiri, karena penyedia terbaik untuk ketiganya sering berbeda — dan ada penyedia yang sama sekali tidak punya endpoint gambar atau suara. Base URL dan key bisa disimpan sekali ke **buku provider** di modal API, lalu dipilih dari dropdown di ketiga tempat tanpa mengetik ulang. Buku ikut aturan key yang berlaku: tidak pernah masuk file `.json` project, dan hanya tersimpan ke localStorage kalau "ingat key" dinyalakan.
+
+Tidak ada rotasi otomatis per tahap. Penyedia berbeda menghasilkan kualitas berbeda, dan berpindah diam-diam di tengah alur melahirkan ketidakkonsistenan yang sulit dilacak; yang disediakan adalah penugasan tetap per fungsi, dipilih sekali oleh penggunanya. Modal API memuat ringkasan biaya nyata per tahap supaya penempatan key tidak perlu ditebak.
+
+**Suara di tahap 07.** Sample line bisa langsung dibunyikan lewat endpoint `/audio/speech` bergaya OpenAI (mis. `gpt-4o-mini-tts`), enam pilihan suara dan kecepatan 0,25–4,0. Audionya hanya hidup di memori seperti gambar hasil render — harus diunduh kalau mau disimpan.
 
 **Dua jalur API di tahap 14.** *Google AI Studio* memakai key sendiri. *Proxy OpenAI-compatible* (LiteLLM, KoboiLLM, dsb.) memindahkan billing ke penyedia proxy — isi Base URL, key, dan nama model dari dashboard proxy.
 

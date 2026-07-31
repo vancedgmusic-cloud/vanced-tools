@@ -378,10 +378,14 @@ const state = {
        base URL dan key tidak perlu diketik ulang dan tidak salah tempel.
        Ikut aturan key yang sudah ada: tidak pernah masuk file .json project,
        dan hanya tersimpan ke localStorage kalau "ingat key" dinyalakan. */
-    book:[]
+    book:[],
+    /* Suara dipisah dari teks dan gambar karena penyedianya memang bisa
+       berbeda lagi — Koboi tidak punya TTS sama sekali. */
+    ttsBase:'', ttsKey:''
   },
   /* Setelan render tahap 14. Gambar hasilnya TIDAK disimpan di sini —
      lihat renderStore. */
+  voiceCfg:{ model:'gpt-4o-mini-tts', voice:'nova', speed:1 },
   render:{ provider:'google', model:'gemini-3.1-flash-image-preview', proxyModel:'gemini-2.5-flash-image', endpoint:'auto', size:'2K', chain:true, extra:'', sheet:'rapat' },
   setup:{
     namaProject:'', gender:'Perempuan', rentangUsia:'22-26', etnisTarget:'Indonesia (Jawa/Sunda)',
@@ -2009,6 +2013,44 @@ function modelBisaEdit(){
 }
 function proxyBase(){ return String(state.api.imgBase||'').replace(/\/+$/,''); }
 
+/* ---------------- suara (TTS) ----------------
+   Tahap 07 selama ini hanya MENULISKAN Voice Design Prompt dan sample line —
+   penggunanya harus membawanya ke tempat lain untuk mendengarnya. Padahal
+   suara talent ikut menentukan apakah videonya terasa nyata, dan menundanya
+   sampai tahap produksi berarti baru ketahuan salah setelah semuanya jadi. */
+const TTS_VOICES={
+  alloy:'Alloy — netral',  echo:'Echo — jernih',   fable:'Fable — hangat',
+  onyx:'Onyx — dalam',     nova:'Nova — ramah',    shimmer:'Shimmer — lembut'
+};
+/* Audio hanya hidup di memori, sama seperti gambar hasil render: satu mp3
+   memang kecil, tapi aturannya dijaga sama supaya penyimpanan browser tidak
+   pernah dipakai untuk media. */
+let ttsStore={url:'', teks:'', voice:''};
+async function genTTS(teks){
+  const base=String(state.api.ttsBase||'').replace(/\/+$/,'');
+  const key=String(state.api.ttsKey||'').trim();
+  if(!base) throw new Error('Base URL untuk suara belum diisi.');
+  if(!key) throw new Error('API key untuk suara belum diisi.');
+  if(!String(teks||'').trim()) throw new Error('Sample Line masih kosong — isi dulu di atas atau generate tahap 07.');
+  const c=state.voiceCfg||{};
+  const r=await fetch(base+'/audio/speech',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},
+    body:JSON.stringify({model:c.model||'gpt-4o-mini-tts', input:String(teks).slice(0,4000),
+      voice:c.voice||'nova', response_format:'mp3', speed:+(c.speed||1)})
+  });
+  if(!r.ok){
+    let pesan='HTTP '+r.status;
+    try{ const d=await r.json(); if(d&&d.error) pesan=d.error.message||JSON.stringify(d.error); }catch(_){}
+    throw new Error('Suara ditolak: '+pesan);
+  }
+  const blob=await r.blob();
+  if(!blob.size) throw new Error('Penyedia mengembalikan audio kosong.');
+  if(ttsStore.url) URL.revokeObjectURL(ttsStore.url);
+  ttsStore={url:URL.createObjectURL(blob), teks:String(teks), voice:c.voice||'nova'};
+  return ttsStore;
+}
+
 /* ---------------- buku provider ---------------- */
 function bookList(){ return Array.isArray(state.api.book)?state.api.book:(state.api.book=[]); }
 function bookSimpan(nama, base, key){
@@ -3120,6 +3162,8 @@ function mergeLoadedState(d){
   if(typeof state.render.proxyModel!=='string'||!state.render.proxyModel) state.render.proxyModel='gemini-2.5-flash-image';
   if(typeof state.render.extra!=='string') state.render.extra='';
   if(!Array.isArray(state.api.book)) state.api.book=[];
+  if(!state.voiceCfg||typeof state.voiceCfg!=='object') state.voiceCfg={model:'gpt-4o-mini-tts',voice:'nova',speed:1};
+  if(!TTS_VOICES[state.voiceCfg.voice]) state.voiceCfg.voice='nova';
   if(!['auto','chat','images'].includes(state.render.endpoint)) state.render.endpoint='auto';
   if(state.render.sheet!=='label') state.render.sheet='rapat';
   /* Project yang tersimpan sebelum perbaikan ini memakai model berbayar
@@ -3290,6 +3334,34 @@ function genBar(id){
     '<button class="btn sm" data-rev="'+id+'">↻ Revisi</button></div></div>';
   return h;
 }
+/* Panel suara. Ditaruh di tahap 07 karena di situlah sample line-nya hidup —
+   mendengarkannya di tempat lain berarti menyalin teks bolak-balik. */
+function panelSuara(){
+  const c=state.voiceCfg||{}, teks=String((state.voice||{}).sample_line||'').trim();
+  return '<div class="card"><h3>Dengarkan Suaranya <span class="tag">TTS</span></h3>'+
+    '<p style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Membunyikan Sample Line di atas, supaya kamu tahu suara talent ini sebelum masuk produksi video — bukan setelah semuanya jadi. Butuh penyedia yang punya endpoint <code>/audio/speech</code>; Dinoiki punya, Koboi tidak.</p>'+
+    bookPicker('bookSuara', state.api.ttsBase)+
+    '<div class="grid two">'+
+      '<div class="field"><label>Base URL</label><input data-path="api.ttsBase" value="'+esc(state.api.ttsBase)+'" placeholder="https://ai.dinoiki.com/v1"></div>'+
+      '<div class="field"><label>API Key</label><input type="password" data-path="api.ttsKey" value="'+esc(state.api.ttsKey)+'"></div>'+
+      '<div class="field"><label>Model</label><input data-path="voiceCfg.model" value="'+esc(c.model||'gpt-4o-mini-tts')+'"></div>'+
+      '<div class="field"><label>Suara</label><select data-path="voiceCfg.voice">'+
+        Object.keys(TTS_VOICES).map(k=>'<option value="'+k+'"'+(c.voice===k?' selected':'')+'>'+esc(TTS_VOICES[k])+'</option>').join('')+
+        '</select><div class="hint">Untuk talent perempuan Indonesia, <b>nova</b> dan <b>shimmer</b> paling sering cocok.</div></div>'+
+      '<div class="field"><label>Kecepatan</label><input type="number" min="0.25" max="4" step="0.05" data-path="voiceCfg.speed" value="'+esc(c.speed||1)+'">'+
+        '<div class="hint">0,25–4,0. Untuk lipsync jangan lewat 1,15 — bicara cepat merusak sinkronisasi bibir.</div></div>'+
+    '</div>'+
+    (teks ? '<div class="lockbox" style="margin-top:10px">'+esc(teks)+'</div>'
+          : '<div class="note" style="border-color:var(--amber)">Sample Line masih kosong. Isi field <b>Sample Line untuk tes suara</b> di atas, atau generate ulang tahap 07.</div>')+
+    '<div class="rowbtns"><button class="btn primary" id="btnTTS"'+(teks?'':' disabled')+'>🔊 Bunyikan Sample Line</button>'+
+      (ttsStore.url?'<button class="btn" id="btnTTSDl">↓ Unduh mp3</button>':'')+'</div>'+
+    (ttsStore.url
+      ? '<audio controls src="'+ttsStore.url+'" style="width:100%;margin-top:10px"></audio>'+
+        '<div class="meta" style="margin-top:6px">Suara: '+esc(TTS_VOICES[ttsStore.voice]||ttsStore.voice)+' · audio ini hanya ada di memori, unduh kalau mau disimpan.</div>'
+      : '')+
+    '</div>';
+}
+
 function stageAIPanel(id, no, title, desc){
   const fields=F[id];
   let h=head(no,title,desc);
@@ -3311,6 +3383,7 @@ function stageAIPanel(id, no, title, desc){
     h+='</div>';
   }
   h+='<div class="card"><h3>Detail <span class="tag">'+fields.length+' field</span></h3>'+kvGrid(fields,id,state[id])+genBar(id)+'</div>';
+  if(id==='voice') h+=panelSuara();
   return h;
 }
 
@@ -3864,6 +3937,16 @@ function renderApiModal(){
         : '<input data-path="api.customModel" value="'+esc(a.customModel)+'">')+
       '<button class="btn sm" id="btnAmbilModelTeks" style="margin-top:7px">⟳ Ambil daftar model</button>'+
       '<div class="hint">Isi Base URL dan API Key dulu, lalu klik untuk mengambil daftar model dari penyedianya — supaya tidak perlu mengetik namanya dan tidak salah ketik.</div></div>'+
+    /* Ringkasan penempatan. Ada di sini karena inilah tempat pengguna memilih
+       key, dan pertanyaan "yang mana untuk apa" sudah muncul berulang kali. */
+    '<div class="note" style="border-color:var(--line2)">'+
+      '<b>Key mana untuk apa</b><br><br>'+
+      '<b>Tahap 02–12 · teks</b> — key di halaman ini. Tahap 08 dan 09 paling berat (12–14 rb token). Satu talent penuh sekitar <b>$0.08</b> dengan <code>google/gemini-2.5-flash</code>, atau $0.014 dengan <code>gemini-2.5-flash-lite</code> yang lebih murah tapi lebih sering melanggar aturan di tahap 08–09.<br><br>'+
+      '<b>Tahap 14 · gambar</b> — key terpisah, diisi di tahap 14. <b>Di sinilah uangmu benar-benar habis.</b> Pose Sheet 12 panel: <b>$0.011</b> lewat proxy bermodel <code>gemini-3.1-flash-image</code> tarif termurah, versus <b>$0.96</b> lewat <code>gpt-image-1.5</code>. Kalau penyediamu memuat model yang sama beberapa kali dengan harga berbeda, pilih yang termurah — modelnya identik.<br><br>'+
+      '<b>Tahap 07 · suara</b> — key terpisah lagi, diisi di tahap 07. Butuh penyedia ber-endpoint <code>/audio/speech</code>. Sekitar $15 per 1 juta karakter, jadi satu sample line hanya sepersekian sen.<br><br>'+
+      '<b>Tahap 00, 01, 05, 13</b> — tidak memakai API sama sekali.<br><br>'+
+      'Simpan tiap penyedia ke buku di bawah, lalu tinggal dipilih di ketiga tempat tanpa mengetik ulang.'+
+    '</div>'+
     '<div class="field full"><label>Simpan ke buku provider</label>'+
       '<div style="display:flex;gap:7px">'+
         '<input id="bookNama" placeholder="mis. Dinoiki" style="flex:1">'+
@@ -3942,10 +4025,11 @@ document.addEventListener('change', e=>{
   if(e.target.id==='chkChain'){ state.render.chain=e.target.checked; persistState(); return; }
   /* Memilih dari buku hanya MENGISI dua kolom — modelnya tetap dipilih
      terpisah, karena penyedia yang sama dipakai untuk keperluan berbeda. */
-  if(e.target.id==='bookTeks'||e.target.id==='bookGambar'){
+  if(e.target.id==='bookTeks'||e.target.id==='bookGambar'||e.target.id==='bookSuara'){
     const p=bookList().find(x=>x.id===e.target.value);
     if(p){
       if(e.target.id==='bookTeks'){ state.api.customBase=p.base; state.api.customKey=p.key; teksModels=null; persistKeys(); renderApiModal(); }
+      else if(e.target.id==='bookSuara'){ state.api.ttsBase=p.base; state.api.ttsKey=p.key; persistKeys(); renderPanel(); }
       else { state.api.imgBase=p.base; state.api.imgProxyKey=p.key; proxyModels=null; persistKeys(); renderPanel(); }
       toast('Base URL dan key diisi dari "'+p.nama+'".','ok');
     }
@@ -4060,6 +4144,17 @@ document.addEventListener('click', async e=>{
     /* Lompat sendiri ke kartu Hasil — menyuruh orang mencarinya bukan tugas
        yang boleh dilempar ke pengguna. */
     setTimeout(()=>{ const c=$('#hasilCard'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); }, 60);
+    return;
+  }
+  if(t.id==='btnTTS'){
+    setBusy(true,'Membunyikan sample line…');
+    try{ await genTTS((state.voice||{}).sample_line); toast('Suara siap diputar.','ok'); }
+    catch(e){ toast(e.message||String(e),'err'); }
+    setBusy(false); renderPanel(); return;
+  }
+  if(t.id==='btnTTSDl'){
+    if(ttsStore.url){ const a=document.createElement('a'); a.href=ttsStore.url;
+      a.download=renderBase()+'-suara-'+ttsStore.voice+'.mp3'; a.click(); }
     return;
   }
   if(t.id==='btnBookSimpan'){
