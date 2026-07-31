@@ -1968,6 +1968,12 @@ function imgErr(e, model){
       bukan di field tersendiri. Sebagian versi juga mengisi message.images.
       Ketiga bentuk diurai di sini karena versi proxy tiap orang berbeda. */
 const isImagen=m=>/imagen/i.test(m||'');
+/* Hanya model Gemini Image yang menerima gambar masukan. Imagen tidak, dan
+   perbedaan itu menentukan dua fitur sekaligus: kunci identitas antar panel
+   dan koreksi lintasan kedua. */
+function modelBisaEdit(){
+  return state.render.provider==='proxy' ? !isImagen(state.render.proxyModel) : true;
+}
 function proxyBase(){ return String(state.api.imgBase||'').replace(/\/+$/,''); }
 function extraParams(){
   const t=String(state.render.extra||'').trim();
@@ -1995,6 +2001,12 @@ async function genImageProxy(prompt, refs, mode){
   const H={'Content-Type':'application/json','Authorization':'Bearer '+key};
 
   if(isImagen(model)){
+    /* Endpoint ini tidak punya slot gambar masukan sama sekali. Selama ini
+       refs dibuang diam-diam, sehingga rantai identitas Pose Sheet tidak
+       pernah benar-benar jalan di model Imagen — wajah antar panel bebas
+       melenceng tanpa ada yang memberi tahu. Sekarang dinyatakan. */
+    if(mode==='edit') throw new Error('Model Imagen tidak bisa mengedit gambar — endpoint /images/generations tidak menerima gambar masukan. Ganti ke model Gemini Image untuk memakai koreksi lintasan kedua.');
+    if(refs&&refs.length) throw new Error('Model Imagen tidak menerima reference image, jadi kunci identitas antar panel tidak bisa bekerja. Matikan "Kunci identitas dari panel pertama", atau ganti ke model Gemini Image.');
     const d=await postJSON(base+'/images/generations',{method:'POST',headers:H,
       body:JSON.stringify(Object.assign({model, prompt, n:1, response_format:'b64_json'}, extraParams()))},'Image');
     const it=(d.data&&d.data[0])||{};
@@ -2199,6 +2211,12 @@ async function runRender(src){
   }
   const jobs=renderJobs(src);
   if(!jobs.length){ toast('Tidak ada prompt untuk dirender.','err'); return; }
+  /* Ditolak di awal, bukan dibiarkan gagal dua belas kali beruntun. Kunci
+     identitas butuh reference image, dan Imagen tidak punya slot itu. */
+  if(jobs.length>1 && src!=='trial' && state.render.chain && !modelBisaEdit()){
+    toast('Model '+state.render.proxyModel+' tidak menerima reference image, jadi kunci identitas tidak bisa bekerja. Matikan centang "Kunci identitas dari panel pertama", atau ganti ke model Gemini Image.','err');
+    return;
+  }
   renderAbort=false;
   renderStore={ src, items:jobs.map(j=>({label:j.label, prompt:j.prompt, state:'pending'})), grid:'' };
   setBusy(true,'Render 0/'+jobs.length+'…'); renderPanel();
@@ -3505,7 +3523,9 @@ function renderPanel(){
         /* Lintasan kedua. Ada di sini, bukan di panel setelan, karena inilah
            tempat pengguna sedang melihat cacatnya. */
         h+='<div class="revbox"><h3 style="font-size:13px;font-weight:700;margin-bottom:4px">Koreksi Lintasan Kedua</h3>'+
-          '<p style="font-size:12px;color:var(--muted);margin-bottom:10px">Sebagian cacat tidak bisa dicegah saat generate — eyeliner dan warna iris terbukti tetap muncul walau dilarang di awal prompt. Engine ini pada dasarnya model editing, jadi cacat begitu lebih tuntas diperbaiki di lintasan kedua. Aslinya disimpan dan bisa dikembalikan.</p>'+
+          (!modelBisaEdit()
+            ? '<div class="note" style="border-color:var(--amber)">Model <b>'+esc(state.render.proxyModel)+'</b> tidak bisa mengedit gambar — endpoint <code>/images/generations</code> tidak punya slot gambar masukan. Ganti ke model Gemini Image di atas untuk memakai koreksi ini, dan untuk mengaktifkan kunci identitas antar panel yang juga butuh reference image.</div></div>'
+            : '<p style="font-size:12px;color:var(--muted);margin-bottom:10px">Sebagian cacat tidak bisa dicegah saat generate — eyeliner dan warna iris terbukti tetap muncul walau dilarang di awal prompt. Engine ini pada dasarnya model editing, jadi cacat begitu lebih tuntas diperbaiki di lintasan kedua. Aslinya disimpan dan bisa dikembalikan.</p>'+
           '<div class="grid two">'+EDIT_PRESETS.map(x=>
             '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer">'+
             '<input type="checkbox" id="fix-'+x.id+'" style="width:auto;margin-top:3px">'+esc(x.l)+'</label>').join('')+
@@ -3514,7 +3534,7 @@ function renderPanel(){
           '<input id="fixCustom" placeholder="mis. hapus tindik hidung, rapikan helai rambut di dahi"></div>'+
           '<div class="rowbtns"><button class="btn primary" id="btnKoreksi">✎ Terapkan ke '+ok+' gambar</button>'+
           (renderStore.items.some(x=>x.asli)?'<button class="btn" id="btnBatalKoreksi">↺ Kembalikan asli</button>':'')+
-          '</div></div>';
+          '</div></div>');
       }
       h+='</div>';
     }
