@@ -1974,6 +1974,15 @@ function imgErr(e, model){
       bukan di field tersendiri. Sebagian versi juga mengisi message.images.
       Ketiga bentuk diurai di sini karena versi proxy tiap orang berbeda. */
 const isImagen=m=>/imagen/i.test(m||'');
+/* Keluarga gpt-image hanya menerima tiga ukuran, dan 3:4 bukan salah satunya.
+   Rasio yang diminta dipetakan ke yang paling dekat, bukan dikirim apa adanya
+   lalu ditolak. */
+let arTerakhir='3:4';
+function ukuranOpenAI(ar){
+  if(ar==='1:1') return '1024x1024';
+  if(ar==='16:9'||ar==='4:3') return '1792x1024';
+  return '1024x1792';   /* 3:4 dan 9:16 sama-sama paling dekat ke sini */
+}
 /* Endpoint tidak selalu bisa ditebak dari nama model. Imagen memang Predict,
    model Gemini Image memang chat — tapi gpt-image milik OpenAI memakai
    /images/generations padahal namanya tidak mengandung "imagen". Menebak
@@ -1987,9 +1996,9 @@ function endpointGambar(){
    perbedaan itu menentukan dua fitur sekaligus: kunci identitas antar panel
    dan koreksi lintasan kedua. */
 function modelBisaEdit(){
-  /* /images/generations tidak punya slot gambar masukan, jadi endpoint itu
-     tidak bisa dipakai untuk kunci identitas maupun koreksi — apa pun modelnya. */
-  return state.render.provider==='proxy' ? endpointGambar()!=='images' : true;
+  /* Yang benar-benar tidak bisa menerima gambar masukan hanyalah Imagen.
+     Endpoint images pun punya /images/edits untuk keluarga gpt-image. */
+  return state.render.provider==='proxy' ? !isImagen(state.render.proxyModel) : true;
 }
 function proxyBase(){ return String(state.api.imgBase||'').replace(/\/+$/,''); }
 function extraParams(){
@@ -2060,14 +2069,33 @@ async function genImageProxy(prompt, refs, mode, refMode){
   const H={'Content-Type':'application/json','Authorization':'Bearer '+key};
 
   if(endpointGambar()==='images'){
-    /* Endpoint ini tidak punya slot gambar masukan sama sekali. Selama ini
-       refs dibuang diam-diam, sehingga rantai identitas Pose Sheet tidak
-       pernah benar-benar jalan di model Imagen — wajah antar panel bebas
-       melenceng tanpa ada yang memberi tahu. Sekarang dinyatakan. */
-    if(mode==='edit') throw new Error('Endpoint /images/generations tidak menerima gambar masukan, jadi koreksi tidak bisa dijalankan lewat sana. Kalau modelmu sebenarnya mendukung image-to-image, ubah Endpoint di atas ke "chat/completions".');
-    if(refs&&refs.length) throw new Error('Endpoint /images/generations tidak menerima reference image, jadi kunci identitas antar panel tidak bisa bekerja. Matikan "Kunci identitas dari panel pertama", atau ubah Endpoint di atas ke "chat/completions" kalau modelmu mendukung image-to-image.');
+    /* Ada gambar masukan → /images/edits, bukan /images/generations. Keluarga
+       gpt-image memisahkan keduanya: generations murni teks-ke-gambar, edits
+       yang menerima gambar. Tanpa cabang ini, kunci identitas dan koreksi
+       lintasan kedua mustahil dijalankan di penyedia bergaya OpenAI. */
+    const punyaGambar=(refs&&refs.length)||mode==='edit';
+    if(punyaGambar){
+      if(isImagen(model)) throw new Error('Model Imagen tidak bisa menerima gambar masukan sama sekali — tidak lewat /images/generations maupun /images/edits. Matikan "Kunci identitas dari panel pertama", atau ganti ke model yang mendukung image-to-image seperti gpt-image.');
+      if(!refs||!refs.length) throw new Error('Koreksi butuh gambar sumber, tapi tidak ada yang dikirim.');
+      /* multipart dipakai, bukan JSON base64: "File upload" adalah bentuk yang
+         paling jelas didokumentasikan penyedia, dan Blob di browser memetakan
+         langsung ke sana tanpa menebak apakah base64-nya perlu prefiks data:. */
+      const bin=Uint8Array.from(atob(refs[0].b64), c=>c.charCodeAt(0));
+      const fd=new FormData();
+      fd.append('image', new Blob([bin], {type:refs[0].mime||'image/png'}), 'source.png');
+      fd.append('prompt', prompt);
+      fd.append('model', model);
+      fd.append('size', ukuranOpenAI(arTerakhir));
+      Object.entries(extraParams()).forEach(([k,v])=>fd.append(k, typeof v==='string'?v:JSON.stringify(v)));
+      const r=await fetch(base+'/images/edits',{method:'POST',headers:{'Authorization':'Bearer '+key},body:fd});
+      const d=await r.json().catch(()=>null);
+      if(!r.ok||!d) throw new Error('Image: /images/edits menolak (HTTP '+r.status+')'+(d&&d.error?': '+(d.error.message||JSON.stringify(d.error)):''));
+      const it=(d.data&&d.data[0])||{};
+      if(it.b64_json) return {mime:'image/png', b64:it.b64_json};
+      throw new Error('/images/edits tidak mengembalikan b64_json. Balasan: '+JSON.stringify(d).slice(0,220));
+    }
     const d=await postJSON(base+'/images/generations',{method:'POST',headers:H,
-      body:JSON.stringify(Object.assign({model, prompt, n:1, response_format:'b64_json'}, extraParams()))},'Image');
+      body:JSON.stringify(Object.assign({model, prompt, n:1, size:ukuranOpenAI(arTerakhir), response_format:'b64_json'}, extraParams()))},'Image');
     const it=(d.data&&d.data[0])||{};
     if(it.b64_json) return {mime:'image/png', b64:it.b64_json};
     throw new Error('Proxy tidak mengembalikan b64_json. Balasan: '+JSON.stringify(d).slice(0,220));
@@ -2097,6 +2125,7 @@ async function genImage(prompt, ar, refs, mode, refMode){
     const sisa=1200-(Date.now()-lastImgAt);
     if(lastImgAt&&sisa>0) await new Promise(r=>setTimeout(r,sisa));
     lastImgAt=Date.now(); imgCallCount++;
+    arTerakhir=ar||'3:4';
     try{ return await genImageProxy(prompt, refs, mode, refMode); }
     catch(e){ throw new Error(imgErr(e, 'proxy')); }
   }
@@ -3622,8 +3651,10 @@ function renderPanel(){
             '<option value="images"'+(r.endpoint==='images'?' selected':'')+'>/images/generations — tanpa gambar masukan</option>'+
           '</select><div class="hint">Terpakai: <b>/'+esc(endpointGambar()==='images'?'images/generations':'chat/completions')+'</b>. '+
             (endpointGambar()==='images'
-              ? 'Endpoint ini tidak punya slot gambar masukan, jadi kunci identitas dan koreksi lintasan kedua mati.'
-              : 'Endpoint ini menerima gambar masukan, jadi kunci identitas dan koreksi lintasan kedua bisa jalan.')+
+              ? (isImagen(r.proxyModel)
+                  ? 'Model Imagen tidak menerima gambar masukan sama sekali, jadi kunci identitas dan koreksi lintasan kedua mati.'
+                  : 'Gambar baru lewat /images/generations, dan yang membawa gambar masukan otomatis dialihkan ke /images/edits — jadi kunci identitas dan koreksi tetap jalan. Ukuran dipetakan ke 1024x1024 / 1024x1792 / 1792x1024 karena keluarga gpt-image hanya menerima ketiganya.')
+              : 'Endpoint ini menerima gambar masukan lewat pesan chat, jadi kunci identitas dan koreksi lintasan kedua bisa jalan.')+
             ' Ubah manual kalau tebakannya salah — model gpt-image umumnya butuh /images/generations, model Gemini Image butuh /chat/completions.</div></div>'+
           '<div class="field"><label>Parameter Tambahan <span style="color:var(--faint);font-weight:400">— opsional</span></label><input data-path="render.extra" value="'+esc(r.extra||'')+'" placeholder=\'{"modalities":["image","text"]}\'>'+
             '<div class="hint">JSON yang digabungkan ke body permintaan. Isi ini hanya kalau proxy-mu membalas teks tanpa gambar.</div></div>'
