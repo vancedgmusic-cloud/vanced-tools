@@ -699,9 +699,9 @@ const ANIMATE_GATE=[
 const POSE_SHEET=[
   {id:'p01', l:'Depan netral',    en:'facing the camera straight on, neutral relaxed expression, eyes looking into the lens'},
   {id:'p02', l:'3/4 kiri',        en:'head and shoulders turned three-quarters toward camera-left, neutral expression, eyes to the lens'},
-  {id:'p03', l:'3/4 kanan',       en:'head and shoulders turned three-quarters toward camera-right, neutral expression, eyes to the lens'},
-  {id:'p04', l:'Profil kiri',     en:'full profile facing camera-left, neutral expression, jawline and nose bridge clearly readable'},
-  {id:'p05', l:'Profil kanan',    en:'full profile facing camera-right, neutral expression, jawline and nose bridge clearly readable'},
+  {id:'p03', l:'3/4 kanan',       en:'head and shoulders turned three-quarters toward camera-right while the eyes come back to look straight down the lens, neutral expression'},
+  {id:'p04', l:'Profil kiri',     en:'a true 90-degree side profile facing camera-left — the head turned all the way so that only one eye, one ear and one cheek are visible and the far eye is completely hidden behind the nose, neutral expression, jawline and nose bridge reading as a clean silhouette'},
+  {id:'p05', l:'Profil kanan',    en:'a true 90-degree side profile facing camera-right — the head turned all the way so that only one eye, one ear and one cheek are visible and the far eye is completely hidden behind the nose, neutral expression, jawline and nose bridge reading as a clean silhouette'},
   {id:'p06', l:'Belakang',        en:'seen from directly behind, showing the full hair shape, length, parting and how it falls on the shoulders'},
   {id:'p07', l:'Sudut rendah',    en:'photographed from slightly below eye level looking up, chin lifted a little, neutral expression'},
   {id:'p08', l:'Sudut tinggi',    en:'photographed from slightly above eye level looking down, chin lowered a little, neutral expression'},
@@ -2013,7 +2013,7 @@ async function ambilModelProxy(){
   return proxyModels;
 }
 
-async function genImageProxy(prompt, refs, mode){
+async function genImageProxy(prompt, refs, mode, refMode){
   const base=proxyBase(), key=String(state.api.imgProxyKey||'').trim();
   if(!base) throw new Error('Base URL proxy belum diisi.');
   if(!key) throw new Error('API key proxy belum diisi.');
@@ -2039,7 +2039,7 @@ async function genImageProxy(prompt, refs, mode){
   (refs||[]).forEach(r=>content.push({type:'image_url', image_url:{url:'data:'+r.mime+';base64,'+r.b64}}));
   content.push({type:'text', text: mode==='edit' ? EDIT_LEAD+prompt
     : (refs&&refs.length)
-      ? 'Use the attached image only as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. Do not restyle the person. Then produce this new frame:\n\n'+prompt
+      ? (REF_LEAD[refMode]||REF_LEAD.content)+prompt
       : prompt});
   const d=await postJSON(base+'/chat/completions',{method:'POST',headers:H,
     body:JSON.stringify(Object.assign({model, messages:[{role:'user',content}]}, extraParams()))},'Image');
@@ -2049,14 +2049,14 @@ async function genImageProxy(prompt, refs, mode){
   throw new Error('Model membalas tanpa gambar. Isi balasannya: "'+txt+'" — pastikan nama model yang kamu isi adalah model GAMBAR, bukan model teks.');
 }
 
-async function genImage(prompt, ar, refs, mode){
+async function genImage(prompt, ar, refs, mode, refMode){
   if(state.render.provider==='proxy'){
     /* Proxy tidak punya batas 10/menit seperti tier gratis Google, tapi jeda
        kecil tetap dipertahankan supaya tidak membanjiri antrean penyedia. */
     const sisa=1200-(Date.now()-lastImgAt);
     if(lastImgAt&&sisa>0) await new Promise(r=>setTimeout(r,sisa));
     lastImgAt=Date.now(); imgCallCount++;
-    try{ return await genImageProxy(prompt, refs, mode); }
+    try{ return await genImageProxy(prompt, refs, mode, refMode); }
     catch(e){ throw new Error(imgErr(e, 'proxy')); }
   }
   const key=imgKey();
@@ -2066,7 +2066,7 @@ async function genImage(prompt, ar, refs, mode){
   const parts=[];
   (refs||[]).forEach(r=>parts.push({inline_data:{mime_type:r.mime,data:r.b64}}));
   if(mode==='edit') parts.push({text:EDIT_LEAD+prompt});
-  else if(refs&&refs.length) parts.push({text:'Use the attached image only as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. Do not restyle the person. Then produce this new frame:\n\n'+prompt});
+  else if(refs&&refs.length) parts.push({text:(REF_LEAD[refMode]||REF_LEAD.content)+prompt});
   else parts.push({text:prompt});
   const body={
     contents:[{role:'user',parts}],
@@ -2106,6 +2106,20 @@ async function genImage(prompt, ar, refs, mode){
    Tapi Nano Banana pada dasarnya model EDITING, dan mengubah gambar yang sudah
    ada adalah hal yang paling dikuasainya. Jadi cacat yang tidak bisa dicegah
    diperbaiki di lintasan kedua — bukan dipaksakan di lintasan pertama. */
+/* Instruksi acuan lama hanya menyebut wajah, sehingga model bebas menyalakan
+   ulang pencahayaan dan mengganti nada latar di tiap panel — terlihat jelas di
+   hasil nyata: panel 1 hangat dari kiri-atas, panel 3 rata dan dingin, panel
+   12 latarnya jauh lebih terang. Padahal keseragaman itulah yang membuat
+   sebuah lembar layak disebut character sheet.
+
+   Dua mode dipisah karena kebutuhannya berlawanan: lembar referensi harus
+   mengunci cahaya dan latar, sedangkan foto konten justru wajib bebas karena
+   tiap scene punya tempat dan cahayanya sendiri. */
+const REF_LEAD={
+  sheet:'The attached image is the master reference for this photo set. Reproduce the SAME person and the SAME photographic setup exactly: identical face, bone structure, skin texture and blemishes, identical hair length and hair colour, identical clothing, identical light direction, light hardness, colour temperature and exposure, and an identical background tone and camera distance. The ONLY thing that changes between the reference and this frame is the pose and camera angle described below. Do not relight the scene, do not change the backdrop, do not restyle the person.\n\n',
+  content:'Use the attached image as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. The lighting, background and framing are free to change to suit the new scene described below. Do not restyle the person.\n\n'
+};
+
 const EDIT_LEAD='Edit the attached photograph. Keep everything else exactly as it is — same person, same face shape, same skin texture and blemishes, same hair, same clothing, same pose, same lighting, same background, same framing. Change only what is asked below, and change nothing else:\n\n';
 const EDIT_PRESETS=[
   {id:'liner', l:'Hapus eyeliner & maskara',
@@ -2251,7 +2265,7 @@ async function runRender(src){
          varian A sebagai reference image, keempatnya akan mewarisi tampilan
          A dan perbandingannya jadi tidak berarti apa-apa. */
       const refs=(src!=='trial'&&state.render.chain&&anchor)?[anchor]:null;
-      const img=await genImage(jobs[i].prompt, jobs[i].ar, refs);
+      const img=await genImage(jobs[i].prompt, jobs[i].ar, refs, null, src==='pose'?'sheet':'content');
       renderStore.items[i].state='ok';
       renderStore.items[i].img=img;
       if(!anchor) anchor=img;
