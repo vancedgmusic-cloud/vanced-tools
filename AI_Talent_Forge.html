@@ -1228,6 +1228,73 @@ function lencanaKata(teks){
   if(n<wb.min) return '<span class="pill">'+n+' kata · di bawah '+wb.min+', klip akan terasa kosong</span>';
   return '<span class="pill">'+n+' kata · pas untuk '+wb.d+' detik</span>';
 }
+function jumlahKata(t){ return String(t||'').trim().split(/\s+/).filter(Boolean).length; }
+/* Satu sumber untuk baris di bawah kotak dialog, dipakai oleh panel DAN oleh
+   pembaruan langsung saat mengetik — kalau dua tempat itu menyusun HTML
+   sendiri-sendiri, tombol pangkasnya tidak ikut muncul waktu dialog baru saja
+   diketik melewati batas. */
+function barisKata(i, teks){
+  return lencanaKata(teks)+(jumlahKata(teks)>wordBudget().max
+    ? ' <button class="btn sm" data-pangkas="'+i+'">\u2702 Pangkas ke '+wordBudget().max+' kata</button>'
+    : '');
+}
+
+/* Menunjukkan masalah tanpa menyediakan jalan keluar itu setengah pekerjaan.
+   Lencana hitung kata sudah menunjuk scene mana dan lebih berapa, tapi
+   membereskannya tetap harus mengetik ulang sendiri atau meregenerasi seluruh
+   Scene Pack. Pemangkas ini menyentuh SATU dialog dengan satu panggilan kecil
+   (~400 token) — bukan empat belas ribu token untuk seluruh pack. */
+function promptPangkas(s, i){
+  const wb=wordBudget();
+  const akhir=i===state.scenes.length-1;
+  const v=state.voice||{};
+  return 'TUGAS: Pendekkan satu baris dialog UGC supaya muat diucapkan dalam '+wb.d+' detik.\n\n'+
+    'Dialog sekarang ('+jumlahKata(s.dialog)+' kata):\n"'+String(s.dialog).trim()+'"\n\n'+
+    'Aturan:\n'+
+    '- Bahasa '+state.setup.bahasa+', MAKSIMAL '+wb.max+' kata. Ini batas keras — hitung sendiri hasilmu sebelum menjawab.\n'+
+    '- Sasaran ideal '+wb.ideal+' kata, dan jangan sampai di bawah '+wb.min+' kata; klipnya jadi terasa kosong.\n'+
+    '- Pertahankan maksud dan gaya bicaranya. Yang dibuang adalah anak kalimat dan kata pengisi yang tidak menambah arti, BUKAN inti pesannya.\n'+
+    (v.filler?'- Gaya bicara talent: '+v.filler+(v.tone?'. Tone: '+v.tone:'')+'\n':'')+
+    (akhir?'- Ini scene TERAKHIR, jadi ajakan bertindaknya WAJIB tetap ada dan tetap ditujukan ke penonton (mis. "cek keranjang kuning ya", "link-nya di bio"). Memuji produk saja tidak dihitung sebagai ajakan.\n':'')+
+    '- Jangan menambah tanda baca dramatis atau emoji.\n\n'+
+    JSON_RULE+'\nSkema wajib:\n{"dialog":""}';
+}
+async function pangkasDialog(i){
+  if(busy) return;
+  const s=state.scenes[i]; if(!s) return;
+  const wb=wordBudget();
+  if(jumlahKata(s.dialog)<=wb.max){ toast('Dialog scene ini sudah muat.','ok'); return; }
+  const lama=String(s.dialog).trim();
+  setBusy(true,'Memangkas dialog Scene '+(i+1)+'…');
+  try{
+    let hasil='';
+    /* Dua percobaan, lalu berhenti. Model kadang meleset satu-dua kata di
+       percobaan pertama; kalau dua-duanya gagal, hasil terpendek tetap
+       dipasang tapi pengguna diberi tahu apa adanya — bukan dibiarkan
+       mengira sudah beres. */
+    for(let coba=0; coba<2; coba++){
+      const d=parseJSONLoose(await callAI(promptPangkas(s,i), 400, null));
+      const t=String(d.dialog||'').trim();
+      if(!t) continue;
+      if(!hasil||jumlahKata(t)<jumlahKata(hasil)) hasil=t;
+      if(jumlahKata(t)<=wb.max) break;
+    }
+    if(!hasil) throw new Error('AI tidak mengembalikan dialog. Coba lagi.');
+    s.dialog=hasil;
+    /* Engine video ber-audio native menuliskan dialognya lagi di dalam
+       prompt_video. Kalau hanya field dialog yang dipangkas, prompt video
+       masih membawa kalimat panjangnya dan videonya tetap kekejar. */
+    if(vidEngine().audio&&s.prompt_video&&s.prompt_video.includes(lama)){
+      s.prompt_video=s.prompt_video.split(lama).join(hasil);
+    }
+    bumpAudit(); persistState();
+    const n=jumlahKata(hasil);
+    toast(n<=wb.max
+      ? 'Dialog Scene '+(i+1)+' dipangkas jadi '+n+' kata.'
+      : 'Masih '+n+' kata setelah dua percobaan — sisanya pangkas manual.', n<=wb.max?'ok':'err');
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); render(); }
+}
 
 /* ---------------- perbaikan bagian yang gagal ----------------
    Generate ulang seluruh frame karena satu tangan rusak itu pemborosan, dan
@@ -3984,7 +4051,7 @@ function renderPanel(){
                ulang seluruh Scene Pack. */
             (x.dialog?'<tr><th>Dialog</th><td>'+
               '<textarea data-path="scenes.'+i+'.dialog" rows="2" style="width:100%">'+esc(x.dialog)+'</textarea>'+
-              '<div id="wc'+i+'" style="margin-top:5px">'+lencanaKata(x.dialog)+'</div>'+
+              '<div id="wc'+i+'" style="margin-top:5px">'+barisKata(i,x.dialog)+'</div>'+
             '</td></tr>':'')+
           '</table></div>'+
           (x.beats?'<div class="meta" style="margin:12px 0 5px">BEATS</div><div class="lockbox">'+esc(x.beats)+'</div>':'')+
@@ -4382,7 +4449,7 @@ document.addEventListener('input', e=>{
      di tengah pengetikan. Hanya lencana hitung katanya yang diperbarui. */
   const mDlg=/^scenes\.(\d+)\.dialog$/.exec(p);
   if(mDlg){
-    const el=$('#wc'+mDlg[1]); if(el) el.innerHTML=lencanaKata(v);
+    const el=$('#wc'+mDlg[1]); if(el) el.innerHTML=barisKata(+mDlg[1], v);
     bumpAudit(); renderRail();
   }
   /* Mengedit sendiri isi tahap yang masuk buildContext sama mengusangkannya
@@ -4597,6 +4664,7 @@ document.addEventListener('click', async e=>{
   }
   if(t.id==='btnKoreksi'){ runKoreksi(); return; }
   if(t.id==='btnBatalKoreksi'){ batalKoreksi(); return; }
+  if(t.dataset.pangkas!=null&&t.dataset.pangkas!==''){ pangkasDialog(+t.dataset.pangkas); return; }
   if(t.id==='btnRender'){ runRender($('#renderSrc')?.value||'pose'); return; }
   if(t.id==='btnRenderStop'){ renderAbort=true; toast('Dihentikan setelah gambar yang sedang jalan selesai.','ok'); return; }
   if(t.dataset.dl){
