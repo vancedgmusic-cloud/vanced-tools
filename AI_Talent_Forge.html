@@ -2004,6 +2004,23 @@ function pickImageFromChat(d){
    langsung dari sumbernya. */
 let proxyModels=null;
 const MODEL_GAMBAR=/(^|[\/-])(imagen|.*-image$|.*-image-preview$)/i;
+/* Sama seperti di tahap 14, tapi untuk provider TEKS custom. Penyedia agregator
+   seperti ini memuat puluhan model dengan nama panjang bergaris miring, dan
+   mengetiknya manual hampir pasti berujung salah ketik. */
+let teksModels=null;
+async function ambilModelTeks(){
+  const base=String(state.api.customBase||'').replace(/\/+$/,'');
+  const key=String(state.api.customKey||'').trim();
+  if(!base||!key) throw new Error('Isi dulu Base URL dan API Key.');
+  const r=await fetch(base+'/models',{headers:{'Authorization':'Bearer '+key}});
+  const d=await r.json().catch(()=>null);
+  if(!r.ok||!d) throw new Error('Penyedia menolak permintaan daftar model (HTTP '+r.status+').');
+  const ids=(d.data||d.models||[]).map(x=>String(x.id||x.name||'')).filter(Boolean).sort();
+  if(!ids.length) throw new Error('Penyedia tidak mengembalikan daftar model.');
+  teksModels=ids;
+  return ids;
+}
+
 async function ambilModelProxy(){
   const base=proxyBase(), key=String(state.api.imgProxyKey||'').trim();
   if(!base||!key) throw new Error('Isi dulu Base URL dan API key proxy.');
@@ -3747,7 +3764,14 @@ function renderApiModal(){
   if(a.provider==='custom') f=
     '<div class="field"><label>Base URL</label><input data-path="api.customBase" value="'+esc(a.customBase)+'" placeholder="https://api.openai.com/v1"></div>'+
     '<div class="field"><label>API Key</label><input type="password" data-path="api.customKey" value="'+esc(a.customKey)+'"></div>'+
-    '<div class="field"><label>Model</label><input data-path="api.customModel" value="'+esc(a.customModel)+'"></div>';
+    '<div class="field"><label>Model</label>'+
+      (teksModels
+        ? '<select data-path="api.customModel">'+
+          (teksModels.includes(a.customModel)?'':'<option value="'+esc(a.customModel)+'" selected>'+esc(a.customModel)+' (tidak ada di daftar)</option>')+
+          teksModels.map(m=>'<option value="'+esc(m)+'"'+(m===a.customModel?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>'
+        : '<input data-path="api.customModel" value="'+esc(a.customModel)+'">')+
+      '<button class="btn sm" id="btnAmbilModelTeks" style="margin-top:7px">⟳ Ambil daftar model</button>'+
+      '<div class="hint">Isi Base URL dan API Key dulu, lalu klik untuk mengambil daftar model dari penyedianya — supaya tidak perlu mengetik namanya dan tidak salah ketik.</div></div>';
   /* builtin tidak butuh key, jadi opsi ingat-key tidak relevan di sana */
   if(a.provider!=='builtin') f+=
     '<div class="field full" style="border-top:1px dashed var(--line);padding-top:12px;margin-top:2px">'+
@@ -3922,6 +3946,12 @@ document.addEventListener('click', async e=>{
        yang boleh dilempar ke pengguna. */
     setTimeout(()=>{ const c=$('#hasilCard'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); }, 60);
     return;
+  }
+  if(t.id==='btnAmbilModelTeks'){
+    setBusy(true,'Mengambil daftar model…');
+    try{ const m=await ambilModelTeks(); toast(m.length+' model ditemukan.','ok'); }
+    catch(e){ toast(e.message||String(e),'err'); }
+    setBusy(false); renderApiModal(); return;
   }
   if(t.id==='btnAmbilModel'){
     setBusy(true,'Mengambil daftar model…');
