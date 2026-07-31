@@ -393,7 +393,7 @@ const state = {
     imgEngine:'flux', vidEngine:'veo', voiceEngine:'elevenlabs',
     realisme:'UGC realistis (kamera HP)', rasio:'9:16', jumlahScene:6, durasi:8, engineAuto:true
   },
-  input:{ niche:'', produk:'', audiens:'', arketipe:'auto', gayaRef:'auto', referensi:'', catatan:'' },
+  input:{ niche:'', produk:'', audiens:'', arketipe:'auto', gayaRef:'auto', referensi:'', tandaUnik:'', catatan:'' },
   uploads:{ refs:[], brief:[] },
   refmode:'komposit',
   realism:{
@@ -1778,7 +1778,25 @@ const STAGE_TASK={
     'TUGAS: Susun Character DNA — cetak biru fisik yang akan mengunci wajah talent ini di SEMUA generasi gambar dan video.\n'+
     'Aturan:\n'+
     '- Deskripsi fisik harus SANGAT spesifik dan terukur. Hindari kata umum seperti "cantik", "menarik", "biasa saja".\n'+
-    '- Sertakan minimal 2 tanda unik permanen (mis. tahi lalat di posisi tertentu, freckles, lesung pipi sebelah, celah gigi kecil). Tanda unik ini adalah kunci utama konsistensi — sebut posisinya secara presisi.\n'+
+    /* "mis. tahi lalat di posisi tertentu" ditulis sebagai contoh PERTAMA, dan
+       itu jadi jangkar: di project demi project AI memilih tahi lalat, dan
+       hampir selalu menaruhnya di dekat bibir — model punya kecondongan sangat
+       kuat ke arah "beauty mark" begitu diminta tanda pembeda di wajah.
+       Akibatnya talent yang lahir dari referensi berbeda-beda keluar dengan
+       tanda yang sama persis. Menu diperluas, tanda kembar dilarang, dan
+       klise bibir ditolak kecuali memang terbaca di gambar referensi. */
+    '- Sertakan minimal 2 tanda unik permanen. Tanda unik ini adalah kunci utama konsistensi — sebut posisinya secara presisi.\n'+
+    '  DUA TANDA ITU WAJIB BERBEDA JENIS, bukan dua tahi lalat di dua tempat. Ambil dari kelompok yang berbeda, dan VARIASIKAN antar talent — jangan memakai kombinasi yang itu-itu saja:\n'+
+    '  * bentuk: lesung pipi sebelah saja, lesung dagu, cuping telinga menempel di satu sisi, ujung alis putus, puncak bibir tajam sebelah, gigi seri sedikit bertumpuk, celah gigi kecil, tulang pipi menonjol asimetris\n'+
+    '  * pigmen: bercak freckles di batang hidung, satu tompel datar di pelipis, hiperpigmentasi tipis di sudut rahang, tanda lahir samar di leher\n'+
+    '  * jejak hidup: bekas luka tipis memotong alis, bekas cacar kecil di pipi, garis senyum lebih dalam sebelah, satu telinga bertindik dua\n'+
+    '  * mata: heterokromia sektoral tipis, satu kelopak monolid dan satunya berlipat, bulu mata bawah lebih jarang di satu sisi\n'+
+    '  DILARANG memakai "tahi lalat di dekat bibir" atau "tahi lalat di atas bibir" sebagai pilihan bawaan — itu klise yang paling sering keluar dan membuat semua talent terlihat sama. Tanda itu hanya boleh dipakai kalau BENAR-BENAR terbaca di bacaan gambar referensi.\n'+
+    (state.refs.wajah?'  Bacaan gambar referensi sudah ada di konteks: pakai tanda yang DISEBUT di sana, jangan mengarang tanda baru.\n':'')+
+    (String(state.input.tandaUnik||'').trim()
+      ? '  PERMINTAAN PENGGUNA soal tanda unik, dan ini mengalahkan seluruh daftar di atas: '+String(state.input.tandaUnik).trim()+'\n'
+      : '')+
+    '  Sisi kiri/kanan tanda unik ditulis "camera-left"/"camera-right", termasuk di dalam identity_lock — menulis "right cheek" saja membuat tandanya berpindah sisi antar shot.\n'+
     '- SISI KIRI/KANAN wajib ditulis relatif terhadap KAMERA, bukan terhadap tubuh talent, dan wajib dieja begitu: tulis "camera-left" atau "camera-right", jangan hanya "left"/"right". Engine gambar membaca "her right cheek" secara tidak konsisten dan sering mencerminkannya, sehingga tanda unik berpindah sisi antar shot dan kemiripan langsung pecah di turnaround.\n'+
     '- Wajah harus terasa manusia nyata, bukan hasil AI yang terlalu mulus: sebutkan tekstur kulit, pori, sedikit asimetri.\n'+
     '- Umur tampak harus konsisten dengan rentang '+state.setup.rentangUsia+' tahun.\n'+
@@ -3754,6 +3772,11 @@ function renderPanel(){
       (i.gayaRef==='custom'
         ? '<div class="field"><label>Gaya Sendiri</label><input data-path="input.referensi" value="'+esc(i.referensi)+'" placeholder="mis. gaya konten ala clean-girl, warna netral"></div>'
         : '')+
+      /* Ditaruh di tahap 01, sebelum Character DNA ditulis. Menaruhnya di
+         tahap 04 tidak menolong: waktu panel itu terbuka, tandanya sudah
+         terlanjur dikarang. */
+      '<div class="field full"><label>Tanda Unik Wajah</label><input data-path="input.tandaUnik" value="'+esc(i.tandaUnik||'')+'" placeholder="mis. lesung pipi sebelah kiri + freckles di hidung — atau tulis yang dihindari: jangan tahi lalat">'+
+        '<div class="hint">Kosongkan kalau mau AI yang memilih: ia diminta memvariasikan jenisnya dan dilarang memakai tahi lalat dekat bibir sebagai pilihan bawaan. Isi kalau kamu mau menentukan sendiri — isian di sini mengalahkan pilihan AI.</div></div>'+
       '<div class="field full"><label>Catatan Khusus</label><textarea data-path="input.catatan" placeholder="Hal yang wajib ada atau wajib dihindari.">'+esc(i.catatan)+'</textarea></div>'+
     '</div></div>'+
     '<div class="rowbtns"><button class="btn primary" id="btnGenAll2">⚡ Generate Semua Tahap</button></div>';
@@ -4354,6 +4377,14 @@ document.addEventListener('input', e=>{
     const el=$('#wc'+mDlg[1]); if(el) el.innerHTML=lencanaKata(v);
     bumpAudit(); renderRail();
   }
+  /* Mengedit sendiri isi tahap yang masuk buildContext sama mengusangkannya
+     dengan meregenerasi tahap itu. markDownstream sudah lama ada tapi hanya
+     dipanggil oleh generator, tidak pernah oleh editan tangan. Akibatnya
+     menghapus tahi lalat dari Identity Lock membersihkan render tahap 14 —
+     yang membaca state langsung — tapi TIDAK menyentuh prompt tahap 08 dan 09
+     yang sudah tersimpan; di sana teks lamanya masih terbawa, diam-diam. */
+  const mCtx=/^(refs|persona|dna|wardrobe|voice)\./.exec(p);
+  if(mCtx){ markDownstream(mCtx[1]); renderRail(); }
   if(p==='refmode'&&hasContent('refs')) state.dirty.refs=true;
   /* Model render ditulis lewat listener ini, bukan lewat 'change' — kolomnya
      bisa berupa input teks yang 'change'-nya baru menyala saat blur. */
