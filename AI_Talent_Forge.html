@@ -371,7 +371,14 @@ const state = {
     imgKey:'',
     /* Jalur proxy (LiteLLM / OpenAI-compatible). Dipakai kalau billing
        gambar ditanggung penyedia proxy, bukan akun Google pribadi. */
-    imgBase:'', imgProxyKey:''
+    imgBase:'', imgProxyKey:'',
+    /* Buku provider: satu penyedia bisa dipakai untuk teks DAN gambar, dan
+       satu pengguna bisa punya beberapa penyedia dengan kekuatan berbeda.
+       Disimpan sekali di sini, lalu tinggal dipilih di kedua tempat — supaya
+       base URL dan key tidak perlu diketik ulang dan tidak salah tempel.
+       Ikut aturan key yang sudah ada: tidak pernah masuk file .json project,
+       dan hanya tersimpan ke localStorage kalau "ingat key" dinyalakan. */
+    book:[]
   },
   /* Setelan render tahap 14. Gambar hasilnya TIDAK disimpan di sini —
      lihat renderStore. */
@@ -2001,6 +2008,32 @@ function modelBisaEdit(){
   return state.render.provider==='proxy' ? !isImagen(state.render.proxyModel) : true;
 }
 function proxyBase(){ return String(state.api.imgBase||'').replace(/\/+$/,''); }
+
+/* ---------------- buku provider ---------------- */
+function bookList(){ return Array.isArray(state.api.book)?state.api.book:(state.api.book=[]); }
+function bookSimpan(nama, base, key){
+  base=String(base||'').replace(/\/+$/,''); nama=String(nama||'').trim();
+  if(!nama||!base) return 'Nama dan Base URL wajib diisi.';
+  const b=bookList(), ada=b.find(x=>x.nama.toLowerCase()===nama.toLowerCase());
+  if(ada){ ada.base=base; ada.key=key||ada.key; }
+  else b.push({id:uid(), nama, base, key:key||''});
+  persistKeys(); persistState();
+  return null;
+}
+function bookHapus(id){
+  state.api.book=bookList().filter(x=>x.id!==id);
+  persistKeys(); persistState();
+}
+function bookPicker(idSel, baseSekarang){
+  const b=bookList();
+  if(!b.length) return '';
+  const cocok=b.find(x=>x.base===String(baseSekarang||'').replace(/\/+$/,''));
+  return '<div class="field full"><label>Pakai provider tersimpan</label>'+
+    '<select id="'+idSel+'"><option value="">— pilih —</option>'+
+    b.map(x=>'<option value="'+esc(x.id)+'"'+(cocok&&cocok.id===x.id?' selected':'')+'>'+
+      esc(x.nama)+' — '+esc(x.base)+'</option>').join('')+
+    '</select><div class="hint">Mengisi Base URL dan API Key sekaligus. Provider yang sama boleh dipakai di tempat lain dengan model berbeda.</div></div>';
+}
 function extraParams(){
   const t=String(state.render.extra||'').trim();
   if(!t) return {};
@@ -3086,6 +3119,7 @@ function mergeLoadedState(d){
   if(state.render.provider!=='proxy') state.render.provider='google';
   if(typeof state.render.proxyModel!=='string'||!state.render.proxyModel) state.render.proxyModel='gemini-2.5-flash-image';
   if(typeof state.render.extra!=='string') state.render.extra='';
+  if(!Array.isArray(state.api.book)) state.api.book=[];
   if(!['auto','chat','images'].includes(state.render.endpoint)) state.render.endpoint='auto';
   if(state.render.sheet!=='label') state.render.sheet='rapat';
   /* Project yang tersimpan sebelum perbaikan ini memakai model berbayar
@@ -3633,7 +3667,8 @@ function renderPanel(){
       (viaProxy?'':'<div class="hint" style="color:var(--amber)">Sejak Maret 2026 Google menghapus tier gratis untuk SEMUA model gambar di API — balasannya berbunyi <code>free_tier_requests, limit: 0</code>. Tanpa billing aktif di project Google Cloud, ketiga model di bawah sama-sama gagal, dan membuat API key baru tidak mengubah apa pun. Kalau kamu punya akses proxy, pakai pilihan kedua.</div>')+
       '</div><div class="grid two" style="margin-top:12px">'+
       (viaProxy
-        ? '<div class="field"><label>Base URL</label><input data-path="api.imgBase" value="'+esc(state.api.imgBase)+'" placeholder="https://….../v1">'+
+        ? bookPicker('bookGambar', state.api.imgBase)+
+          '<div class="field"><label>Base URL</label><input data-path="api.imgBase" value="'+esc(state.api.imgBase)+'" placeholder="https://….../v1">'+
             '<div class="hint">Harus berakhir di <code>/v1</code>.</div></div>'+
           '<div class="field"><label>API Key Proxy</label><input type="password" data-path="api.imgProxyKey" value="'+esc(state.api.imgProxyKey)+'" placeholder="sk-…"></div>'+
           '<div class="field full"><label>Nama Model di Proxy</label>'+
@@ -3818,7 +3853,8 @@ function renderApiModal(){
     '<div class="field"><label>OpenRouter API Key</label><input type="password" data-path="api.orKey" value="'+esc(a.orKey)+'" placeholder="sk-or-…"></div>'+
     '<div class="field"><label>Model</label><input data-path="api.orModel" value="'+esc(a.orModel)+'" placeholder="openai/gpt-4o-mini · anthropic/claude-sonnet-4.5"></div>';
   if(a.provider==='custom') f=
-    '<div class="field"><label>Base URL</label><input data-path="api.customBase" value="'+esc(a.customBase)+'" placeholder="https://api.openai.com/v1"></div>'+
+    bookPicker('bookTeks', a.customBase)+
+    '<div class="field"><label>Base URL</label><input data-path="api.customBase" value="'+esc(a.customBase)+'" placeholder="https://ai.dinoiki.com/v1"></div>'+
     '<div class="field"><label>API Key</label><input type="password" data-path="api.customKey" value="'+esc(a.customKey)+'"></div>'+
     '<div class="field"><label>Model</label>'+
       (teksModels
@@ -3827,7 +3863,19 @@ function renderApiModal(){
           teksModels.map(m=>'<option value="'+esc(m)+'"'+(m===a.customModel?' selected':'')+'>'+esc(m)+'</option>').join('')+'</select>'
         : '<input data-path="api.customModel" value="'+esc(a.customModel)+'">')+
       '<button class="btn sm" id="btnAmbilModelTeks" style="margin-top:7px">⟳ Ambil daftar model</button>'+
-      '<div class="hint">Isi Base URL dan API Key dulu, lalu klik untuk mengambil daftar model dari penyedianya — supaya tidak perlu mengetik namanya dan tidak salah ketik.</div></div>';
+      '<div class="hint">Isi Base URL dan API Key dulu, lalu klik untuk mengambil daftar model dari penyedianya — supaya tidak perlu mengetik namanya dan tidak salah ketik.</div></div>'+
+    '<div class="field full"><label>Simpan ke buku provider</label>'+
+      '<div style="display:flex;gap:7px">'+
+        '<input id="bookNama" placeholder="mis. Dinoiki" style="flex:1">'+
+        '<button class="btn sm" id="btnBookSimpan">+ Simpan</button>'+
+      '</div>'+
+      '<div class="hint">Base URL dan key yang sedang terisi disimpan dengan nama ini, lalu bisa dipilih di tahap 14 tanpa mengetik ulang.</div>'+
+      (bookList().length
+        ? '<div class="thumbs" style="margin-top:9px">'+bookList().map(x=>
+            '<span class="pill info" style="text-transform:none;letter-spacing:0">'+esc(x.nama)+
+            '<button data-bookdel="'+esc(x.id)+'" style="background:none;border:none;color:inherit;cursor:pointer;padding:0 0 0 4px;font-size:13px">×</button></span>').join('')+'</div>'
+        : '')+
+    '</div>';
   /* builtin tidak butuh key, jadi opsi ingat-key tidak relevan di sana */
   if(a.provider!=='builtin') f+=
     '<div class="field full" style="border-top:1px dashed var(--line);padding-top:12px;margin-top:2px">'+
@@ -3892,6 +3940,17 @@ document.addEventListener('input', e=>{
 document.addEventListener('change', e=>{
   if(e.target.id==='chkRemember'){ state.api.remember=e.target.checked; persistKeys(); renderApiModal(); return; }
   if(e.target.id==='chkChain'){ state.render.chain=e.target.checked; persistState(); return; }
+  /* Memilih dari buku hanya MENGISI dua kolom — modelnya tetap dipilih
+     terpisah, karena penyedia yang sama dipakai untuk keperluan berbeda. */
+  if(e.target.id==='bookTeks'||e.target.id==='bookGambar'){
+    const p=bookList().find(x=>x.id===e.target.value);
+    if(p){
+      if(e.target.id==='bookTeks'){ state.api.customBase=p.base; state.api.customKey=p.key; teksModels=null; persistKeys(); renderApiModal(); }
+      else { state.api.imgBase=p.base; state.api.imgProxyKey=p.key; proxyModels=null; persistKeys(); renderPanel(); }
+      toast('Base URL dan key diisi dari "'+p.nama+'".','ok');
+    }
+    return;
+  }
   const p=e.target.dataset.path; if(!p) return;
   if(p==='setup.realisme'){
     if(applyRealismePreset()) toast('Kamera, cahaya, dan grain di tahap 05 disetel ke "'+state.setup.realisme+'".','ok');
@@ -4003,6 +4062,13 @@ document.addEventListener('click', async e=>{
     setTimeout(()=>{ const c=$('#hasilCard'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); }, 60);
     return;
   }
+  if(t.id==='btnBookSimpan'){
+    const err=bookSimpan($('#bookNama')?.value, state.api.customBase, state.api.customKey);
+    toast(err||'Provider tersimpan.', err?'err':'ok');
+    if(!err) renderApiModal();
+    return;
+  }
+  if(t.dataset.bookdel){ bookHapus(t.dataset.bookdel); renderApiModal(); toast('Provider dihapus.','ok'); return; }
   if(t.id==='btnAmbilModelTeks'){
     setBusy(true,'Mengambil daftar model…');
     try{ const m=await ambilModelTeks(); toast(m.length+' model ditemukan.','ok'); }
