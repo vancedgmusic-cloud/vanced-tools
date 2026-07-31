@@ -394,7 +394,7 @@ const state = {
     realisme:'UGC realistis (kamera HP)', rasio:'9:16', jumlahScene:6, durasi:8
   },
   input:{ niche:'', produk:'', audiens:'', arketipe:'auto', gayaRef:'auto', referensi:'', catatan:'' },
-  uploads:{ refs:[] },
+  uploads:{ refs:[], brief:[] },
   refmode:'komposit',
   realism:{
     /* polos + ekstrem jadi default berdasarkan uji banding terkontrol: varian
@@ -1429,6 +1429,60 @@ function downscaleImage(file, maxEdge=768, quality=0.82){
     r.readAsDataURL(file);
   });
 }
+/* ---------------- brief otomatis ----------------
+   Pengguna ingin cukup menempelkan link Pinterest dan marketplace. Itu tidak
+   bisa dilakukan: browser dilarang mengambil isi halaman situs lain (CORS),
+   dan model di balik API teks tidak punya kemampuan browsing — memaksakannya
+   hanya menghasilkan tebakan yang terdengar meyakinkan tapi mengarang. Yang
+   bisa, dan hasilnya setara: SCREENSHOT halaman itu, dibaca lewat kemampuan
+   vision yang memang sudah ada di tool ini. */
+function briefImages(){
+  if(state.api.provider==='groq') return null;
+  if(!state.uploads.brief.length) return null;
+  return state.uploads.brief.slice(0,3).map(r=>({mimeType:r.mimeType,data:r.data}));
+}
+function promptBrief(catatan){
+  const gy=Object.keys(GAYA_REF).filter(k=>k!=='auto'&&k!=='custom');
+  return HEADER+'\n\n'+
+    'TUGAS: Baca lampiran — screenshot halaman produk marketplace, papan Pinterest, atau keduanya — lalu susun brief untuk seorang AI influencer yang akan mempromosikan produk itu.\n\n'+
+    (catatan?('CATATAN / TEKS TEMPELAN DARI PENGGUNA:\n'+catatan+'\n\n'):'')+
+    'Aturan:\n'+
+    '- Baca yang BENAR-BENAR terlihat: nama produk, harga, klaim di deskripsi, ulasan, gaya fotonya, siapa yang tampak jadi sasaran. Jangan mengarang detail yang tidak ada di lampiran.\n'+
+    '- Kalau lampirannya papan Pinterest, baca arah gayanya: palet warna, jenis pakaian, suasana, usia yang tersirat.\n'+
+    '- niche: satu kalimat spesifik yang menyebut masalah yang dipecahkan produk DAN untuk siapa. Bukan kategori umum.\n'+
+    '- produk: kategori beserta rentang harga kalau terlihat, dalam rupiah.\n'+
+    '- audiens: usia, gender, status (pelajar/pekerja), kebiasaan belanja, platform yang mereka pakai.\n'+
+    '- gaya: WAJIB persis salah satu dari daftar ini: '+gy.join(', ')+'\n'+
+    '- gender, usia, etnis: tebakan terbaik untuk talent yang paling masuk akal menjual produk ini di pasarnya. usia ditulis sebagai rentang, mis. "22-26".\n'+
+    '- catatan: 1-2 kalimat berisi hal yang WAJIB atau HARAM disebut talent soal produk ini, mis. klaim yang tidak boleh dilebih-lebihkan.\n'+
+    '- ringkas: 1 kalimat bahasa Indonesia menjelaskan apa yang kamu baca dari lampiran, supaya pengguna bisa menilai bacaanmu benar atau tidak.\n\n'+
+    JSON_RULE+'\nSkema wajib:\n'+
+    '{"niche":"","produk":"","audiens":"","gaya":"","gender":"","usia":"","etnis":"","catatan":"","ringkas":""}';
+}
+async function runBrief(){
+  if(busy) return;
+  const catatan=($('#briefTeks')?.value||'').trim();
+  if(!state.uploads.brief.length && !catatan){
+    toast('Unggah minimal satu screenshot, atau tempel teks produknya.','err'); return;
+  }
+  setBusy(true,'Membaca produk…');
+  try{
+    const d=parseJSONLoose(await callAI(promptBrief(catatan), 2500, briefImages()));
+    if(d.niche) state.input.niche=d.niche;
+    if(d.produk) state.input.produk=d.produk;
+    if(d.audiens) state.input.audiens=d.audiens;
+    if(d.catatan) state.input.catatan=d.catatan;
+    if(d.gaya&&GAYA_REF[d.gaya]) state.input.gayaRef=d.gaya;
+    /* Field tahap 00 hanya USULAN — ditaruh terpisah supaya pengguna melihat
+       dan menyetujuinya, bukan diam-diam menimpa pilihan yang sudah dibuat. */
+    state.briefUsul={gender:d.gender||'', usia:d.usia||'', etnis:d.etnis||'', ringkas:d.ringkas||''};
+    AI_ORDER.forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
+    persistState(); renderRail(); renderPanel();
+    toast('Brief terisi. Periksa dulu bacaannya sebelum lanjut.','ok');
+  }catch(e){ toast(e.message||String(e),'err'); }
+  setBusy(false);
+}
+
 function visionCapableImages(){
   const p=state.api.provider;
   if(!state.uploads.refs.length) return null;
@@ -3162,6 +3216,7 @@ function mergeLoadedState(d){
   if(typeof state.render.proxyModel!=='string'||!state.render.proxyModel) state.render.proxyModel='gemini-2.5-flash-image';
   if(typeof state.render.extra!=='string') state.render.extra='';
   if(!Array.isArray(state.api.book)) state.api.book=[];
+  if(!Array.isArray(state.uploads.brief)) state.uploads.brief=[];
   if(!state.voiceCfg||typeof state.voiceCfg!=='object') state.voiceCfg={model:'gpt-4o-mini-tts',voice:'nova',speed:1};
   if(!TTS_VOICES[state.voiceCfg.voice]) state.voiceCfg.voice='nova';
   if(!['auto','chat','images'].includes(state.render.endpoint)) state.render.endpoint='auto';
@@ -3336,6 +3391,30 @@ function genBar(id){
 }
 /* Panel suara. Ditaruh di tahap 07 karena di situlah sample line-nya hidup —
    mendengarkannya di tempat lain berarti menyalin teks bolak-balik. */
+/* Kartu brief otomatis. Menyatakan terus terang bahwa link tidak bisa dibaca,
+   supaya penggunanya tidak menunggu fitur yang memang mustahil dari browser. */
+function kartuBriefOtomatis(){
+  const u=state.briefUsul||{};
+  const adaUsul=u.gender||u.usia||u.etnis;
+  return '<div class="card"><h3>Brief Otomatis dari Produk <span class="tag">opsional</span></h3>'+
+    '<p style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Unggah <b>screenshot</b> halaman produk (Tokopedia, Shopee) dan/atau papan Pinterest, lalu AI mengisi Niche, Kategori Produk, Target Audiens, Referensi Gaya, dan Catatan di bawah.<br><br>'+
+    '<b>Kenapa screenshot, bukan link?</b> Browser dilarang mengambil isi halaman situs lain, dan model AI di balik API tidak bisa membuka halaman web. Kalau link dipaksakan, yang keluar cuma tebakan yang terdengar meyakinkan tapi mengarang. Screenshot dibaca sungguhan.</p>'+
+    '<input type="file" id="briefInput" accept="image/*" multiple>'+
+    '<div class="thumbs" id="briefThumbs">'+state.uploads.brief.map((f,i)=>
+      '<div class="thumb"><img src="data:'+f.mimeType+';base64,'+f.data+'"><button data-rmbrief="'+i+'">×</button></div>').join('')+'</div>'+
+    '<div class="field full" style="margin-top:10px"><label>Atau tempel teks produknya <span style="color:var(--faint);font-weight:400">— judul, harga, deskripsi</span></label>'+
+      '<textarea id="briefTeks" rows="3" placeholder="Salin-tempel dari halaman produk. Berguna kalau provider teksmu tidak bisa membaca gambar."></textarea></div>'+
+    '<div class="rowbtns"><button class="btn primary" id="btnBrief">⚡ Isi Brief dari Produk</button></div>'+
+    (u.ringkas?'<div class="note" style="margin-top:10px"><b>Yang dibaca AI:</b> '+esc(u.ringkas)+'</div>':'')+
+    (adaUsul
+      ? '<div class="note" style="border-color:var(--teal);color:var(--text)"><b>Usulan untuk tahap 00</b> — belum diterapkan, kamu yang memutuskan:<br>'+
+        [u.gender&&'Gender: <b>'+esc(u.gender)+'</b>', u.usia&&'Usia: <b>'+esc(u.usia)+'</b>', u.etnis&&'Etnis: <b>'+esc(u.etnis)+'</b>'].filter(Boolean).join(' · ')+
+        '<div class="rowbtns"><button class="btn sm" id="btnPakaiUsul">✓ Terapkan ke tahap 00</button>'+
+        '<button class="btn sm" id="btnBuangUsul">Abaikan</button></div></div>'
+      : '')+
+    '</div>';
+}
+
 function panelSuara(){
   const c=state.voiceCfg||{}, teks=String((state.voice||{}).sample_line||'').trim();
   return '<div class="card"><h3>Dengarkan Suaranya <span class="tag">TTS</span></h3>'+
@@ -3416,7 +3495,8 @@ function renderPanel(){
 
   else if(currentStep==='input'){
     const i=state.input;
-    p.innerHTML=head('01','Brief & Niche','Makin spesifik briefnya, makin tajam talent yang dihasilkan. Kalau kamu sudah punya wajah referensi, unggah di sini — Character DNA akan diturunkan dari wajah itu.')+
+    p.innerHTML=head('01','Brief & Niche','Makin spesifik briefnya, makin tajam talent yang dihasilkan. Punya screenshot halaman produk dari Tokopedia atau Shopee? Unggah di bawah dan biarkan AI mengisi brief-nya sendiri. Wajah referensi tempatnya di tahap 02, bukan di sini.')+
+    kartuBriefOtomatis()+
     '<div class="card"><h3>Brief</h3><div class="grid two">'+
       '<div class="field full"><label>Niche / Topik Utama *</label><textarea data-path="input.niche" placeholder="mis. skincare untuk kulit berminyak & berjerawat, khusus remaja–awal 20an">'+esc(i.niche)+'</textarea></div>'+
       '<div class="field full"><label>Kategori Produk yang Akan Dipromosikan</label><textarea data-path="input.produk" placeholder="mis. serum, sunscreen, cleanser — produk lokal harga 50–150rb">'+esc(i.produk)+'</textarea></div>'+
@@ -4146,6 +4226,19 @@ document.addEventListener('click', async e=>{
     setTimeout(()=>{ const c=$('#hasilCard'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); }, 60);
     return;
   }
+  if(t.id==='btnBrief'){ runBrief(); return; }
+  if(t.dataset.rmbrief){ state.uploads.brief.splice(+t.dataset.rmbrief,1); persistState(); renderPanel(); return; }
+  if(t.id==='btnPakaiUsul'){
+    const u=state.briefUsul||{};
+    if(u.gender) state.setup.gender=u.gender;
+    if(u.usia) state.setup.rentangUsia=u.usia;
+    if(u.etnis) state.setup.etnis=u.etnis;
+    delete state.briefUsul;
+    AI_ORDER.forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
+    persistState(); renderRail(); renderPanel();
+    toast('Tahap 00 diperbarui. Cek dulu sebelum generate.','ok'); return;
+  }
+  if(t.id==='btnBuangUsul'){ delete state.briefUsul; persistState(); renderPanel(); return; }
   if(t.id==='btnTTS'){
     setBusy(true,'Membunyikan sample line…');
     try{ await genTTS((state.voice||{}).sample_line); toast('Suara siap diputar.','ok'); }
@@ -4212,6 +4305,19 @@ function fileBase(){
   return (state.persona.nama_lengkap||state.setup.namaProject||'ai-talent').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 }
 document.addEventListener('change', async e=>{
+  /* Screenshot produk untuk brief otomatis. Dikecilkan lewat jalur yang sama
+     seperti gambar referensi, jadi ikut tersimpan di project tanpa meledakkan
+     kuota penyimpanan browser. */
+  if(e.target.id==='briefInput'){
+    const files=[...e.target.files].slice(0, Math.max(0, 3-state.uploads.brief.length));
+    if(!files.length){ toast('Maksimal 3 screenshot.','err'); e.target.value=''; return; }
+    for(const f of files){
+      if(!/^image\//.test(f.type)){ toast(f.name+' bukan gambar, dilewati.','err'); continue; }
+      try{ state.uploads.brief.push(await downscaleImage(f)); }
+      catch(err){ toast('Gagal memproses '+f.name+': '+err.message,'err'); }
+    }
+    e.target.value=''; renderPanel(); persistState(); return;
+  }
   if(e.target.id!=='refInput') return;
   const slot=4-state.uploads.refs.length;
   const files=[...e.target.files].slice(0, Math.max(0,slot));
