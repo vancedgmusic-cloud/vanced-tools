@@ -2115,12 +2115,19 @@ async function genImage(prompt, ar, refs, mode, refMode){
    Dua mode dipisah karena kebutuhannya berlawanan: lembar referensi harus
    mengunci cahaya dan latar, sedangkan foto konten justru wajib bebas karena
    tiap scene punya tempat dan cahayanya sendiri. */
+/* SINGLE_OUT wajib ada di setiap instruksi yang menyertakan gambar acuan.
+   Tanpa kalimat ini, bahasa acuan yang emfatis ("reproduce the SAME setup",
+   "the ONLY thing that changes") terbaca oleh model sebagai permintaan
+   MEMBANDINGKAN, dan yang keluar adalah tempelan gambar acuan di samping
+   gambar baru — terbukti di hasil nyata: tiap panel bersambung tegak dan
+   potongan panel lain ikut terbawa. */
+const SINGLE_OUT='Output exactly ONE single new photograph and nothing else. Do NOT include the reference image in the output. Do NOT produce a grid, a collage, a split screen, a side-by-side or a before-and-after comparison. The result must be one plain photograph that fills the whole frame on its own.\n\n';
 const REF_LEAD={
-  sheet:'The attached image is the master reference for this photo set. Reproduce the SAME person and the SAME photographic setup exactly: identical face, bone structure, skin texture and blemishes, identical hair length and hair colour, identical clothing, identical light direction, light hardness, colour temperature and exposure, and an identical background tone and camera distance. The ONLY thing that changes between the reference and this frame is the pose and camera angle described below. Do not relight the scene, do not change the backdrop, do not restyle the person.\n\n',
-  content:'Use the attached image as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. The lighting, background and framing are free to change to suit the new scene described below. Do not restyle the person.\n\n'
+  sheet:SINGLE_OUT+'The attached image is the reference for this photo set. The new photograph you produce must show the SAME person in the SAME photographic setup: identical face, bone structure, skin texture and blemishes, identical hair length and hair colour, identical clothing, identical light direction, light hardness, colour temperature and exposure, and an identical background tone and camera distance. Only the pose and camera angle differ, as described below. Do not relight the scene, do not change the backdrop, do not restyle the person.\n\n',
+  content:SINGLE_OUT+'Use the attached image as the identity reference. The new photograph must keep exactly the same face, bone structure, skin texture, hair and unique marks. The lighting, background and framing are free to change to suit the new scene described below. Do not restyle the person.\n\n'
 };
 
-const EDIT_LEAD='Edit the attached photograph. Keep everything else exactly as it is — same person, same face shape, same skin texture and blemishes, same hair, same clothing, same pose, same lighting, same background, same framing. Change only what is asked below, and change nothing else:\n\n';
+const EDIT_LEAD=SINGLE_OUT+'Edit the attached photograph. Keep everything else exactly as it is — same person, same face shape, same skin texture and blemishes, same hair, same clothing, same pose, same lighting, same background, same framing. Change only what is asked below, and change nothing else:\n\n';
 const EDIT_PRESETS=[
   {id:'liner', l:'Hapus eyeliner & maskara',
    en:'Remove all eye makeup completely. There must be no dark line along the upper or lower lash line, no wing, no smudge, no mascara — the lash line should show only her own bare lashes against bare skin.'},
@@ -2135,6 +2142,32 @@ const EDIT_PRESETS=[
 ];
 
 const dataURL=o=>'data:'+o.mime+';base64,'+o.b64;
+
+/* Jaring pengaman bentuk gambar. Kalau model membalas dengan tempelan dua
+   gambar berdampingan, rasionya melenceng jauh dari yang diminta — dan itu
+   satu-satunya tanda yang bisa diperiksa tanpa melihat isinya. Pemeriksaan
+   ini ada karena kegagalan seperti itu pernah lolos sampai dua belas gambar
+   terbayar sebelum ketahuan. */
+const AR_NUM={'1:1':1,'3:4':0.75,'4:3':4/3,'9:16':9/16,'16:9':16/9};
+function ukurGambar(img){
+  return new Promise(r=>{
+    const i=new Image();
+    i.onload=()=>r({w:i.naturalWidth,h:i.naturalHeight});
+    i.onerror=()=>r(null);
+    i.src=dataURL(img);
+  });
+}
+async function cekBentuk(img, ar){
+  const target=AR_NUM[ar]; if(!target) return null;
+  const d=await ukurGambar(img); if(!d||!d.h) return null;
+  const nyata=d.w/d.h;
+  /* Ambang 35% cukup longgar untuk perbedaan resolusi wajar, tapi jauh lebih
+     ketat daripada tempelan dua gambar yang menggandakan lebar. */
+  if(Math.abs(nyata/target-1)<=0.35) return null;
+  return 'Bentuk gambar meleset jauh: diminta '+ar+' (rasio '+target.toFixed(2)+
+    ') tapi yang kembali '+d.w+'x'+d.h+' (rasio '+nyata.toFixed(2)+
+    '). Biasanya ini tanda model menempelkan gambar acuan di samping hasil barunya, bukan mengembalikan satu foto.';
+}
 function downloadDataURL(name, url){
   const a=document.createElement('a'); a.href=url; a.download=name; a.click();
 }
@@ -2213,6 +2246,15 @@ async function runKoreksi(){
     setBusy(true,'Koreksi '+(n+1)+'/'+target.length+' — '+x.label+'…'); renderPanel();
     try{
       const img=await genImage(instruksi, '3:4', [x.img], 'edit');
+      /* Koreksi juga bisa membalas tempelan dua gambar, dan biayanya sama
+         mahalnya. Berhenti di yang pertama, jangan rusak dua belas sekaligus. */
+      const d0=await ukurGambar(x.img), d1=await ukurGambar(img);
+      if(d0&&d1&&d0.h&&d1.h&&Math.abs((d1.w/d1.h)/(d0.w/d0.h)-1)>0.35){
+        x.fixErr='Hasil koreksi bentuknya jauh berbeda dari gambar aslinya ('+d0.w+'x'+d0.h+' menjadi '+d1.w+'x'+d1.h+') — biasanya tanda model menempelkan gambar sebelum dan sesudah, bukan mengembalikan satu foto. Dihentikan supaya sisa gambar tidak ikut rusak.';
+        setBusy(false); renderPanel();
+        toast('Koreksi dihentikan di gambar pertama — bentuk hasilnya salah.','err');
+        return;
+      }
       if(!x.asli) x.asli=x.img;      /* simpan sekali saja, biar batal selalu balik ke render awal */
       x.img=img; ok++;
     }catch(e){ x.fixErr=e.message||String(e); }
@@ -2266,8 +2308,20 @@ async function runRender(src){
          A dan perbandingannya jadi tidak berarti apa-apa. */
       const refs=(src!=='trial'&&state.render.chain&&anchor)?[anchor]:null;
       const img=await genImage(jobs[i].prompt, jobs[i].ar, refs, null, src==='pose'?'sheet':'content');
+      const salahBentuk=await cekBentuk(img, jobs[i].ar);
       renderStore.items[i].state='ok';
       renderStore.items[i].img=img;
+      if(salahBentuk){
+        renderStore.items[i].warn=salahBentuk;
+        /* Berhenti di gambar PERTAMA yang bentuknya salah. Melanjutkan hanya
+           menghasilkan sebelas gambar rusak lagi dengan biaya penuh. */
+        if(i===0){
+          renderStore.items.slice(1).forEach(x=>{ if(x.state==='pending') x.state='batal'; });
+          setBusy(false); renderPanel();
+          toast('Dihentikan di gambar pertama — bentuknya salah. Sebabnya ada di kartu Hasil.','err');
+          return;
+        }
+      }
       if(!anchor) anchor=img;
     }catch(e){
       renderStore.items[i].state='gagal';
@@ -3539,6 +3593,8 @@ function renderPanel(){
       h+='<div class="card" id="hasilCard"><h3>Hasil <span class="tag">'+ok+'/'+jml+' berhasil</span></h3>';
       /* Pesan gagal ditampilkan UTUH di sini, bukan cuma terpotong di dalam
          sel — inilah satu-satunya tempat penyebabnya benar-benar terbaca. */
+      const warns=[...new Set(renderStore.items.map(x=>x.warn||x.fixErr).filter(Boolean))];
+      if(warns.length) h+='<div class="note" style="border-color:var(--amber);color:var(--text);white-space:pre-wrap"><b>Peringatan bentuk:</b> '+warns.map(esc).join('\n\n')+'</div>';
       const errs=[...new Set(renderStore.items.filter(x=>x.state==='gagal').map(x=>x.err))];
       if(errs.length) h+='<div class="note" style="border-color:var(--red);color:var(--text);white-space:pre-wrap">'+
         '<b>Kenapa gagal:</b> '+errs.map(esc).join('\n\n———\n\n')+'</div>'+
