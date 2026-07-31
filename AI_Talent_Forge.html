@@ -1986,7 +1986,7 @@ function pickImageFromChat(d){
   const m=/data:(image\/[a-z+]+);base64,([A-Za-z0-9+/=]+)/.exec(String(c||''));
   return m ? {mime:m[1], b64:m[2]} : null;
 }
-async function genImageProxy(prompt, refs){
+async function genImageProxy(prompt, refs, mode){
   const base=proxyBase(), key=String(state.api.imgProxyKey||'').trim();
   if(!base) throw new Error('Base URL proxy belum diisi.');
   if(!key) throw new Error('API key proxy belum diisi.');
@@ -2004,9 +2004,10 @@ async function genImageProxy(prompt, refs){
 
   const content=[];
   (refs||[]).forEach(r=>content.push({type:'image_url', image_url:{url:'data:'+r.mime+';base64,'+r.b64}}));
-  content.push({type:'text', text:(refs&&refs.length)
-    ? 'Use the attached image only as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. Do not restyle the person. Then produce this new frame:\n\n'+prompt
-    : prompt});
+  content.push({type:'text', text: mode==='edit' ? EDIT_LEAD+prompt
+    : (refs&&refs.length)
+      ? 'Use the attached image only as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. Do not restyle the person. Then produce this new frame:\n\n'+prompt
+      : prompt});
   const d=await postJSON(base+'/chat/completions',{method:'POST',headers:H,
     body:JSON.stringify(Object.assign({model, messages:[{role:'user',content}]}, extraParams()))},'Image');
   const img=pickImageFromChat(d);
@@ -2015,14 +2016,14 @@ async function genImageProxy(prompt, refs){
   throw new Error('Model membalas tanpa gambar. Isi balasannya: "'+txt+'" — pastikan nama model yang kamu isi adalah model GAMBAR, bukan model teks.');
 }
 
-async function genImage(prompt, ar, refs){
+async function genImage(prompt, ar, refs, mode){
   if(state.render.provider==='proxy'){
     /* Proxy tidak punya batas 10/menit seperti tier gratis Google, tapi jeda
        kecil tetap dipertahankan supaya tidak membanjiri antrean penyedia. */
     const sisa=1200-(Date.now()-lastImgAt);
     if(lastImgAt&&sisa>0) await new Promise(r=>setTimeout(r,sisa));
     lastImgAt=Date.now(); imgCallCount++;
-    try{ return await genImageProxy(prompt, refs); }
+    try{ return await genImageProxy(prompt, refs, mode); }
     catch(e){ throw new Error(imgErr(e, 'proxy')); }
   }
   const key=imgKey();
@@ -2031,7 +2032,8 @@ async function genImage(prompt, ar, refs){
   const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(key);
   const parts=[];
   (refs||[]).forEach(r=>parts.push({inline_data:{mime_type:r.mime,data:r.b64}}));
-  if(refs&&refs.length) parts.push({text:'Use the attached image only as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. Do not restyle the person. Then produce this new frame:\n\n'+prompt});
+  if(mode==='edit') parts.push({text:EDIT_LEAD+prompt});
+  else if(refs&&refs.length) parts.push({text:'Use the attached image only as the identity reference. Keep exactly the same face, bone structure, skin texture, hair and unique marks. Do not restyle the person. Then produce this new frame:\n\n'+prompt});
   else parts.push({text:prompt});
   const body={
     contents:[{role:'user',parts}],
@@ -2061,6 +2063,29 @@ async function genImage(prompt, ar, refs){
   }
   return { mime:hit.mimeType||hit.mime_type||'image/png', b64:hit.data };
 }
+
+/* ---------------- pass koreksi ----------------
+   Uji banding membuktikan dua cacat tidak bisa dicegah lewat prompt generasi:
+   eyeliner tetap muncul walau instruksi "no eyeliner" sudah ditaruh di 5% dari
+   prompt, dan iris tetap terang walau warnanya ditegaskan di 10%. Prior model
+   untuk potret perempuan terlalu kuat untuk dilawan dari depan.
+
+   Tapi Nano Banana pada dasarnya model EDITING, dan mengubah gambar yang sudah
+   ada adalah hal yang paling dikuasainya. Jadi cacat yang tidak bisa dicegah
+   diperbaiki di lintasan kedua — bukan dipaksakan di lintasan pertama. */
+const EDIT_LEAD='Edit the attached photograph. Keep everything else exactly as it is — same person, same face shape, same skin texture and blemishes, same hair, same clothing, same pose, same lighting, same background, same framing. Change only what is asked below, and change nothing else:\n\n';
+const EDIT_PRESETS=[
+  {id:'liner', l:'Hapus eyeliner & maskara',
+   en:'Remove all eye makeup completely. There must be no dark line along the upper or lower lash line, no wing, no smudge, no mascara — the lash line should show only her own bare lashes against bare skin.'},
+  {id:'iris', l:'Gelapkan iris jadi coklat pekat',
+   en:'Change the iris colour to a deep dark brown, evenly dark from the pupil out to the limbal ring, with no amber, hazel, green or grey tint anywhere in the iris. Keep the same eye shape, the same catchlights and the same reflections.'},
+  {id:'alis', l:'Alis jadi alami, tidak terisi',
+   en:'Make the eyebrows look untouched: thinner and less uniform, with an uneven upper and lower edge, visible individual hairs, a few stray hairs outside the main shape, and no filled-in or drawn-on look.'},
+  {id:'bibir', l:'Bibir jadi telanjang',
+   en:'Remove all lip colour and gloss. The lips should be their own natural uneven tone with visible vertical lip texture and a slightly dry edge.'},
+  {id:'pori', l:'Perkuat pori & tekstur kulit',
+   en:'Increase the visible skin texture: bring out individual pores across the nose, cheeks and forehead, fine vellus hair along the jaw and upper lip, and uneven natural colour, while keeping the same face and the same lighting.'}
+];
 
 const dataURL=o=>'data:'+o.mime+';base64,'+o.b64;
 function downloadDataURL(name, url){
@@ -2119,6 +2144,49 @@ function renderJobs(src){
   const i=+m[2];
   if(m[1]==='sheet'){ const s=state.sheet[i]; return s?[{label:s.label, prompt:s.prompt, ar}]:[]; }
   const s=state.scenes[i]; return s?[{label:s.nama, prompt:s.prompt_image, ar}]:[];
+}
+
+/* Menjalankan lintasan koreksi pada panel yang sudah jadi. Aslinya disimpan
+   supaya bisa dibatalkan — kalau koreksinya justru merusak wajah, pengguna
+   tidak kehilangan hasil render yang sudah dibayar. */
+async function runKoreksi(){
+  if(busy) return;
+  const dipilih=EDIT_PRESETS.filter(x=>$('#fix-'+x.id)&&$('#fix-'+x.id).checked);
+  const bebas=($('#fixCustom')&&$('#fixCustom').value||'').trim();
+  if(!dipilih.length&&!bebas){ toast('Pilih dulu minimal satu koreksi.','err'); return; }
+  const instruksi=[...dipilih.map(x=>x.en), bebas].filter(Boolean).join('\n');
+  const target=renderStore.items.map((x,i)=>({x,i})).filter(o=>o.x.state==='ok');
+  if(!target.length){ toast('Belum ada gambar untuk dikoreksi.','err'); return; }
+  renderAbort=false;
+  setBusy(true,'Koreksi 0/'+target.length+'…'); renderPanel();
+  let ok=0;
+  for(let n=0;n<target.length;n++){
+    if(renderAbort) break;
+    const {x,i}=target[n];
+    setBusy(true,'Koreksi '+(n+1)+'/'+target.length+' — '+x.label+'…'); renderPanel();
+    try{
+      const img=await genImage(instruksi, '3:4', [x.img], 'edit');
+      if(!x.asli) x.asli=x.img;      /* simpan sekali saja, biar batal selalu balik ke render awal */
+      x.img=img; ok++;
+    }catch(e){ x.fixErr=e.message||String(e); }
+    renderPanel();
+  }
+  if(renderStore.grid){
+    const jadi=renderStore.items.filter(y=>y.state==='ok');
+    try{ renderStore.grid=renderStore.src==='trial'
+      ? await composeGrid(jadi,2,560,true) : await composeGrid(jadi); }catch(_){}
+  }
+  setBusy(false); renderPanel();
+  toast(ok+' dari '+target.length+' gambar dikoreksi.', ok?'ok':'err');
+}
+function batalKoreksi(){
+  let n=0;
+  renderStore.items.forEach(x=>{ if(x.asli){ x.img=x.asli; delete x.asli; delete x.fixErr; n++; } });
+  if(!n){ toast('Tidak ada koreksi untuk dibatalkan.','err'); return; }
+  const jadi=renderStore.items.filter(y=>y.state==='ok');
+  const p=renderStore.grid ? (renderStore.src==='trial'?composeGrid(jadi,2,560,true):composeGrid(jadi)) : null;
+  Promise.resolve(p).then(g=>{ if(g) renderStore.grid=g; renderPanel(); });
+  toast(n+' gambar dikembalikan ke hasil render awal.','ok');
 }
 
 async function runRender(src){
@@ -3432,7 +3500,22 @@ function renderPanel(){
           if(it.state==='batal') return '<div class="rcell pending">dibatalkan</div>';
           return '<div class="rcell pending">menunggu…</div>';
         }).join('')+'</div>';
-      if(ok) h+='<div class="rowbtns"><button class="btn" id="btnDlAll">↓ Unduh semua satuan ('+ok+')</button></div>';
+      if(ok){
+        h+='<div class="rowbtns"><button class="btn" id="btnDlAll">↓ Unduh semua satuan ('+ok+')</button></div>';
+        /* Lintasan kedua. Ada di sini, bukan di panel setelan, karena inilah
+           tempat pengguna sedang melihat cacatnya. */
+        h+='<div class="revbox"><h3 style="font-size:13px;font-weight:700;margin-bottom:4px">Koreksi Lintasan Kedua</h3>'+
+          '<p style="font-size:12px;color:var(--muted);margin-bottom:10px">Sebagian cacat tidak bisa dicegah saat generate — eyeliner dan warna iris terbukti tetap muncul walau dilarang di awal prompt. Engine ini pada dasarnya model editing, jadi cacat begitu lebih tuntas diperbaiki di lintasan kedua. Aslinya disimpan dan bisa dikembalikan.</p>'+
+          '<div class="grid two">'+EDIT_PRESETS.map(x=>
+            '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer">'+
+            '<input type="checkbox" id="fix-'+x.id+'" style="width:auto;margin-top:3px">'+esc(x.l)+'</label>').join('')+
+          '</div>'+
+          '<div class="field full" style="margin-top:10px"><label>Koreksi sendiri</label>'+
+          '<input id="fixCustom" placeholder="mis. hapus tindik hidung, rapikan helai rambut di dahi"></div>'+
+          '<div class="rowbtns"><button class="btn primary" id="btnKoreksi">✎ Terapkan ke '+ok+' gambar</button>'+
+          (renderStore.items.some(x=>x.asli)?'<button class="btn" id="btnBatalKoreksi">↺ Kembalikan asli</button>':'')+
+          '</div></div>';
+      }
       h+='</div>';
     }
 
@@ -3693,6 +3776,8 @@ document.addEventListener('click', async e=>{
     setTimeout(()=>{ const c=$('#hasilCard'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); }, 60);
     return;
   }
+  if(t.id==='btnKoreksi'){ runKoreksi(); return; }
+  if(t.id==='btnBatalKoreksi'){ batalKoreksi(); return; }
   if(t.id==='btnRender'){ runRender($('#renderSrc')?.value||'pose'); return; }
   if(t.id==='btnRenderStop'){ renderAbort=true; toast('Dihentikan setelah gambar yang sedang jalan selesai.','ok'); return; }
   if(t.dataset.dl){
