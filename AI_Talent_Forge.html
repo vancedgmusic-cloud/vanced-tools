@@ -2050,6 +2050,9 @@ async function genImageProxy(prompt, refs, mode, refMode){
 }
 
 async function genImage(prompt, ar, refs, mode, refMode){
+  /* Ditempel paling depan karena bentuk frame itu struktural — kalau tenggelam
+     di ekor prompt, nasibnya sama seperti instruksi riasan dulu. */
+  if(AR_CLAUSE[ar]) prompt=AR_CLAUSE[ar]+'\n\n'+prompt;
   if(state.render.provider==='proxy'){
     /* Proxy tidak punya batas 10/menit seperti tier gratis Google, tapi jeda
        kecil tetap dipertahankan supaya tidak membanjiri antrean penyedia. */
@@ -2149,6 +2152,22 @@ const dataURL=o=>'data:'+o.mime+';base64,'+o.b64;
    ini ada karena kegagalan seperti itu pernah lolos sampai dua belas gambar
    terbayar sebelum ketahuan. */
 const AR_NUM={'1:1':1,'3:4':0.75,'4:3':4/3,'9:16':9/16,'16:9':16/9};
+
+/* Rasio HARUS dinyatakan di dalam TEKS prompt, bukan hanya lewat imageConfig.
+   Sebabnya struktural: imageConfig hanya ada di jalur Google-native. Lewat
+   proxy OpenAI-compatible, permintaan dikirim sebagai /chat/completions biasa
+   yang tidak punya slot rasio sama sekali, jadi model bebas memilih bentuk
+   keluarannya sendiri. Terbukti di hasil nyata: 3:4 diminta, 1408x768 yang
+   kembali — dan itu terjadi di mode uji banding yang bahkan tidak melampirkan
+   gambar acuan, jadi bukan soal tempelan. Menyebutkannya di teks bekerja di
+   kedua jalur sekaligus. */
+const AR_CLAUSE={
+  '3:4':'Vertical portrait format, 3:4 aspect ratio — the finished image must be clearly taller than it is wide.',
+  '9:16':'Tall vertical format, 9:16 aspect ratio — much taller than it is wide, like a phone screen.',
+  '1:1':'Square format, 1:1 aspect ratio — equal width and height.',
+  '4:3':'Landscape format, 4:3 aspect ratio — wider than it is tall.',
+  '16:9':'Wide landscape format, 16:9 aspect ratio — much wider than it is tall.'
+};
 function ukurGambar(img){
   return new Promise(r=>{
     const i=new Image();
@@ -2245,7 +2264,11 @@ async function runKoreksi(){
     const {x,i}=target[n];
     setBusy(true,'Koreksi '+(n+1)+'/'+target.length+' — '+x.label+'…'); renderPanel();
     try{
-      const img=await genImage(instruksi, '3:4', [x.img], 'edit');
+      /* Rasio koreksi mengikuti gambar sumbernya, bukan dipaksa 3:4 —
+         Foto Single ada yang 9:16, dan memaksanya jadi 3:4 akan memotong. */
+      const dSrc=await ukurGambar(x.img);
+      const arSrc=dSrc&&dSrc.h ? (Math.abs(dSrc.w/dSrc.h-0.5625)<0.08?'9:16':Math.abs(dSrc.w/dSrc.h-1)<0.08?'1:1':'3:4') : '3:4';
+      const img=await genImage(instruksi, arSrc, [x.img], 'edit');
       /* Koreksi juga bisa membalas tempelan dua gambar, dan biayanya sama
          mahalnya. Berhenti di yang pertama, jangan rusak dua belas sekaligus. */
       const d0=await ukurGambar(x.img), d1=await ukurGambar(img);
