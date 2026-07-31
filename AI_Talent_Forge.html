@@ -1992,6 +1992,27 @@ function pickImageFromChat(d){
   const m=/data:(image\/[a-z+]+);base64,([A-Za-z0-9+/=]+)/.exec(String(c||''));
   return m ? {mime:m[1], b64:m[2]} : null;
 }
+/* Nama model diketik manual itu sumber salah yang tidak perlu: salah ketik,
+   salah baca kolom dashboard, atau memilih model TEKS yang namanya mirip model
+   gambar. Proxy OpenAI-compatible menyediakan /models, jadi daftarnya diambil
+   langsung dari sumbernya. */
+let proxyModels=null;
+const MODEL_GAMBAR=/(^|[\/-])(imagen|.*-image$|.*-image-preview$)/i;
+async function ambilModelProxy(){
+  const base=proxyBase(), key=String(state.api.imgProxyKey||'').trim();
+  if(!base||!key) throw new Error('Isi dulu Base URL dan API key proxy.');
+  const r=await fetch(base+'/models',{headers:{'Authorization':'Bearer '+key}});
+  const d=await r.json().catch(()=>null);
+  if(!r.ok||!d) throw new Error('Proxy menolak permintaan daftar model (HTTP '+r.status+').');
+  const ids=(d.data||d.models||[]).map(x=>String(x.id||x.name||'')).filter(Boolean);
+  if(!ids.length) throw new Error('Proxy tidak mengembalikan daftar model.');
+  proxyModels=ids.sort((a,b)=>{
+    const ga=MODEL_GAMBAR.test(a), gb=MODEL_GAMBAR.test(b);
+    return ga===gb ? a.localeCompare(b) : (ga?-1:1);   /* model gambar di atas */
+  });
+  return proxyModels;
+}
+
 async function genImageProxy(prompt, refs, mode){
   const base=proxyBase(), key=String(state.api.imgProxyKey||'').trim();
   if(!base) throw new Error('Base URL proxy belum diisi.');
@@ -3456,8 +3477,15 @@ function renderPanel(){
         ? '<div class="field"><label>Base URL</label><input data-path="api.imgBase" value="'+esc(state.api.imgBase)+'" placeholder="https://….../v1">'+
             '<div class="hint">Harus berakhir di <code>/v1</code>.</div></div>'+
           '<div class="field"><label>API Key Proxy</label><input type="password" data-path="api.imgProxyKey" value="'+esc(state.api.imgProxyKey)+'" placeholder="sk-…"></div>'+
-          '<div class="field full"><label>Nama Model di Proxy</label><input data-path="render.proxyModel" value="'+esc(r.proxyModel)+'" placeholder="gemini-2.5-flash-image">'+
-            '<div class="hint">Salin persis dari kolom <b>Model Information</b> di dashboard proxy (tulisan tebalnya), bukan teks abu-abu di bawahnya. Model bernama <code>imagen…</code> dikirim ke <code>/images/generations</code>; selain itu ke <code>/chat/completions</code>, karena model Gemini memang tidak bisa lewat endpoint images di LiteLLM.</div></div>'+
+          '<div class="field full"><label>Nama Model di Proxy</label>'+
+            (proxyModels
+              ? '<select data-path="render.proxyModel">'+
+                (proxyModels.includes(r.proxyModel)?'':'<option value="'+esc(r.proxyModel)+'" selected>'+esc(r.proxyModel)+' (tidak ada di daftar)</option>')+
+                proxyModels.map(m=>'<option value="'+esc(m)+'"'+(m===r.proxyModel?' selected':'')+'>'+
+                  esc(m)+(MODEL_GAMBAR.test(m)?'':'  — bukan model gambar')+'</option>').join('')+'</select>'
+              : '<input data-path="render.proxyModel" value="'+esc(r.proxyModel)+'" placeholder="gemini-3.1-flash-image">')+
+            '<button class="btn sm" id="btnAmbilModel" style="margin-top:7px">⟳ Ambil daftar model dari proxy</button>'+
+            '<div class="hint">Klik tombol di atas untuk mengambil daftar aslinya dari proxy — model gambar diurutkan paling atas, dan yang bukan model gambar diberi tanda supaya tidak salah pilih. Tanpa itu, salin persis dari kolom <b>Model Information</b> di dashboard proxy. Model bernama <code>imagen…</code> dikirim ke <code>/images/generations</code>; selain itu ke <code>/chat/completions</code>, karena model Gemini memang tidak bisa lewat endpoint images di LiteLLM.</div></div>'+
           '<div class="field full"><label>Parameter Tambahan <span style="color:var(--faint);font-weight:400">— opsional</span></label><input data-path="render.extra" value="'+esc(r.extra||'')+'" placeholder=\'{"modalities":["image","text"]}\'>'+
             '<div class="hint">JSON yang digabungkan ke body permintaan. Isi ini hanya kalau proxy-mu membalas teks tanpa gambar.</div></div>'
         : '<div class="field full"><label>API Key Gambar</label><input type="password" data-path="api.imgKey" value="'+esc(state.api.imgKey)+'" placeholder="'+(state.api.geminiKey?'kosongkan untuk memakai key Gemini yang sudah diisi di ⚙ API':'AIza…')+'">'+
@@ -3795,6 +3823,15 @@ document.addEventListener('click', async e=>{
        yang boleh dilempar ke pengguna. */
     setTimeout(()=>{ const c=$('#hasilCard'); if(c) c.scrollIntoView({behavior:'smooth',block:'start'}); }, 60);
     return;
+  }
+  if(t.id==='btnAmbilModel'){
+    setBusy(true,'Mengambil daftar model…');
+    try{
+      const m=await ambilModelProxy();
+      const g=m.filter(x=>MODEL_GAMBAR.test(x)).length;
+      toast(m.length+' model ditemukan, '+g+' di antaranya model gambar.','ok');
+    }catch(e){ toast(e.message||String(e),'err'); }
+    setBusy(false); renderPanel(); return;
   }
   if(t.id==='btnKoreksi'){ runKoreksi(); return; }
   if(t.id==='btnBatalKoreksi'){ batalKoreksi(); return; }
