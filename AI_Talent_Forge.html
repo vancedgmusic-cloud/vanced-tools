@@ -722,16 +722,46 @@ const POSE_SHEET=[
    RATA — arahnya dipatok tetap sambil tetap menyisakan bayangan pemunculan
    tekstur. Lensa 85mm juga dibuang: itu lensa potret beauty, dan menyebutnya
    menarik model ke arah estetika iklan skincare. */
-const POSE_BASE='soft key light from 45 degrees camera-left and slightly above eye level, a single weak bounce on the shadow side so the far cheek keeps a visible but open shadow, clear shadow under the nose and along the jaw, raking across the skin so pore texture and fine hair catch the light; plain mid-grey seamless backdrop; the light direction, light quality and background are identical in this frame and in every other frame of the set; shot on a 50mm lens at eye level unless the pose says otherwise';
+/* Diperkeras setelah uji banding: varian bercahaya jendela menyamping keras
+   menghasilkan tekstur kulit terbaik dari empat varian, jauh di atas varian
+   bercahaya lembut. Sudutnya dinaikkan ke 60 derajat dan isian di sisi bayangan
+   dikurangi, karena justru bayangan itulah yang memunculkan pori. */
+const POSE_BASE='hard directional daylight from a window 60 degrees to camera-left and slightly above eye level, raking across the skin so that individual pores and fine facial hair each cast their own micro-shadow, only a weak bounce on the shadow side so the far cheek falls into a clearly readable unfilled shadow, defined shadow under the nose, lower lip and jaw; plain mid-grey wall behind; the light direction, light quality and background are identical in this frame and in every other frame of the set; shot on a 50mm lens at eye level unless the pose says otherwise';
 /* capOverride: Pose Sheet biasanya memakai POSE_BASE yang tetap supaya kedua
    belas panel identik. Uji banding perlu bisa menimpanya — tanpa itu varian
    berkamera lain keluar sama persis dengan varian sebelumnya. */
+/* Uji banding membuktikan dua instruksi diabaikan karena POSISINYA, bukan
+   karena kalimatnya kurang tegas: "completely bare face" mendarat di 74% dan
+   larangan eyeliner di 78% dari prompt 774 kata, sementara prior model soal
+   wajah dirias sangat kuat. Doktrin tool ini sendiri menyatakan engine memberi
+   bobot pada yang di depan — jadi dua hal paling sering dilanggar dinaikkan ke
+   depan, tepat setelah Identity Lock. */
+function frontLoad(){
+  const out=[];
+  const r=rcfg().rias;
+  if(r==='polos') out.push('she is wearing NO makeup whatsoever in this photograph: no eyeliner, no mascara, no eyeshadow, no foundation, no lip colour — her eyebrows are their own natural shape with stray hairs above and below the line, and her lips are their own bare uneven colour');
+  else if(r==='minim') out.push('her face is almost bare: no eyeliner and no eyeshadow at all, eyebrows unfilled and left in their natural shape, only a trace of mascara on the upper lashes and a plain tinted balm on the lips');
+  const e=eyeLockClause(); if(e) out.push(e);
+  return out;
+}
+/* Warna mata tidak pernah ditegaskan ulang di prompt render — hanya ada di
+   dalam Identity Lock, dan itu tidak cukup melawan kecondongan engine memberi
+   mata terang. Warnanya dibaca dari lock lalu diulang di depan. */
+function eyeLockClause(){
+  const lock=String(state.dna.identity_lock||'');
+  const m=/\b(dark brown|deep brown|light brown|brown|black|hazel|amber|grey|gray|blue|green)\s+(?:hazel\s+)?eyes/i.exec(lock);
+  if(!m) return 'her irises are a deep saturated brown, dark enough that iris and pupil read close in tone under this light';
+  const w=m[1].toLowerCase();
+  return /brown|black|hazel|amber/.test(w)
+    ? 'her irises are '+w+' and stay '+w+' here — deep and saturated all the way to the limbal ring, holding their colour rather than lightening toward the centre'
+    : 'her irises are '+w+' exactly as stated above and must not shift to any other colour';
+}
 function posePrompt(p, capOverride){
   const lock=String(state.dna.identity_lock||'').trim();
   const wl=String(state.wardrobe.wardrobe_lock||'').trim();
   const look=String(state.wardrobe.signature_look||'').trim();
   return [
-    lock, p.en,
+    lock, ...frontLoad(), p.en,
     look?('wardrobe: '+look):'',
     wl?('always wearing '+wl):'',
     capOverride||POSE_BASE,
@@ -758,6 +788,10 @@ const HERO_SHOTS=[
   {id:'h5', l:'Selfie UGC', ar:'9:16',
    en:'arm\'s-length front-camera selfie held slightly above eye level, free hand gesturing near the face mid-explanation, casual indoor setting visible but out of focus behind her, mild wide-angle facial perspective typical of a phone front camera'}
 ];
+/* Framing yang sedikit meleset terbukti membantu: varian flash keluar miring
+   dan tidak center, dan justru itu yang paling terbaca sebagai foto amatir
+   sungguhan. Foto konten karena itu diminta tidak rapi sempurna. */
+const IMPERFECT_FRAME='framing slightly imperfect the way a real snapshot is: the subject a little off-centre, the horizon a degree or two off level, a bit more headroom than a professional would leave';
 function heroPrompt(h){
   const lock=String(state.dna.identity_lock||'').trim();
   const wl=String(state.wardrobe.wardrobe_lock||'').trim();
@@ -768,10 +802,10 @@ function heroPrompt(h){
     ? 'shot on an iPhone 15 Pro front camera, handheld, natural indoor light'
     : realismCapture('full').replace(/\.$/,'');
   return [
-    lock, h.en,
+    lock, ...frontLoad(), h.en,
     look?('wardrobe: '+look):'',
     wl?('always wearing '+wl):'',
-    capture,
+    capture, IMPERFECT_FRAME,
     realismSkin('full').replace(/\.$/,''),
     'no: '+ANTI_SLOP_NEG
   ].filter(Boolean).join('. ')+'.';
