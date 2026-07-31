@@ -723,7 +723,10 @@ const POSE_SHEET=[
    tekstur. Lensa 85mm juga dibuang: itu lensa potret beauty, dan menyebutnya
    menarik model ke arah estetika iklan skincare. */
 const POSE_BASE='soft key light from 45 degrees camera-left and slightly above eye level, a single weak bounce on the shadow side so the far cheek keeps a visible but open shadow, clear shadow under the nose and along the jaw, raking across the skin so pore texture and fine hair catch the light; plain mid-grey seamless backdrop; the light direction, light quality and background are identical in this frame and in every other frame of the set; shot on a 50mm lens at eye level unless the pose says otherwise';
-function posePrompt(p){
+/* capOverride: Pose Sheet biasanya memakai POSE_BASE yang tetap supaya kedua
+   belas panel identik. Uji banding perlu bisa menimpanya — tanpa itu varian
+   berkamera lain keluar sama persis dengan varian sebelumnya. */
+function posePrompt(p, capOverride){
   const lock=String(state.dna.identity_lock||'').trim();
   const wl=String(state.wardrobe.wardrobe_lock||'').trim();
   const look=String(state.wardrobe.signature_look||'').trim();
@@ -731,7 +734,7 @@ function posePrompt(p){
     lock, p.en,
     look?('wardrobe: '+look):'',
     wl?('always wearing '+wl):'',
-    POSE_BASE,
+    capOverride||POSE_BASE,
     realismSkin('full').replace(/\.$/,''),
     'no: '+ANTI_SLOP_NEG
   ].filter(Boolean).join('. ')+'.';
@@ -2035,10 +2038,38 @@ function renderBase(){
 
 /* Daftar sumber prompt: pose sheet baru, atau prompt yang sudah jadi di
    tahap 08 dan 09 — supaya tidak ada prompt yang harus ditulis dua kali. */
+/* ---------------- uji banding realisme ----------------
+   Kenapa ini ada: menilai "masih plastik atau tidak" dari satu gambar tunggal
+   itu menebak. Yang menjawabnya adalah membandingkan SATU pose yang sama di
+   beberapa setelan sekaligus, dalam satu kali render, lalu melihatnya
+   berdampingan. Empat gambar jauh lebih murah daripada dua belas, dan jauh
+   lebih informatif daripada satu. */
+const REALISM_TRIALS=[
+  {l:'A · Setelan kamu sekarang', set:{}},
+  {l:'B · Tanpa riasan + kulit ekstrem', set:{rias:'polos', tekstur:'ekstrem'}},
+  {l:'C · Flash langsung ponsel', set:{rias:'polos', tekstur:'ekstrem'},
+   cap:'shot on a phone camera with the direct on-camera flash firing, hard frontal flash dominating the ambient light, bright specular hotspot on the forehead nose and cheekbones, a hard-edged shadow of the subject cast on the plain wall just behind her, slightly blown highlights and deep falloff into the background, everyday snapshot look'},
+  {l:'D · Cahaya jendela menyamping', set:{rias:'polos', tekstur:'ekstrem', imperfeksi:'nyata', kilap:'berminyak'},
+   cap:'hard afternoon daylight from a window at 80 degrees to camera-left, strong directional light raking across the skin so every pore and fine hair casts its own micro-shadow, the far half of the face falling into deep unfilled shadow, plain wall behind'}
+];
+function trialJobs(){
+  /* Close-up wajah dipakai karena di jarak itulah kulit plastik paling
+     ketahuan — panel lain menyembunyikan masalahnya di balik jarak. */
+  const pose=POSE_SHEET.find(x=>x.id==='p11')||POSE_SHEET[0];
+  const asli=Object.assign({}, state.realism);
+  const out=REALISM_TRIALS.map(t=>{
+    Object.assign(state.realism, asli, t.set);
+    return {label:t.l, prompt:posePrompt(pose, t.cap), ar:'3:4'};
+  });
+  Object.assign(state.realism, asli);
+  return out;
+}
+
 function renderSources(){
   const out=[
     {v:'pose', l:'Pose Sheet 12 panel — satu kanvas utuh untuk referensi video', n:12},
-    {v:'hero', l:'Foto Single — 5 pose pilihan, siap posting', n:5}
+    {v:'hero', l:'Foto Single — 5 pose pilihan, siap posting', n:5},
+    {v:'trial', l:'Uji Banding Realisme — 1 pose, 4 setelan berbeda', n:4}
   ];
   state.sheet.forEach((s,i)=>{ if(s.prompt) out.push({v:'sheet:'+i, l:'Tahap 08 · '+s.label, n:1}); });
   state.scenes.forEach((s,i)=>{ if(s.prompt_image) out.push({v:'scene:'+i, l:'Tahap 09 · '+s.nama, n:1}); });
@@ -2047,6 +2078,7 @@ function renderSources(){
 function renderJobs(src){
   if(src==='pose') return POSE_SHEET.map(p=>({label:p.l, prompt:posePrompt(p), ar:'3:4'}));
   if(src==='hero') return HERO_SHOTS.map(h=>({label:h.l, prompt:heroPrompt(h), ar:h.ar}));
+  if(src==='trial') return trialJobs();
   const ar=IMG_RATIO[ratio()]||'9:16';
   const m=/^(sheet|scene):(\d+)$/.exec(src||'');
   if(!m) return [];
@@ -2060,7 +2092,7 @@ async function runRender(src){
   if(state.render.provider==='proxy'){
     if(!proxyBase()||!String(state.api.imgProxyKey||'').trim()){ toast('Isi dulu Base URL dan API key proxy.','err'); return; }
   } else if(!imgKey()){ toast('Isi dulu API key gambar di tahap 14.','err'); return; }
-  if((src==='pose'||src==='hero')&&!String(state.dna.identity_lock||'').trim()){
+  if((src==='pose'||src==='hero'||src==='trial')&&!String(state.dna.identity_lock||'').trim()){
     toast('Paket ini butuh Identity Lock. Generate dulu tahap 04.','err'); go('dna'); return;
   }
   const jobs=renderJobs(src);
@@ -2074,7 +2106,10 @@ async function runRender(src){
     setBusy(true,'Render '+(i+1)+'/'+jobs.length+' — '+jobs[i].label+'…');
     renderPanel();
     try{
-      const refs=(state.render.chain&&anchor)?[anchor]:null;
+      /* Uji banding: rantai identitas dimatikan. Kalau varian B-D memakai
+         varian A sebagai reference image, keempatnya akan mewarisi tampilan
+         A dan perbandingannya jadi tidak berarti apa-apa. */
+      const refs=(src!=='trial'&&state.render.chain&&anchor)?[anchor]:null;
       const img=await genImage(jobs[i].prompt, jobs[i].ar, refs);
       renderStore.items[i].state='ok';
       renderStore.items[i].img=img;
@@ -2086,8 +2121,11 @@ async function runRender(src){
     renderPanel();
   }
   const ok=renderStore.items.filter(x=>x.state==='ok').length;
-  if(src==='pose'&&ok>1){
-    try{ renderStore.grid=await composeGrid(renderStore.items.filter(x=>x.state==='ok')); }catch(_){}
+  if((src==='pose'||src==='trial')&&ok>1){
+    const jadi=renderStore.items.filter(x=>x.state==='ok');
+    try{ renderStore.grid=src==='trial'
+      ? await composeGrid(jadi, 2, 560, true)
+      : await composeGrid(jadi); }catch(_){}
   }
   setBusy(false); renderPanel();
   toast(ok+' dari '+jobs.length+' gambar berhasil.', ok===jobs.length?'ok':'err');
@@ -2106,8 +2144,10 @@ async function runRender(src){
      lagi di hasil video.
    - BERLABEL: ada gutter dan nama pose di tiap panel, untuk dibaca manusia
      atau dikirim ke editor — JANGAN dipakai sebagai referensi video. */
-function composeGrid(items, cols=3, cellW=512){
-  const berlabel=state.render.sheet==='label';
+function composeGrid(items, cols=3, cellW=512, paksaLabel=false){
+  /* Uji banding selalu berlabel apa pun setelan sheet — tanpa nama
+     setelannya, empat gambar berdampingan tidak bisa disimpulkan. */
+  const berlabel=paksaLabel||state.render.sheet==='label';
   const gap=berlabel?10:0, barH=berlabel?34:0;
   return new Promise((res,rej)=>{
     const cellH=Math.round(cellW*4/3), rows=Math.ceil(items.length/cols);
