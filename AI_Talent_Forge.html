@@ -405,6 +405,8 @@ const state = {
     tekstur:'ekstrem', garis:'normal', imperfeksi:'ringan', kilap:'natural',
     kamera:'iphone', cahaya:'jendela', grain:'halus', rias:'polos', tubuh:'natural', gerak:'penuh', bobot:'sedang'
   },
+  /* auto | ya | tidak — lihat catatan di dekat tutupKepala() */
+  tutupKepala:'auto',
   refs:{}, persona:{}, dna:{}, wardrobe:{}, voice:{}, content:{}, compliance:{},
   sheet:[], scenes:[], repair:[],
   done:{}, dirty:{}
@@ -713,19 +715,54 @@ const ANIMATE_GATE=[
    close-up mengunci tekstur kulit, dan satu full body mengunci proporsi tubuh.
    Pencahayaan dan latar dipaksa identik di kedua belas panel — justru itu yang
    membuatnya jadi character sheet, bukan sekadar dua belas foto berbeda. */
+/* Ditulis ulang setelah uji nyata dua belas panel: ENAM panel gagal mengambil
+   sudutnya sendiri dan malah meniru panel acuan — 3/4 kiri hampir sama persis
+   dengan tampak depan, sudut rendah dan sudut tinggi keluar lurus sejajar
+   mata, dan profil kanan menghadap ke arah yang SAMA dengan profil kiri
+   sehingga sheet ini sama sekali tidak punya sisi kanan.
+   Dua pelajarannya:
+   1. "camera-left / camera-right" ternyata tidak cukup di sini. Yang dipatuhi
+      engine adalah acuan relatif-FRAME: "hidungnya menunjuk ke tepi KIRI
+      gambar". Itu tidak bisa dicerminkan diam-diam.
+   2. Menyebut NAMA sudut ("low angle") lemah; menyebut BUKTI yang harus
+      terlihat ("bagian bawah rahang dan lubang hidung terlihat") kuat, karena
+      bisa dinilai benar-salah oleh engine sendiri saat menyusun gambar.
+   Tiap panel juga membawa negative-nya sendiri untuk kegagalan khas panel itu. */
 const POSE_SHEET=[
-  {id:'p01', l:'Depan netral',    en:'facing the camera straight on, neutral relaxed expression, eyes looking into the lens'},
-  {id:'p02', l:'3/4 kiri',        en:'head and shoulders turned three-quarters toward camera-left, neutral expression, eyes to the lens'},
-  {id:'p03', l:'3/4 kanan',       en:'head and shoulders turned three-quarters toward camera-right while the eyes come back to look straight down the lens, neutral expression'},
-  {id:'p04', l:'Profil kiri',     en:'a true 90-degree side profile facing camera-left — the head turned all the way so that only one eye, one ear and one cheek are visible and the far eye is completely hidden behind the nose, neutral expression, jawline and nose bridge reading as a clean silhouette'},
-  {id:'p05', l:'Profil kanan',    en:'a true 90-degree side profile facing camera-right — the head turned all the way so that only one eye, one ear and one cheek are visible and the far eye is completely hidden behind the nose, neutral expression, jawline and nose bridge reading as a clean silhouette'},
-  {id:'p06', l:'Belakang',        en:'seen from directly behind, showing the full hair shape, length, parting and how it falls on the shoulders'},
-  {id:'p07', l:'Sudut rendah',    en:'photographed from slightly below eye level looking up, chin lifted a little, neutral expression'},
-  {id:'p08', l:'Sudut tinggi',    en:'photographed from slightly above eye level looking down, chin lowered a little, neutral expression'},
-  {id:'p09', l:'Senyum bergigi',  en:'facing the camera with an open genuine smile showing the teeth, eyes crinkling naturally at the corners'},
-  {id:'p10', l:'Sedang bicara',   en:'facing the camera caught mid-sentence with the mouth open in speech, eyebrows slightly raised, natural asymmetric mouth shape'},
-  {id:'p11', l:'Close-up kulit',  en:'tight close-up of the face filling the frame, sharp focus on the eyes and the surface of the skin'},
-  {id:'p12', l:'Seluruh badan',   en:'full-length standing shot from head to feet, arms relaxed at the sides, weight resting naturally on one leg'}
+  {id:'p01', l:'Depan netral',
+   en:'facing the camera dead straight on, both eyes, both ears and both cheeks equally visible and the nose centred in the frame, neutral relaxed expression, eyes into the lens; framed from just above the head down to mid-chest'},
+  {id:'p02', l:'3/4 kiri',
+   en:'her head and shoulders rotated a full 45 degrees so that her NOSE POINTS TOWARD THE LEFT EDGE OF THE FRAME — the cheek beyond the nose is partly hidden by it, the far ear has disappeared from view, the near ear is fully visible, and the bridge of the nose breaks the line of the far cheek; her eyes come back to the lens, neutral expression; framed from just above the head down to mid-chest',
+   neg:'facing straight forward, both ears visible, head barely turned'},
+  {id:'p03', l:'3/4 kanan',
+   en:'her head and shoulders rotated a full 45 degrees THE OTHER WAY so that her NOSE POINTS TOWARD THE RIGHT EDGE OF THE FRAME — this is the mirror of the previous angle and must face the opposite way from it; the cheek beyond the nose is partly hidden, the far ear has disappeared, the near ear is fully visible; her eyes come back to the lens, neutral expression; framed from just above the head down to mid-chest',
+   neg:'facing straight forward, both ears visible, head turned toward the left edge of the frame, head barely turned'},
+  {id:'p04', l:'Profil kiri',
+   en:'a true 90-degree side profile with her NOSE POINTING STRAIGHT AT THE LEFT EDGE OF THE FRAME and the back of her head toward the right edge — the far eye is completely hidden behind the bridge of the nose, only one eye, one eyebrow, one ear and one cheek are visible, her eyelashes read in silhouette against the backdrop, and she is NOT looking at the camera; neutral expression; framed from just above the head down to mid-chest',
+   neg:'three-quarter view instead of a full profile, both eyes visible, far eye showing past the nose, looking at the camera'},
+  {id:'p05', l:'Profil kanan',
+   en:'a true 90-degree side profile THE OTHER WAY, with her NOSE POINTING STRAIGHT AT THE RIGHT EDGE OF THE FRAME and the back of her head toward the left edge — she must face the opposite way from the previous profile, not repeat it; the far eye is completely hidden behind the bridge of the nose, only one eye, one eyebrow, one ear and one cheek are visible, and she is NOT looking at the camera; neutral expression; framed from just above the head down to mid-chest',
+   neg:'nose pointing toward the left edge of the frame, three-quarter view instead of a full profile, both eyes visible, looking at the camera'},
+  {id:'p06', l:'Belakang',
+   en:'seen from directly behind at eye level, the back of her head sitting in the same place in the frame that her face occupied in the other frames — no face at all from this angle: no eye, no nose, no mouth and no chin visible, not even in part; showing the full hair shape, its length, the parting and how it falls across the shoulders and back; framed from just above the head down to mid-back',
+   enTutup:'seen from directly behind at eye level — the BACK of the head covering and nothing else: one smooth continuous curve of fabric over the skull with NO face opening on this side, no face, no eye, no nose, no mouth and no chin visible even in part, and no hair showing beneath it or beside it anywhere; the loose tail of the scarf hangs down her back over her shoulder blades, and the fabric follows the real size and shape of a human head rather than ballooning out; framed from just above the head down to mid-back',
+   neg:'face visible in a back view, facial features seen from behind, the front opening of the headscarf visible from behind, hollow empty hood, floating headscarf with no head inside, second face'},
+  {id:'p07', l:'Sudut rendah',
+   en:'the camera dropped WELL BELOW THE LEVEL OF HER CHIN and tilted upward at her, so that the underside of her jaw and the base of her nostrils are both clearly visible, her chin and jaw read wide and near while her forehead falls away and reads small, her eyes are partly hooded by the upper lids as she looks down into the lens, and the backdrop rises high behind her; neutral expression; framed from just above the head down to mid-chest',
+   neg:'eye-level camera, straight-on level angle, camera above the subject, underside of the jaw hidden'},
+  {id:'p08', l:'Sudut tinggi',
+   en:'the camera raised WELL ABOVE THE TOP OF HER HEAD and tilted downward at her, so that the crown of her head is clearly visible, her forehead reads large and near while her chin tucks toward her chest and reads small, she looks up into the lens with a little of the white showing below each iris, and the backdrop sits low behind her; neutral expression; framed from just above the head down to mid-chest',
+   neg:'eye-level camera, straight-on level angle, camera below the subject, crown of the head hidden'},
+  {id:'p09', l:'Senyum bergigi',
+   en:'facing the camera with an open genuine smile showing the teeth, the cheeks pushing up so the eyes crinkle at the outer corners and the lower lids rise, laugh lines appearing at the sides of the nose; framed from just above the head down to mid-chest'},
+  {id:'p10', l:'Sedang bicara',
+   en:'facing the camera caught mid-sentence on a soft open vowel — the lips parted only a little with the edge of the lower teeth just showing, the jaw dropped slightly, one corner of the mouth sitting higher than the other, eyebrows lifted a touch and the eyes relaxed and still on the lens; a warm ordinary talking-to-camera moment, NOT a wide-open shout, NOT a grimace, NOT a pained, crying or distressed face; framed from just above the head down to mid-chest',
+   neg:'crying, sobbing, grimacing, screaming, shouting, wide open gaping mouth, distressed face, pained expression, teeth clenched, tongue visible'},
+  {id:'p11', l:'Close-up kulit',
+   en:'a tight close-up with the face filling the frame from mid-forehead to chin, sharp focus on the eyes and on the surface of the skin, the pores and fine facial hair readable at this distance; neutral expression, eyes into the lens'},
+  {id:'p12', l:'Seluruh badan',
+   en:'a full-length standing shot from the top of the head to the shoes, arms relaxed at the sides, weight resting naturally on one leg; the same seamless mid-grey studio backdrop still fills the entire frame behind her AND below her, so there is no floor line, no pavement, no ground texture and no horizon anywhere in the picture — she stands against continuous grey',
+   neg:'visible floor line, pavement, tiles, ground texture, outdoor street, wall corner, skirting board, horizon line, different location'}
 ];
 /* Kondisi pengambilan yang WAJIB sama di kedua belas panel. Tanpa ini tiap
    panel punya cahaya dan latarnya sendiri, dan hasilnya tidak bisa dipakai
@@ -743,7 +780,15 @@ const POSE_SHEET=[
    menghasilkan tekstur kulit terbaik dari empat varian, jauh di atas varian
    bercahaya lembut. Sudutnya dinaikkan ke 60 derajat dan isian di sisi bayangan
    dikurangi, karena justru bayangan itulah yang memunculkan pori. */
-const POSE_BASE='hard directional daylight from a window 60 degrees to camera-left and slightly above eye level, raking across the skin so that individual pores and fine facial hair each cast their own micro-shadow, only a weak bounce on the shadow side so the far cheek falls into a clearly readable unfilled shadow, defined shadow under the nose, lower lip and jaw; plain mid-grey wall behind; the light direction, light quality and background are identical in this frame and in every other frame of the set; shot on a 50mm lens at eye level unless the pose says otherwise';
+/* Uji nyata dua belas panel: baris 3 dan 4 keluar jauh lebih rata daripada
+   baris 1 dan 2, satu panel punya bayangan tubuh di tembok yang tidak dipunyai
+   panel lain, dan panel seluruh badan malah pindah ke lokasi lain lengkap
+   dengan lantai dan trotoar. Dua sebabnya: (a) kalimat "cahaya dan latar
+   identik" itu pasif — tidak menyebut LAMPUNYA diam di satu titik, jadi engine
+   menafsir ulang tiap panel; (b) latar tidak pernah dikunci sampai ke tepi
+   frame, padahal shot seluruh badan memang menuntut ada lantai kalau tidak
+   dilarang. Keduanya sekarang disebut eksplisit. */
+const POSE_BASE='hard directional daylight from a window 60 degrees to camera-left and slightly above eye level, raking across the skin so that individual pores and fine facial hair each cast their own micro-shadow, only a weak bounce on the shadow side so the far cheek falls into a clearly readable unfilled shadow, defined shadow under the nose, lower lip and jaw; that window stays bolted to the same spot in the room for every frame of this set — it never moves, never softens and never changes colour, so when she turns the shading travels across her face while the light itself stays exactly where it is, and no frame is ever lit flatter or softer than another; behind her a seamless plain mid-grey studio backdrop of exactly the same tone and brightness in every frame, filling the picture right out to all four edges with no floor line, no horizon, no visible ground or pavement, no wall corner, no skirting board, no doorway and no shadow of her cast onto it; shot on a 50mm lens at eye level unless the pose says otherwise';
 /* capOverride: Pose Sheet biasanya memakai POSE_BASE yang tetap supaya kedua
    belas panel identik. Uji banding perlu bisa menimpanya — tanpa itu varian
    berkamera lain keluar sama persis dengan varian sebelumnya. */
@@ -759,6 +804,11 @@ function frontLoad(){
   if(r==='polos') out.push('she is wearing NO makeup whatsoever in this photograph: no eyeliner, no mascara, no eyeshadow, no foundation, no lip colour — her eyebrows are their own natural shape with stray hairs above and below the line, and her lips are their own bare uneven colour');
   else if(r==='minim') out.push('her face is almost bare: no eyeliner and no eyeshadow at all, eyebrows unfilled and left in their natural shape, only a trace of mascara on the upper lashes and a plain tinted balm on the lips');
   const e=eyeLockClause(); if(e) out.push(e);
+  /* Ikut dinaikkan ke depan karena alasan yang sama seperti riasan: Wardrobe
+     Lock mendarat jauh di tengah prompt, kalah melawan prior model soal rambut
+     panjang tergerai, dan hasilnya hijab dipakai seperti kudung di atas rambut
+     terurai di hampir semua panel. */
+  if(tutupKepala()) out.push(HIJAB_LOCK);
   return out;
 }
 /* Warna mata tidak pernah ditegaskan ulang di prompt render — hanya ada di
@@ -773,17 +823,36 @@ function eyeLockClause(){
     ? 'her irises are '+w+' and stay '+w+' here — deep and saturated all the way to the limbal ring, holding their colour rather than lightening toward the centre'
     : 'her irises are '+w+' exactly as stated above and must not shift to any other colour';
 }
+/* Negative dirakit per panel: daftar anti-slop umum, ditambah larangan khas
+   penutup kepala kalau ada, ditambah kegagalan khas panel itu sendiri. */
+function negPose(p){
+  return [ANTI_SLOP_NEG, tutupKepala()?HIJAB_NEG:'', p&&p.neg?p.neg:''].filter(Boolean).join(', ');
+}
+/* Teks kamera panel ini. Panel belakang punya versi khusus untuk talent
+   berhijab — tampak belakang rambut terurai tidak berlaku di sana. */
+function camPose(p){ return (tutupKepala()&&p.enTutup)?p.enTutup:p.en; }
+/* Susunannya diubah setelah uji nyata. Dulu urutannya: Identity Lock (panjang)
+   → riasan → BARU sudut kamera. Sudutnya mendarat sekitar 35% ke dalam prompt,
+   persis di zona mati yang doktrin tool ini sendiri sudah catat, sementara di
+   depan sana gambar acuan sedang berteriak "tiru saya". Hasilnya enam panel
+   meniru acuan alih-alih mengambil sudutnya.
+   Sekarang sudut kamera ditaruh PALING DEPAN sebagai satu-satunya hal yang
+   wajib berbeda, lalu diulang lagi di akhir. Depan dan belakang adalah dua
+   posisi yang berbobot; tengah tidak. */
 function posePrompt(p, capOverride){
   const lock=String(state.dna.identity_lock||'').trim();
   const wl=String(state.wardrobe.wardrobe_lock||'').trim();
   const look=String(state.wardrobe.signature_look||'').trim();
+  const cam=camPose(p);
   return [
-    lock, ...frontLoad(), p.en,
+    'CAMERA AND POSE FOR THIS FRAME — this is the ONE thing that must differ from any reference image, and it overrides the reference: '+cam,
+    lock, ...frontLoad(),
     look?('wardrobe: '+look):'',
     wl?('always wearing '+wl):'',
     capOverride||POSE_BASE,
     realismSkin('full').replace(/\.$/,''),
-    'no: '+ANTI_SLOP_NEG
+    'to be clear once more, the camera and pose for this frame are: '+cam,
+    'no: '+negPose(p)
   ].filter(Boolean).join('. ')+'.';
 }
 
@@ -797,11 +866,13 @@ const HERO_SHOTS=[
   {id:'h1', l:'Hero portrait', ar:'3:4',
    en:'half-body hero portrait, body angled slightly away while the face turns back to the lens, chin level, a small closed-mouth smile that reaches the eyes, one hand relaxed near the collarbone, shallow depth of field separating her from the background'},
   {id:'h2', l:'Tawa candid', ar:'3:4',
-   en:'caught mid-laugh looking off-camera to the side, head tipped back a little, shoulders lifted, hair falling across one cheek, unposed candid moment rather than a held expression'},
+   en:'caught mid-laugh looking off-camera to the side, head tipped back a little, shoulders lifted, hair falling across one cheek, unposed candid moment rather than a held expression',
+   enTutup:'caught mid-laugh looking off-camera to the side, head tipped back a little, shoulders lifted, the loose tail of her headscarf swinging across her shoulder with the movement, unposed candid moment rather than a held expression'},
   {id:'h3', l:'Pegang produk', ar:'9:16',
    en:'holding a small unbranded product at chest height with both hands, tilting it toward the lens while looking straight at the camera with an interested expression, product sharp and fully readable in frame, generous empty space on the upper third'},
   {id:'h4', l:'Jalan outdoor', ar:'9:16',
-   en:'full-length shot walking toward the camera on a city sidewalk, mid-stride with real weight on the front foot, one hand holding a bag strap, looking slightly off-lens, motion in the hair and clothing'},
+   en:'full-length shot walking toward the camera on a city sidewalk, mid-stride with real weight on the front foot, one hand holding a bag strap, looking slightly off-lens, motion in the hair and clothing',
+   enTutup:'full-length shot walking toward the camera on a city sidewalk, mid-stride with real weight on the front foot, one hand holding a bag strap, looking slightly off-lens, the trailing end of her headscarf and the hem of her clothing lifting with the movement'},
   {id:'h5', l:'Selfie UGC', ar:'9:16',
    en:'arm\'s-length front-camera selfie held slightly above eye level, free hand gesturing near the face mid-explanation, casual indoor setting visible but out of focus behind her, mild wide-angle facial perspective typical of a phone front camera'}
 ];
@@ -819,12 +890,12 @@ function heroPrompt(h){
     ? 'shot on an iPhone 15 Pro front camera, handheld, natural indoor light'
     : realismCapture('full').replace(/\.$/,'');
   return [
-    lock, ...frontLoad(), h.en,
+    lock, ...frontLoad(), camPose(h),
     look?('wardrobe: '+look):'',
     wl?('always wearing '+wl):'',
     capture, IMPERFECT_FRAME,
     realismSkin('full').replace(/\.$/,''),
-    'no: '+ANTI_SLOP_NEG
+    'no: '+negPose(h)
   ].filter(Boolean).join('. ')+'.';
 }
 
@@ -936,6 +1007,54 @@ const ASYM_DETAIL='distinctly asymmetric face: one upper eyelid crease sitting v
    paling cepat merasa janggal. */
 const BOUNDARY_DETAIL='irregular hairline with short wispy baby hairs at the temples and a few strands falling across the forehead, the transition from scalp to skin broken up rather than a clean edge; lower lashes uneven in length with visible gaps between them, upper lashes clumping in small irregular groups rather than a smooth curve';
 
+/* ---------------- penutup kepala ----------------
+   Uji nyata membuktikan satu bug berat yang berasal dari tool ini sendiri.
+   Kalau talent memakai hijab, prompt lama mengirim tiga perintah yang saling
+   bertabrakan ke engine dalam satu tarikan napas:
+     Wardrobe Lock : "tutupi kepala dengan hijab"
+     HAIR_DETAIL   : "perlihatkan belahan rambut dan kulit kepala"
+     BOUNDARY_DETAIL: "perlihatkan garis rambut dan anak rambut di pelipis"
+   Engine menyelesaikan pertentangan itu dengan cara yang paling masuk akal
+   baginya: hijab dipasang seperti KUDUNG DI ATAS rambut terurai, sehingga
+   rambut menjuntai keluar di bahu dan punggung di hampir semua panel. Itu
+   langsung terbaca salah oleh mata orang Indonesia.
+   Jadi begitu penutup kepala terdeteksi, dua blok rambut itu DIGANTI, bukan
+   sekadar ditambahi larangan — larangan tidak pernah menang melawan perintah
+   positif yang ada di prompt yang sama. */
+/* "veil" sengaja TIDAK masuk daftar: kata itu juga dipakai untuk kerudung
+   pengantin di slot busana formal, dan satu penyebutan di sana akan mengunci
+   seluruh sheet ke mode tertutup secara keliru. Sisanya tidak ambigu. */
+const RE_TUTUP_KEPALA=/\b(hijab|jilbab|kerudung|khimar|niqab|hijabi|headscarf|head scarf|pashmina|shayla|bergo|turban)\b/i;
+/* Diperiksa di SELURUH isi tahap 06, bukan cuma Wardrobe Lock. Uji nyata:
+   project pengguna menyimpan "studs, choker" di lock, sementara hijabnya
+   disebut di slot busana — kalau hanya lock yang dibaca, deteksinya lolos. */
+function tutupKepalaTerbaca(){
+  const w=state.wardrobe||{};
+  const teks=Object.keys(w).map(k=>typeof w[k]==='string'?w[k]:'').join(' ')+' '+String((state.dna&&state.dna.identity_lock)||'');
+  return RE_TUTUP_KEPALA.test(teks);
+}
+/* Otomatis, tapi bisa ditimpa. Deteksi yang salah dan tak terlihat akan
+   merusak seluruh sheet tanpa pengguna tahu sebabnya, jadi hasilnya
+   ditampilkan dan bisa dipaksa di tahap 06. */
+/* Disimpan di tingkat atas seperti state.refmode, BUKAN di dalam
+   state.wardrobe: hasContent() menganggap satu bucket "sudah terisi" begitu
+   ada satu string tidak kosong di dalamnya, jadi menaruh setelan di sana
+   membuat tahap 06 yang masih kosong terlihat sudah selesai. */
+function tutupKepala(){
+  const m=state.tutupKepala||'auto';
+  if(m==='ya') return true;
+  if(m==='tidak') return false;
+  return tutupKepalaTerbaca();
+}
+const HIJAB_LOCK='her head covering completely encloses her hair: the scarf is wrapped over the hairline, around the jaw and down over the neck with every strand tucked inside it, and NOT ONE strand of hair is visible anywhere in this photograph — none at the forehead, none at the temples, none in front of the ears, none at the nape, and nothing falling over the shoulders, chest or back; the fabric sits flush against the skull and follows the real size of a human head instead of resting loosely on top of a mass of hair';
+const HIJAB_NEG='loose hair spilling out of the headscarf, hair falling over the shoulders or down the back, visible hair strands at the temples nape or forehead, scarf worn like a hood over uncovered flowing hair, hollow empty hood with no head inside, oversized balloon-shaped head covering';
+/* Pengganti BOUNDARY_DETAIL: batas anatomi yang paling gampang terlihat palsu
+   pindah dari garis rambut ke tepi kain dan garis bulu mata. */
+const BOUNDARY_COVERED='the edge of the head covering meeting the skin is slightly uneven and softly pressed into the forehead and the cheek rather than a cleanly drawn line, with a faint compression mark where the fabric rests; lower lashes uneven in length with visible gaps between them, upper lashes clumping in small irregular groups rather than a smooth curve; eyebrows with stray hairs breaking the outline above and below';
+/* Pengganti HAIR_DETAIL: teksturnya dipindah ke kain, karena rambut memang
+   tidak boleh terlihat sama sekali. */
+const HAIR_COVERED='the fabric carries the texture instead of hair: its fine weave readable up close, soft irregular folds where it is pinned, one or two shallow creases from having been folded, and the drape falling with the real weight of cloth rather than a smooth painted surface';
+
 /* 4. Retouching menghapus warna pembuluh darah, dan itu yang membuat kulit AI
    terlihat seperti satu warna cat yang diratakan. */
 const VASCULAR_DETAIL='uneven blood colour under the skin: warmer pink diffusing across the cheeks and the tip and wings of the nose, faint bluish tone at the inner eye corners and temples, slight uneven redness around the nostrils and at the chin, colour that shifts gradually rather than sitting in one flat tone';
@@ -989,7 +1108,8 @@ function realismSkin(mode){
     return [
       ...['tekstur','imperfeksi','garis','kilap'].map(g),
       'patchy uneven specular highlights', 'asymmetric face, one eyelid heavier',
-      'uneven blood colour under the skin', 'wispy baby hairs at the hairline',
+      'uneven blood colour under the skin',
+      tutupKepala()?'hair fully enclosed by the headscarf, no strand visible':'wispy baby hairs at the hairline',
       'detailed iris with accurate catchlights', g('rias'), g('tubuh'), 'unretouched raw photo'
     ].filter(Boolean).join(', ')+'.';
   }
@@ -998,8 +1118,13 @@ function realismSkin(mode){
     /* Empat blok berikut menangani penanda AI yang tidak hilang hanya dengan
        meminta tekstur kulit: kilau rata, simetri sempurna, batas anatomi,
        dan warna kulit yang terlalu satu nada. */
-    SPECULAR_DETAIL, ASYM_DETAIL, VASCULAR_DETAIL, BOUNDARY_DETAIL,
-    EYE_DETAIL, HAIR_DETAIL, TEETH_DETAIL, rpick('rias').en, rpick('tubuh').en,
+    SPECULAR_DETAIL, ASYM_DETAIL, VASCULAR_DETAIL,
+    /* Dua blok rambut diganti kalau kepalanya tertutup — lihat catatan di
+       dekat HIJAB_LOCK. Menambah larangan saja tidak cukup selama perintah
+       "perlihatkan garis rambut" masih ikut terkirim. */
+    tutupKepala()?BOUNDARY_COVERED:BOUNDARY_DETAIL,
+    EYE_DETAIL, tutupKepala()?HAIR_COVERED:HAIR_DETAIL,
+    TEETH_DETAIL, rpick('rias').en, rpick('tubuh').en,
     'unretouched raw photograph of a real person, straight out of camera with no retouching pass, not a render and not a beauty-filtered image'
   ].join('; ')+'.';
 }
@@ -1751,7 +1876,8 @@ const SHEET_SHOTS=[
   {id:'side',    label:'Turnaround — Samping',        cam:'sama persis dengan tampak depan — JANGAN pakai Blok B',
    brief:'potret profil samping penuh, ekspresi netral, pencahayaan dan latar identik'},
   {id:'back',    label:'Turnaround — Belakang',       cam:'sama persis dengan tampak depan — JANGAN pakai Blok B',
-   brief:'tampak belakang setengah badan untuk mengunci potongan dan tekstur rambut, latar identik'},
+   brief:'tampak belakang setengah badan untuk mengunci potongan dan tekstur rambut, latar identik',
+   briefTutup:'tampak belakang setengah badan: punggung penutup kepala saja — kain melengkung utuh tanpa lubang wajah di sisi ini, tidak ada wajah dan tidak ada rambut terlihat, ujung kain menjuntai ke punggung, latar identik'},
   {id:'closeup', label:'Close-up Wajah',              brief:'close-up wajah sangat detail, fokus tajam pada mata, tekstur kulit, dan seluruh tanda unik, pencahayaan lembut'},
   {id:'expr',    label:'Lembar Ekspresi',             brief:'kisi 4 panel berisi empat ekspresi berbeda dari orang yang sama: senyum lebar, terkejut, berpikir, dan tertawa; wajah identik di keempat panel'},
   {id:'full',    label:'Full Body',                   brief:'foto seluruh badan berdiri natural, memperlihatkan proporsi tubuh dan tinggi, mengenakan signature look'},
@@ -1765,12 +1891,16 @@ function promptSheet(fb){
   return HEADER+'\n\n'+buildContext()+'\n'+engineBrief()+'\n\n'+realismBrief()+'\n\n'+weightBrief()+'\n\n'+
     'TUGAS: Buat Reference Sheet Pack — kumpulan prompt gambar siap pakai untuk membangun aset identitas talent ini di '+ie.name+'.\n'+
     'Kamu harus menghasilkan tepat '+SHEET_SHOTS.length+' prompt, satu untuk setiap shot berikut:\n'+
-    SHEET_SHOTS.map((s,n)=>(n+1)+'. '+s.label+' — '+s.brief+(s.cam?'\n   KAMERA & CAHAYA SHOT INI: '+s.cam:'')).join('\n')+'\n\n'+
+    SHEET_SHOTS.map((s,n)=>(n+1)+'. '+s.label+' — '+((tutupKepala()&&s.briefTutup)?s.briefTutup:s.brief)+(s.cam?'\n   KAMERA & CAHAYA SHOT INI: '+s.cam:'')).join('\n')+'\n\n'+
     'Aturan mutlak:\n'+
     '- SETIAP prompt WAJIB diawali dengan Identity Lock persis seperti yang ada di Character DNA, tanpa diubah satu kata pun. Ini yang membuat wajah tetap sama.\n'+
     '- Setiap prompt WAJIB menyebut ulang seluruh tanda unik permanen secara eksplisit.\n'+
     '- Prompt ditulis dalam BAHASA INGGRIS mengikuti sintaks engine di atas.\n'+
     '- Shot turnaround (1–4) wajib memakai pencahayaan, latar, jarak kamera, dan lensa yang IDENTIK satu sama lain — hanya sudut yang berubah. Sebutkan itu di prompt.\n'+
+    '- Sudut kamera wajib ditulis sebagai BUKTI YANG HARUS TERLIHAT, bukan sekadar namanya. "low angle" hampir selalu diabaikan; "kamera di bawah dagu, bagian bawah rahang dan lubang hidung terlihat" dipatuhi. Arah hadap wajib dipatok ke TEPI FRAME ("hidungnya menunjuk ke tepi kanan gambar"), bukan hanya "camera-right" — uji nyata menunjukkan profil kiri dan profil kanan keluar menghadap arah yang sama persis.\n'+
+    (tutupKepala()
+      ? '- Talent ini MEMAKAI PENUTUP KEPALA. Setiap prompt wajib menyatakan rambutnya tertutup sepenuhnya dan tidak ada sehelai pun yang terlihat — tidak di dahi, pelipis, depan telinga, tengkuk, bahu, maupun punggung. JANGAN pernah menulis garis rambut, belahan rambut, kulit kepala, anak rambut, rambut tergerai, atau rambut tertiup angin di prompt mana pun; itu membuat engine memasang hijab seperti kudung di atas rambut terurai. Untuk shot tampak belakang, tulis punggung penutup kepalanya (kain melengkung utuh tanpa lubang wajah), bukan bentuk dan tekstur rambut.\n'
+      : '')+
     '- Field "negative": WAJIB memuat seluruh daftar anti-slop berikut, boleh ditambah yang relevan dengan shot-nya:\n  '+ANTI_SLOP_NEG+'\n'+
     '- Kalau engine ini tidak punya field negative terpisah, sisipkan daftar itu SATU KALI di akhir prompt dengan awalan "no: " — dan jangan mengarang daftar larangan pendek versi sendiri di tempat lain. Dua daftar berbeda saling melemahkan.\n'+
     '- Shot close-up wajah dan lembar ekspresi WAJIB memakai tingkat detail kulit paling tinggi — di jarak itu kulit plastik paling ketahuan.\n'+
@@ -2361,7 +2491,13 @@ async function genImage(prompt, ar, refs, mode, refMode){
    potongan panel lain ikut terbawa. */
 const SINGLE_OUT='Output exactly ONE single new photograph and nothing else. Do NOT include the reference image in the output. Do NOT produce a grid, a collage, a split screen, a side-by-side or a before-and-after comparison. The result must be one plain photograph that fills the whole frame on its own.\n\n';
 const REF_LEAD={
-  sheet:SINGLE_OUT+'The attached image is the reference for this photo set. The new photograph you produce must show the SAME person in the SAME photographic setup: identical face, bone structure, skin texture and blemishes, identical hair length and hair colour, identical clothing, identical light direction, light hardness, colour temperature and exposure, and an identical background tone and camera distance. Only the pose and camera angle differ, as described below. Do not relight the scene, do not change the backdrop, do not restyle the person.\n\n',
+  /* Kalimat lama menyebut "camera distance" ikut identik, lalu menutup dengan
+     "hanya pose dan sudut yang berbeda" — satu kalimat lembut melawan seluruh
+     paragraf perintah meniru. Uji nyata: enam panel meniru acuan. Sekarang apa
+     yang WAJIB BERUBAH dipisah jadi paragraf sendiri, dan meniru pose acuan
+     dinyatakan sebagai kegagalan. */
+  sheet:SINGLE_OUT+'The attached image is the identity and lighting reference for this photo set. Keep the SAME person in the SAME photographic setup: identical face, bone structure, skin texture and blemishes, identical hair or head covering, identical clothing, identical light direction, light hardness, colour temperature and exposure, and an identical backdrop tone. Do not relight the scene, do not change the backdrop, do not restyle the person.\n\n'+
+    'BUT DO NOT COPY THE POSE FROM THE REFERENCE. The camera angle, the direction she faces and how tightly she is framed are stated in the instruction below, and on those three things the instruction OVERRIDES the reference image. If the instruction asks for an angle or a crop the reference does not show, follow the instruction. Producing another photograph at the reference\'s own angle counts as a failed result.\n\n',
   content:SINGLE_OUT+'Use the attached image as the identity reference. The new photograph must keep exactly the same face, bone structure, skin texture, hair and unique marks. The lighting, background and framing are free to change to suit the new scene described below. Do not restyle the person.\n\n'
 };
 
@@ -3257,6 +3393,8 @@ function mergeLoadedState(d){
   if(!Array.isArray(state.api.book)) state.api.book=[];
   if(!Array.isArray(state.uploads.brief)) state.uploads.brief=[];
   if(typeof state.setup.engineAuto!=='boolean') state.setup.engineAuto=true;
+  if(typeof d.tutupKepala==='string') state.tutupKepala=d.tutupKepala;
+  if(!['auto','ya','tidak'].includes(state.tutupKepala)) state.tutupKepala='auto';
   syncEngineDariRender();
   if(!state.voiceCfg||typeof state.voiceCfg!=='object') state.voiceCfg={model:'gpt-4o-mini-tts',voice:'nova',speed:1};
   if(!TTS_VOICES[state.voiceCfg.voice]) state.voiceCfg.voice='nova';
@@ -3503,8 +3641,28 @@ function stageAIPanel(id, no, title, desc){
     h+='</div>';
   }
   h+='<div class="card"><h3>Detail <span class="tag">'+fields.length+' field</span></h3>'+kvGrid(fields,id,state[id])+genBar(id)+'</div>';
+  if(id==='wardrobe') h+=panelTutupKepala();
   if(id==='voice') h+=panelSuara();
   return h;
+}
+
+/* Kalau talent memakai penutup kepala, tiga blok prompt harus ditukar, bukan
+   sekadar ditambahi larangan — kalau tidak, engine menerima perintah
+   "tutupi kepala" dan "perlihatkan garis rambut" sekaligus lalu memasang
+   hijabnya seperti kudung di atas rambut terurai. Statusnya ditampilkan di
+   sini supaya pengguna tahu mode mana yang sedang aktif. */
+function panelTutupKepala(){
+  const m=state.tutupKepala||'auto';
+  const aktif=tutupKepala(), baca=tutupKepalaTerbaca();
+  return '<div class="card"><h3>Penutup Kepala <span class="tag">'+(aktif?'aktif':'nonaktif')+'</span></h3>'+
+    '<p class="meta">Kalau aktif, setiap prompt gambar mengunci rambut tertutup penuh, membuang perintah garis rambut dan belahan rambut yang saling bertabrakan dengan hijab, dan mengganti panel tampak belakang jadi punggung kain — bukan bentuk rambut.</p>'+
+    '<div class="field"><label>Mode</label><select data-path="tutupKepala">'+
+      ['auto|Otomatis — baca dari isi tahap 06','ya|Ya, selalu pakai penutup kepala','tidak|Tidak pernah']
+        .map(o=>{const[v,l]=o.split('|');return '<option value="'+v+'"'+(m===v?' selected':'')+'>'+esc(l)+'</option>';}).join('')+
+    '</select></div>'+
+    '<p class="meta">Pembacaan otomatis saat ini: <b>'+(baca?'terdeteksi penutup kepala':'tidak terdeteksi')+'</b>'+
+      (m!=='auto'?' — ditimpa manual jadi <b>'+(aktif?'aktif':'nonaktif')+'</b>':'')+'.</p>'+
+    '</div>';
 }
 
 function renderPanel(){
@@ -4187,7 +4345,14 @@ document.addEventListener('change', e=>{
       renderRail(); persistState();
     }
   }
-  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='input.gayaRef'||p==='refmode'||p==='render.provider'||p==='render.model'||p==='render.sheet'||p.startsWith('realism.')) renderPanel();
+  /* Mode penutup kepala mengubah isi prompt sheet, scenes, dan repair —
+     ketiganya harus ditandai usang, dan panelnya digambar ulang supaya baris
+     status ikut berubah. */
+  if(p==='tutupKepala'){
+    ['sheet','scenes','repair'].forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
+    persistState(); renderRail();
+  }
+  if(p==='setup.imgEngine'||p==='setup.vidEngine'||p==='input.arketipe'||p==='input.gayaRef'||p==='refmode'||p==='render.provider'||p==='render.model'||p==='render.sheet'||p==='tutupKepala'||p.startsWith('realism.')) renderPanel();
 });
 document.addEventListener('click', async e=>{
   /* Lightbox: gambar bukan tombol, jadi tidak lolos filter di bawah. */
