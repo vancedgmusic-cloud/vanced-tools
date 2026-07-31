@@ -1207,6 +1207,19 @@ function wordBudget(){
   const ideal=Math.round(d*WORDS_PER_SEC);
   return { d, ideal, min:Math.max(4,Math.round(ideal*0.7)), max:Math.round(ideal*1.15) };
 }
+/* Audit hanya bisa bilang "1 scene kepanjangan" tanpa menunjuk yang mana atau
+   seberapa jauh, sehingga satu-satunya jalan keluar yang terbayang adalah
+   generate ulang seluruh Scene Pack — satu panggilan AI penuh untuk memangkas
+   beberapa kata, dan hasilnya bisa melanggar lagi. Hitungannya ditempel di
+   baris dialognya sendiri supaya bisa dipangkas di tempat. */
+function lencanaKata(teks){
+  const n=String(teks||'').trim().split(/\s+/).filter(Boolean).length;
+  if(!n) return '';
+  const wb=wordBudget();
+  if(n>wb.max) return '<span class="pill warn">'+n+' kata · lebih '+(n-wb.max)+' dari batas '+wb.max+' untuk '+wb.d+' detik</span>';
+  if(n<wb.min) return '<span class="pill">'+n+' kata · di bawah '+wb.min+', klip akan terasa kosong</span>';
+  return '<span class="pill">'+n+' kata · pas untuk '+wb.d+' detik</span>';
+}
 
 /* ---------------- perbaikan bagian yang gagal ----------------
    Generate ulang seluruh frame karena satu tangan rusak itu pemborosan, dan
@@ -1726,7 +1739,11 @@ function realismBrief(){
     'ATURAN KERAS UNTUK BLOK B — setiap prompt WAJIB memuat TEPAT SATU kamera dan TEPAT SATU pencahayaan. Bukan dua, dan bukan nol:\n'+
     '- NOL juga salah. Kalau kamera tidak disebut, engine menebak sendiri dan hasil antar shot jadi tidak seragam. Sebutkan lensa atau bodi kamera secara eksplisit — mis. "shot on a 35mm lens", "shot on an iPhone 15 Pro" — jangan hanya menulis "camera" dalam kalimat seperti "looking at the camera".\n'+
     '- Kalau shot-nya cocok dengan default di atas, pakai Blok B apa adanya dan JANGAN menulis kamera atau pencahayaan lain lagi di bagian mana pun prompt itu.\n'+
-    '- Kalau shot-nya menuntut kondisi lain — turnaround butuh studio rata, scene luar ruang punya cahaya matahari sendiri, orbit tidak mungkin pakai kamera selfie sepanjang tangan — maka TULIS kondisi yang sesuai shot itu dan JANGAN sertakan Blok B sama sekali.\n'+
+    /* "turnaround butuh studio rata" dibuang: daftar negative di prompt yang
+       sama melarang "flat even frontal lighting", dan cahaya rata memang yang
+       menghapus tekstur kulit. Yang dibutuhkan turnaround adalah cahaya yang
+       SERAGAM antar shot, bukan cahaya yang RATA di wajah. */
+    '- Kalau shot-nya menuntut kondisi lain — turnaround butuh cahaya berarah yang sama persis di keempat sudut (seragam antar shot, BUKAN rata di wajah: cahaya rata menghapus pori dan dilarang oleh daftar negative), scene luar ruang punya cahaya matahari sendiri, orbit tidak mungkin pakai kamera selfie sepanjang tangan — maka TULIS kondisi yang sesuai shot itu lengkap dengan lensanya, dan JANGAN sertakan Blok B sama sekali.\n'+
     '- DILARANG menyebut dua kamera atau dua sumber cahaya dalam satu prompt. Itu membuat engine menebak, dan hasilnya jadi campuran yang tidak diminta.\n\n'+
     '- Kata-kata berikut TIDAK BOLEH MUNCUL DI DALAM PROMPT sama sekali — bukan sebagai deskripsi, dan bukan pula sebagai negasi. Jangan menuliskannya sebagai "no flawless", "no 8k", atau bentuk larangan apa pun; cukup TIDAK MENYEBUTNYA. Menuliskannya sebagai negasi tetap memasukkan katanya ke prompt, membengkakkan panjangnya, dan tidak menolong apa pun:\n  '+SLOP_WORDS.join(', ')+'\n'+
     '- Daftar larangan yang boleh ditulis hanyalah negative anti-slop yang saya berikan (plastic skin, airbrushed, dan seterusnya). Jangan mencampur kedua daftar itu.\n'+
@@ -1868,14 +1885,25 @@ function promptRepair(fb){
    lain…") dan model dibiarkan menebak shot mana yang dimaksud — hasilnya
    Talking Head UGC bisa berisi kamera ponsel DAN stok film sekaligus. Sekarang
    penimpanya disebut per shot. */
+/* Blok "cam" turnaround dulu berbunyi "pencahayaan rata tanpa bayangan keras".
+   Itu dua kali salah. Pertama, prompt yang sama WAJIB memuat ANTI_SLOP_NEG yang
+   berisi "flat even frontal lighting" — jadi AI disuruh menulis cahaya rata
+   sekaligus melarangnya di prompt yang sama. Kedua, cahaya rata memang yang
+   menghapus tekstur kulit; itu sebab utama wajah plastik, sudah diperbaiki di
+   POSE_BASE tapi tidak pernah ikut diperbaiki di sini.
+   Lensa juga tidak pernah disebut, padahal blok ini melarang Blok B — satu-
+   satunya tempat kamera berada. Audit lalu menandai prompt-nya tidak menyebut
+   kamera: tool ini menuntut sesuatu yang tidak pernah ia minta. */
+const CAM_TURN='lensa 50mm setinggi mata, jarak setengah badan; cahaya jendela keras dari 60 derajat sebelah camera-left sedikit di atas garis mata, menyapu kulit sehingga pori dan bulu halus berbayang, sisi jauh wajah jatuh ke bayangan yang terbaca tanpa banyak isian; latar tembok abu-abu polos tanpa garis lantai. JANGAN menulis pencahayaan rata tanpa bayangan — itu bertabrakan dengan "flat even frontal lighting" di daftar negative prompt yang sama, dan cahaya rata itulah yang membuat kulit terlihat plastik. JANGAN pakai Blok B';
+const CAM_TURN_SAMA='lensa, jarak, cahaya, dan latar SAMA PERSIS dengan tampak depan — hanya sudutnya yang berubah. Sebut lensanya lagi secara eksplisit, jangan hanya menulis "sama seperti sebelumnya". JANGAN pakai Blok B';
 const SHEET_SHOTS=[
-  {id:'front',   label:'Turnaround — Tampak Depan',   cam:'pencahayaan studio rata tanpa bayangan keras dan latar polos — JANGAN pakai Blok B',
-   brief:'potret setengah badan menghadap lurus ke kamera, ekspresi netral, pencahayaan merata tanpa bayangan keras, latar polos abu-abu terang'},
-  {id:'three',   label:'Turnaround — 3/4',            cam:'sama persis dengan tampak depan — JANGAN pakai Blok B',
+  {id:'front',   label:'Turnaround — Tampak Depan',   cam:CAM_TURN,
+   brief:'potret setengah badan menghadap lurus ke kamera, ekspresi netral, latar polos abu-abu'},
+  {id:'three',   label:'Turnaround — 3/4',            cam:CAM_TURN_SAMA,
    brief:'potret setengah badan sudut tiga-perempat, ekspresi netral, pencahayaan dan latar identik dengan tampak depan'},
-  {id:'side',    label:'Turnaround — Samping',        cam:'sama persis dengan tampak depan — JANGAN pakai Blok B',
+  {id:'side',    label:'Turnaround — Samping',        cam:CAM_TURN_SAMA,
    brief:'potret profil samping penuh, ekspresi netral, pencahayaan dan latar identik'},
-  {id:'back',    label:'Turnaround — Belakang',       cam:'sama persis dengan tampak depan — JANGAN pakai Blok B',
+  {id:'back',    label:'Turnaround — Belakang',       cam:CAM_TURN_SAMA,
    brief:'tampak belakang setengah badan untuk mengunci potongan dan tekstur rambut, latar identik',
    briefTutup:'tampak belakang setengah badan: punggung penutup kepala saja — kain melengkung utuh tanpa lubang wajah di sisi ini, tidak ada wajah dan tidak ada rambut terlihat, ujung kain menjuntai ke punggung, latar identik'},
   {id:'closeup', label:'Close-up Wajah',              brief:'close-up wajah sangat detail, fokus tajam pada mata, tekstur kulit, dan seluruh tanda unik, pencahayaan lembut'},
@@ -1897,6 +1925,12 @@ function promptSheet(fb){
     '- Setiap prompt WAJIB menyebut ulang seluruh tanda unik permanen secara eksplisit.\n'+
     '- Prompt ditulis dalam BAHASA INGGRIS mengikuti sintaks engine di atas.\n'+
     '- Shot turnaround (1–4) wajib memakai pencahayaan, latar, jarak kamera, dan lensa yang IDENTIK satu sama lain — hanya sudut yang berubah. Sebutkan itu di prompt.\n'+
+    /* Audit memeriksa syarat ini di SETIAP prompt gambar, jadi syaratnya harus
+       benar-benar diminta di sini. Sebelumnya tidak pernah diminta sama sekali,
+       dan shot turnaround malah dilarang memakai Blok B — satu-satunya tempat
+       kamera berada — sehingga audit menandai delapan prompt sekaligus atas
+       syarat yang tidak pernah disampaikan. */
+    '- SETIAP prompt gambar WAJIB menyebut kamera atau lensa secara eksplisit, termasuk shot yang tidak memakai Blok B. Tanpa itu engine menebak sendiri dan perspektif antar shot jadi tidak seragam. Tulis dalam bentuk yang terbaca jelas, mis. "shot on a 50mm lens at eye level", "85mm f/1.4", atau "shot on an iPhone 15 Pro front camera". Menyebut kata "camera" saja di kalimat seperti "looking at the camera" TIDAK dihitung.\n'+
     '- Sudut kamera wajib ditulis sebagai BUKTI YANG HARUS TERLIHAT, bukan sekadar namanya. "low angle" hampir selalu diabaikan; "kamera di bawah dagu, bagian bawah rahang dan lubang hidung terlihat" dipatuhi. Arah hadap wajib dipatok ke TEPI FRAME ("hidungnya menunjuk ke tepi kanan gambar"), bukan hanya "camera-right" — uji nyata menunjukkan profil kiri dan profil kanan keluar menghadap arah yang sama persis.\n'+
     (tutupKepala()
       ? '- Talent ini MEMAKAI PENUTUP KEPALA. Setiap prompt wajib menyatakan rambutnya tertutup sepenuhnya dan tidak ada sehelai pun yang terlihat — tidak di dahi, pelipis, depan telinga, tengkuk, bahu, maupun punggung. JANGAN pernah menulis garis rambut, belahan rambut, kulit kepala, anak rambut, rambut tergerai, atau rambut tertiup angin di prompt mana pun; itu membuat engine memasang hijab seperti kudung di atas rambut terurai. Untuk shot tampak belakang, tulis punggung penutup kepalanya (kain melengkung utuh tanpa lubang wajah), bukan bentuk dan tekstur rambut.\n'
@@ -1935,6 +1969,11 @@ function promptScenes(fb){
     '- prompt_video: BAHASA INGGRIS, sintaks '+ve.name+'. '+(ve.audio?'Sertakan dialog dalam tanda kutip dan deskripsi audio/ambience karena engine ini punya audio native.':'JANGAN tulis dialog di dalam prompt video karena engine ini tanpa audio native — fokus ke gerakan, ekspresi, dan kamera saja.')+'\n'+
     '- dialog: tulis dalam '+state.setup.bahasa+', gaya bicara natural sesuai Voice & Speech. Pakai filler words khas talent.\n'+
     '  ANGGARAN KATA: kepadatan bicara natural sekitar '+WORDS_PER_SEC+' kata per detik, jadi untuk '+wordBudget().d+' detik targetkan '+wordBudget().min+'–'+wordBudget().max+' kata (ideal '+wordBudget().ideal+'). Lebih panjang dari itu memaksa bicara cepat, dan bicara cepat membuat sinkronisasi bibir meleset.\n'+
+    /* Anggaran ini sebelumnya hanya "targetkan", dan di hasil nyata satu scene
+       tetap melewatinya. Ditegaskan jadi batas keras berikut cara memeriksanya,
+       karena model bisa menghitung kata tapi tidak melakukannya kalau tidak
+       diminta. */
+    '  '+wordBudget().max+' kata adalah BATAS KERAS, bukan saran. Sebelum mengeluarkan JSON, HITUNG kata setiap field dialog satu per satu; kalau ada yang lebih dari '+wordBudget().max+', potong dulu sampai muat. Membuang satu anak kalimat jauh lebih baik daripada mempercepat tempo bicara.\n'+
     '  Kalau sebuah ide benar-benar butuh lebih dari '+MAX_CLIP+' detik, JANGAN dipaksa jadi satu klip — pecah jadi dua scene berurutan dan beri nama "(1/2)" serta "(2/2)".\n'+
     '  Khusus untuk lipsync: pakai kalimat PENDEK dan sederhana dengan tempo bicara normal. Kalimat panjang berbelit dan bicara cepat membuat sinkronisasi bibir meleset dan hasilnya langsung terbaca AI.\n'+
 
@@ -3909,7 +3948,13 @@ function renderPanel(){
             (x.kamera?'<tr><th>Kamera</th><td>'+esc(x.kamera)+'</td></tr>':'')+
             (x.disiplin?'<tr><th>Disiplin gerak</th><td>'+esc((SHOT_DISCIPLINE[x.disiplin]||{}).l||x.disiplin)+
               (x.dialog&&x.disiplin!=='tenang'?' <span class="pill warn">⚠ scene berdialog sebaiknya tenang</span>':'')+'</td></tr>':'')+
-            (x.dialog?'<tr><th>Dialog</th><td>'+esc(x.dialog)+'</td></tr>':'')+
+            /* Dialog bisa diedit di tempat. Sebelumnya teks mati, jadi satu-
+               satunya cara memangkas dialog yang kepanjangan adalah generate
+               ulang seluruh Scene Pack. */
+            (x.dialog?'<tr><th>Dialog</th><td>'+
+              '<textarea data-path="scenes.'+i+'.dialog" rows="2" style="width:100%">'+esc(x.dialog)+'</textarea>'+
+              '<div id="wc'+i+'" style="margin-top:5px">'+lencanaKata(x.dialog)+'</div>'+
+            '</td></tr>':'')+
           '</table></div>'+
           (x.beats?'<div class="meta" style="margin:12px 0 5px">BEATS</div><div class="lockbox">'+esc(x.beats)+'</div>':'')+
           '<div class="meta" style="margin:12px 0 5px">IMAGE PROMPT</div><div class="promptbox">'+esc(x.prompt_image)+'</div>'+
@@ -4301,6 +4346,13 @@ document.addEventListener('input', e=>{
   if(p.startsWith('realism.')){
     ['sheet','scenes','repair'].forEach(id=>{ if(hasContent(id)) state.dirty[id]=true; });
     renderRail();
+  }
+  /* Panel TIDAK digambar ulang di sini: itu akan mencabut fokus dari textarea
+     di tengah pengetikan. Hanya lencana hitung katanya yang diperbarui. */
+  const mDlg=/^scenes\.(\d+)\.dialog$/.exec(p);
+  if(mDlg){
+    const el=$('#wc'+mDlg[1]); if(el) el.innerHTML=lencanaKata(v);
+    bumpAudit(); renderRail();
   }
   if(p==='refmode'&&hasContent('refs')) state.dirty.refs=true;
   /* Model render ditulis lewat listener ini, bukan lewat 'change' — kolomnya
