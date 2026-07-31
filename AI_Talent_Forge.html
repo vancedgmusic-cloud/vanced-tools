@@ -3278,7 +3278,15 @@ function renderPanel(){
       const errs=[...new Set(renderStore.items.filter(x=>x.state==='gagal').map(x=>x.err))];
       if(errs.length) h+='<div class="note" style="border-color:var(--red);color:var(--text);white-space:pre-wrap">'+
         '<b>Kenapa gagal:</b> '+errs.map(esc).join('\n\n———\n\n')+'</div>'+
-        '<div class="rowbtns"><button class="btn sm" id="btnCopyErr">⧉ Salin pesan error</button></div>';
+        '<div class="rowbtns">'+
+          /* Kalau sebabnya jatah gratis nol, jalur Google buntu sampai billing
+             aktif — tidak ada gunanya menyuruh pengguna mencoba lagi. Tombol
+             pindah ditaruh tepat di tempat kegagalannya muncul, bukan
+             menyuruh dia menggulir balik ke atas mencari dropdown. */
+          (r.provider==='google'&&errs.some(x=>/tier gratis|jatahmu untuk model ini NOL/i.test(x))
+            ? '<button class="btn primary sm" id="btnPakaiProxy">→ Pindah ke jalur Proxy</button>' : '')+
+          '<button class="btn sm" id="btnCopyErr">⧉ Salin pesan error</button>'+
+        '</div>';
       h+='<div class="rgrid">'+
         renderStore.items.map((it,i)=>{
           if(it.state==='ok') return '<div class="rcell"><img src="'+dataURL(it.img)+'" data-zoom="'+i+'" alt="'+esc(it.label)+'">'+
@@ -3514,6 +3522,14 @@ document.addEventListener('click', async e=>{
   if(t.id==='btnCopyTalent'){
     try{ await navigator.clipboard.writeText(talentBlock()); toast('Talent Block tersalin — tempel ke Framework Brain Director.','ok'); }
     catch(err){ toast('Clipboard diblokir browser.','err'); } return;
+  }
+  if(t.id==='btnPakaiProxy'){
+    state.render.provider='proxy';
+    renderStore={src:'', items:[], grid:''};
+    persistState(); renderPanel();
+    toast('Pindah ke jalur Proxy. Isi Base URL, key, dan nama model dari dashboard proxy-mu.','ok');
+    setTimeout(()=>{ const f=document.querySelector('[data-path="api.imgBase"]'); if(f){ f.scrollIntoView({behavior:'smooth',block:'center'}); f.focus(); } }, 80);
+    return;
   }
   if(t.id==='btnCopyErr'){
     const txt=[...new Set(renderStore.items.filter(x=>x.state==='gagal').map(x=>x.err))].join('\n\n———\n\n');
