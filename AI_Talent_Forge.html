@@ -387,7 +387,7 @@ const state = {
   refmode:'komposit',
   realism:{
     tekstur:'detail', garis:'normal', imperfeksi:'ringan', kilap:'natural',
-    kamera:'iphone', cahaya:'jendela', grain:'halus', tubuh:'natural', gerak:'penuh', bobot:'sedang'
+    kamera:'iphone', cahaya:'jendela', grain:'halus', rias:'minim', tubuh:'natural', gerak:'penuh', bobot:'sedang'
   },
   refs:{}, persona:{}, dna:{}, wardrobe:{}, voice:{}, content:{}, compliance:{},
   sheet:[], scenes:[], repair:[],
@@ -583,6 +583,19 @@ const REALISM={
       berminyak:{l:'Berminyak / berkeringat', en:'noticeably oily T-zone with small specular highlights on the forehead, nose and chin, faint sweat sheen at the temples'}
     }
   },
+  /* Ditambahkan setelah uji nyata: dua belas panel keluar dengan contour,
+     eyeliner sayap, alis terisi penuh, dan highlighter — padahal tidak diminta
+     sama sekali. Model belajar dari foto beauty yang sudah dirias, jadi glam
+     adalah default diam-diamnya, dan glam itu sendiri terbaca sebagai AI. */
+  rias:{
+    label:'Riasan Wajah',
+    opt:{
+      polos:{l:'Tanpa riasan (paling realistis)', en:'completely bare face with no makeup at all: eyebrows left in their natural shape with stray hairs, bare lips in their own uneven natural colour with visible lip texture and a slightly chapped edge, no eyeliner, no mascara, no foundation, skin tone unevenness left fully visible'},
+      minim:{l:'Minim, sehari-hari (disarankan)', en:'minimal everyday makeup only: a thin uneven layer of tinted moisturiser that does not fully cover the natural skin unevenness, brows groomed but not filled in, a little mascara on the upper lashes only, a plain tinted lip balm; no foundation mask, no contouring, no highlighter, no eyeliner'},
+      natural:{l:'Natural rapi', en:'natural polished makeup: light base that still lets pores and texture read through, softly defined brows with individual hairs visible, thin smudged liner close to the lash line, neutral lip colour; no contouring and no highlighter'},
+      glam:{l:'Glam (paling tidak realistis)', en:'full glam makeup with defined contour and highlight'}
+    }
+  },
   tubuh:{
     label:'Realisme Tubuh',
     opt:{
@@ -599,6 +612,7 @@ const REALISM={
       film35:{l:'Film 35mm', en:'shot on Kodak Portra 400 35mm film, organic film grain, gentle halation blooming in the highlights, slightly muted warm colour', mjs:'180', fluxg:'1.8', extra:''},
       webcam:{l:'Webcam / kamera depan laptop', en:'low-grade webcam capture, soft focus, visible compression artefacts, flat unflattering top-down framing', mjs:'50', fluxg:'1.5', extra:''},
       vlog:{l:'Kamera vlog handheld', en:'shot on a Sony ZV-1 vlogging camera held at arm\'s length, slight handheld sway, occasional autofocus breathing', mjs:'120', fluxg:'1.7', extra:''},
+      flash:{l:'Flash langsung ponsel (paling meyakinkan)', en:'shot on a phone camera with the direct on-camera flash firing, hard frontal flash dominating the ambient light, bright specular hotspot on the forehead nose and cheekbones, a hard-edged shadow of the subject cast on the wall just behind her, slightly blown highlights and deep falloff into the background, everyday snapshot look', mjs:'90', fluxg:'1.6', extra:'IMG_2247.HEIC'},
       cctv:{l:'Kamera pengawas / candid', en:'candid unposed capture from a fixed vantage point, subject unaware of the camera, imperfect framing', mjs:'80', fluxg:'1.5', extra:''}
     }
   },
@@ -699,7 +713,16 @@ const POSE_SHEET=[
 /* Kondisi pengambilan yang WAJIB sama di kedua belas panel. Tanpa ini tiap
    panel punya cahaya dan latarnya sendiri, dan hasilnya tidak bisa dipakai
    sebagai referensi identitas. */
-const POSE_BASE='neutral even studio lighting from the front with no harsh shadows, plain light grey seamless backdrop, identical lighting and identical background in this frame as in every other frame of the set, shot on an 85mm lens at eye level unless the pose says otherwise';
+/* Pencahayaan ini SALAH selama ini dan itu penyebab terbesar wajah plastik.
+   Versi lama berbunyi "even studio lighting from the front with no harsh
+   shadows" — persis setup yang dipakai fotografer beauty untuk MENYEMBUNYIKAN
+   tekstur. Pori terlihat karena micro-shadow di dalamnya; cahaya frontal rata
+   menghapus micro-shadow itu, jadi seberapa pun kita meminta "visible pores",
+   fisikanya melawan. Character sheet butuh cahaya yang KONSISTEN, bukan yang
+   RATA — arahnya dipatok tetap sambil tetap menyisakan bayangan pemunculan
+   tekstur. Lensa 85mm juga dibuang: itu lensa potret beauty, dan menyebutnya
+   menarik model ke arah estetika iklan skincare. */
+const POSE_BASE='soft key light from 45 degrees camera-left and slightly above eye level, a single weak bounce on the shadow side so the far cheek keeps a visible but open shadow, clear shadow under the nose and along the jaw, raking across the skin so pore texture and fine hair catch the light; plain mid-grey seamless backdrop; the light direction, light quality and background are identical in this frame and in every other frame of the set; shot on a 50mm lens at eye level unless the pose says otherwise';
 function posePrompt(p){
   const lock=String(state.dna.identity_lock||'').trim();
   const wl=String(state.wardrobe.wardrobe_lock||'').trim();
@@ -841,10 +864,39 @@ const EYE_DETAIL='eyes with crisp iris fibre detail and a visible limbal ring, f
 const HAIR_DETAIL='individual flyaway hairs breaking the silhouette, a natural parting with visible scalp, slight frizz and irregular strand clumping rather than uniform styled hair';
 const TEETH_DETAIL='teeth with natural enamel translucency and slight irregularity in shape and alignment, not uniformly white';
 
+/* Empat penanda di bawah datang dari analisis forensik wajah AI, dan tidak
+   satu pun muncul sendiri meski tekstur kulit sudah diminta eksplisit. */
+
+/* 1. Diffusion merender kulit sebagai SATU permukaan pantul, sehingga kilaunya
+   rata di seluruh pipi dan dahi. Kulit asli memantul berbeda per zona karena
+   ketebalan epidermisnya berbeda — jadi kilaunya harus diminta BELANG. */
+const SPECULAR_DETAIL='specular highlights that are patchy and zone-specific, not a uniform sheen: small tight highlights on the nose tip, the inner brow ridge and the very top of the cheekbones, while the outer cheeks, the area around the mouth and the chin stay matte and slightly powdery';
+
+/* 2. Wajah AI simetris sempurna — lipatan kelopak sama persis, tulang pipi
+   sebangun. Menulis "natural asymmetry" terlalu samar untuk dipatuhi, jadi
+   asimetrinya disebut satu per satu. */
+const ASYM_DETAIL='distinctly asymmetric face: one upper eyelid crease sitting visibly heavier and lower than the other, one eyebrow arching higher, the nose tip pointing very slightly off the facial midline, the mouth pulling a little more to one side, and the two ears at slightly different heights';
+
+/* 3. Diffusion paling sering gagal di PERBATASAN antar wilayah anatomi —
+   rambut bertemu dahi, bulu mata bertemu kelopak. Di situlah mata manusia
+   paling cepat merasa janggal. */
+const BOUNDARY_DETAIL='irregular hairline with short wispy baby hairs at the temples and a few strands falling across the forehead, the transition from scalp to skin broken up rather than a clean edge; lower lashes uneven in length with visible gaps between them, upper lashes clumping in small irregular groups rather than a smooth curve';
+
+/* 4. Retouching menghapus warna pembuluh darah, dan itu yang membuat kulit AI
+   terlihat seperti satu warna cat yang diratakan. */
+const VASCULAR_DETAIL='uneven blood colour under the skin: warmer pink diffusing across the cheeks and the tip and wings of the nose, faint bluish tone at the inner eye corners and temples, slight uneven redness around the nostrils and at the chin, colour that shifts gradually rather than sitting in one flat tone';
+
 /* Negative prompt anti-slop. Catatan penting: JANGAN memasukkan kata bertema
    tekstur (mis. "detailed skin") ke sini — itu justru membuang tekstur yang
    susah payah kita minta. */
-const ANTI_SLOP_NEG='plastic skin, airbrushed, poreless, waxy skin, over-smoothed, beauty filter, instagram filter, heavily retouched, CGI, 3d render, digital painting, illustration, doll-like, mannequin, wax figure, perfectly symmetrical face, glossy skin, uncanny valley, blown-out highlights, oversaturated, HDR look, plastic hair, uniform hair strands, dead eyes, blurry, deformed hands, extra fingers, watermark, text, logo, subtitles, captions, lower-third, on-screen text, graphic typography';
+/* Tiga kelompok tambahan datang dari uji nyata dan analisis forensik:
+   riasan glam yang muncul tanpa diminta, kilau kulit yang rata seperti satu
+   permukaan, dan kecondongan model memberi mata terang pada wajah yang
+   seharusnya bermata gelap. */
+const ANTI_SLOP_NEG='plastic skin, airbrushed, poreless, waxy skin, over-smoothed, beauty filter, instagram filter, heavily retouched, skin smoothing, frequency separation retouch, CGI, 3d render, digital painting, illustration, doll-like, mannequin, wax figure, perfectly symmetrical face, glossy skin, uniform sheen across the face, flat even frontal lighting, uncanny valley, blown-out highlights, oversaturated, HDR look, plastic hair, uniform hair strands, dead eyes, blurry, deformed hands, extra fingers, '+
+  'full glam makeup, heavy contouring, strong highlighter, cut-crease eyeshadow, winged eyeliner, overdrawn lips, filled-in blocky eyebrows, false lashes, editorial beauty makeup, skincare advertisement look, cosmetics campaign, professional studio headshot, magazine beauty shoot, '+
+  'blue eyes, grey eyes, green eyes on a dark-eyed subject, '+
+  'watermark, text, logo, subtitles, captions, lower-third, on-screen text, graphic typography';
 
 /* Kata-kata yang justru MENARIK model ke arah hasil slop — dilarang dipakai. */
 const SLOP_WORDS=['flawless','perfect skin','perfect face','beautiful','stunning','gorgeous','masterpiece','best quality','8k','4k','ultra hd','hyperrealistic','ultra realistic','highly detailed face','glamorous','magazine cover','supermodel','instagram model'];
@@ -857,8 +909,9 @@ const REALISM_SHORT={
   garis:{muda:'', normal:'natural expression lines', matang:"deep crow's feet and nasolabial folds"},
   imperfeksi:{bersih:'faint freckles', ringan:'small blemishes, uneven skin tone', nyata:'visible blemishes, redness, pigmentation patches'},
   kilap:{matte:'matte skin', natural:'slight T-zone shine', berminyak:'oily T-zone, sweat sheen'},
+  rias:{polos:'completely bare face, no makeup', minim:'minimal everyday makeup, no contour, no highlighter', natural:'light natural makeup, texture still visible', glam:'full glam makeup'},
   tubuh:{natural:'realistic body proportions', atletis:'athletic realistic build', berisi:'fuller realistic build, natural skin folds'},
-  kamera:{iphone:'shot on iPhone front camera, casual snapshot', dslr85:'85mm f/1.4 portrait lens, shallow depth of field', film35:'Kodak Portra 400 35mm film', webcam:'low-grade webcam, soft focus', vlog:'handheld vlogging camera', cctv:'candid unposed capture'},
+  kamera:{iphone:'shot on iPhone front camera, casual snapshot', flash:'direct on-camera flash, hard frontal light, hotspot on skin', dslr85:'85mm f/1.4 portrait lens, shallow depth of field', film35:'Kodak Portra 400 35mm film', webcam:'low-grade webcam, soft focus', vlog:'handheld vlogging camera', cctv:'candid unposed capture'},
   cahaya:{jendela:'soft window daylight from camera-left', golden:'golden hour backlight, warm rim light', indoor:'mixed tungsten and daylight', ring:'ring light with circular catchlights', neon:'neon magenta and cyan night lighting', mendung:'flat overcast daylight'},
   grain:{bersih:'', halus:'fine grain', kasar:'visible grain and sensor noise'}
 };
@@ -881,14 +934,19 @@ function realismSkin(mode){
     const g=k=>REALISM_SHORT[k][rcfg()[k]]||'';
     return [
       ...['tekstur','imperfeksi','garis','kilap'].map(g),
-      'detailed iris with accurate catchlights', 'individual flyaway hairs',
-      g('tubuh'), 'unretouched raw photo'
+      'patchy uneven specular highlights', 'asymmetric face, one eyelid heavier',
+      'uneven blood colour under the skin', 'wispy baby hairs at the hairline',
+      'detailed iris with accurate catchlights', g('rias'), g('tubuh'), 'unretouched raw photo'
     ].filter(Boolean).join(', ')+'.';
   }
   return [
     rpick('tekstur').en, rpick('garis').en, rpick('imperfeksi').en, rpick('kilap').en,
-    EYE_DETAIL, HAIR_DETAIL, TEETH_DETAIL, rpick('tubuh').en,
-    'unretouched raw photograph of a real person, not a render and not a beauty-filtered image'
+    /* Empat blok berikut menangani penanda AI yang tidak hilang hanya dengan
+       meminta tekstur kulit: kilau rata, simetri sempurna, batas anatomi,
+       dan warna kulit yang terlalu satu nada. */
+    SPECULAR_DETAIL, ASYM_DETAIL, VASCULAR_DETAIL, BOUNDARY_DETAIL,
+    EYE_DETAIL, HAIR_DETAIL, TEETH_DETAIL, rpick('rias').en, rpick('tubuh').en,
+    'unretouched raw photograph of a real person, straight out of camera with no retouching pass, not a render and not a beauty-filtered image'
   ].join('; ')+'.';
 }
 function realismCapture(mode){
@@ -1441,6 +1499,7 @@ const STAGE_TASK={
     '- FIELD negative_lock: tulis dalam BAHASA INGGRIS, daftar hal yang tidak boleh berubah, format "do not change: ...". Ini akan dipakai sebagai pengingat anti-drift.\n'+
     '- Deskripsi kulit WAJIB menyebut tekstur nyata: pori terlihat, bulu vellus halus, variasi pigmen, sedikit kemerahan. Jangan sekali-kali menulis kulit "mulus", "sempurna", atau "flawless" — itu yang bikin hasil akhir terlihat plastik.\n'+
     '- Deskripsi mata WAJIB menyebut detail iris, limbal ring, dan pantulan cahaya.\n'+
+    '- WARNA MATA wajib ditulis tegas dan spesifik, dan untuk etnis Asia Tenggara/Asia Timur hampir selalu coklat gelap sampai coklat sedang. Engine gambar punya kecenderungan kuat memberi mata biru, abu-abu, atau hijau pada wajah yang seharusnya bermata gelap — itu langsung terbaca sebagai hasil AI sekaligus merusak konsistensi antar shot. Sebut warnanya dua kali di identity_lock, mis. "dark brown eyes, deep brown iris".\n'+
     (state.refs.wajah
       ? '- Sudah ada BACAAN GAMBAR REFERENSI di konteks. Turunkan Character DNA dari bacaan itu, JANGAN mengarang wajah baru dari nol.\n'+
         (state.refs.pembeda ? '- WAJIB menerapkan seluruh Pembeda yang disarankan di bacaan referensi, supaya hasilnya orang baru dan bukan salinan orang di foto.\n' : '')
@@ -2710,6 +2769,9 @@ function mergeLoadedState(d){
     state.input.gayaRef = String(state.input.referensi||'').trim() ? 'custom' : 'auto';
   }
   /* setelan realisme lama / rusak dikembalikan ke opsi yang valid */
+  /* Project lama belum punya kontrol riasan. Jangan jatuh ke opsi pertama
+     lewat aturan umum di bawah — arahkan ke yang disarankan. */
+  if(!REALISM.rias.opt[state.realism.rias]) state.realism.rias='minim';
   Object.keys(REALISM).forEach(g=>{ if(!REALISM[g].opt[state.realism[g]]) state.realism[g]=Object.keys(REALISM[g].opt)[0]; });
   if(!MOTION.opt[state.realism.gerak]) state.realism.gerak='penuh';
   /* project lama bisa menyimpan durasi di atas batas engine */
@@ -2970,7 +3032,7 @@ function renderPanel(){
     const short=['midjourney','sdxl'].includes(state.setup.imgEngine);
     let h=head('05','Realisme & Anti-Slop','Detail halus kulit — pori, bulu vellus, variasi pigmen — secara statistik mirip noise, jadi engine membuangnya kalau tidak diminta eksplisit. Panel ini menyusun blok realisme yang ditempel ke setiap prompt gambar dan video.');
     h+='<div class="card"><h3>Kulit &amp; Tubuh</h3><div class="grid two">'+
-      ['tekstur','garis','imperfeksi','kilap','tubuh'].map(g=>
+      ['tekstur','garis','imperfeksi','kilap','rias','tubuh'].map(g=>
         '<div class="field"><label>'+esc(REALISM[g].label)+'</label><select data-path="realism.'+g+'">'+
         Object.keys(REALISM[g].opt).map(k=>'<option value="'+k+'"'+(rcfg()[g]===k?' selected':'')+'>'+esc(REALISM[g].opt[k].l)+'</option>').join('')+
         '</select></div>').join('')+
