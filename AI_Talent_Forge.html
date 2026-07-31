@@ -375,7 +375,7 @@ const state = {
   },
   /* Setelan render tahap 14. Gambar hasilnya TIDAK disimpan di sini —
      lihat renderStore. */
-  render:{ provider:'google', model:'gemini-3.1-flash-image-preview', proxyModel:'gemini-2.5-flash-image', size:'2K', chain:true, extra:'', sheet:'rapat' },
+  render:{ provider:'google', model:'gemini-3.1-flash-image-preview', proxyModel:'gemini-2.5-flash-image', endpoint:'auto', size:'2K', chain:true, extra:'', sheet:'rapat' },
   setup:{
     namaProject:'', gender:'Perempuan', rentangUsia:'22-26', etnisTarget:'Indonesia (Jawa/Sunda)',
     pasar:'Indonesia', bahasa:'Bahasa Indonesia', platform:'TikTok + YouTube Shorts',
@@ -1974,11 +1974,22 @@ function imgErr(e, model){
       bukan di field tersendiri. Sebagian versi juga mengisi message.images.
       Ketiga bentuk diurai di sini karena versi proxy tiap orang berbeda. */
 const isImagen=m=>/imagen/i.test(m||'');
+/* Endpoint tidak selalu bisa ditebak dari nama model. Imagen memang Predict,
+   model Gemini Image memang chat — tapi gpt-image milik OpenAI memakai
+   /images/generations padahal namanya tidak mengandung "imagen". Menebak
+   salah berarti 400 dan panggilan terbuang, jadi disediakan penimpa manual. */
+function endpointGambar(){
+  const e=state.render.endpoint;
+  if(e==='chat'||e==='images') return e;
+  return isImagen(state.render.proxyModel)||/^gpt-image/i.test(String(state.render.proxyModel||'')) ? 'images' : 'chat';
+}
 /* Hanya model Gemini Image yang menerima gambar masukan. Imagen tidak, dan
    perbedaan itu menentukan dua fitur sekaligus: kunci identitas antar panel
    dan koreksi lintasan kedua. */
 function modelBisaEdit(){
-  return state.render.provider==='proxy' ? !isImagen(state.render.proxyModel) : true;
+  /* /images/generations tidak punya slot gambar masukan, jadi endpoint itu
+     tidak bisa dipakai untuk kunci identitas maupun koreksi — apa pun modelnya. */
+  return state.render.provider==='proxy' ? endpointGambar()!=='images' : true;
 }
 function proxyBase(){ return String(state.api.imgBase||'').replace(/\/+$/,''); }
 function extraParams(){
@@ -2003,7 +2014,11 @@ function pickImageFromChat(d){
    gambar. Proxy OpenAI-compatible menyediakan /models, jadi daftarnya diambil
    langsung dari sumbernya. */
 let proxyModels=null;
-const MODEL_GAMBAR=/(^|[\/-])(imagen|.*-image$|.*-image-preview$)/i;
+/* Pola lama hanya mencocokkan nama yang BERAKHIRAN -image, sehingga
+   gpt-image-1.5 luput dan salah ditandai bukan model gambar. Sekarang kata
+   "image"/"imagen" dikenali sebagai token di mana pun, plus keluarga model
+   gambar yang namanya tidak memuat kata itu sama sekali. */
+const MODEL_GAMBAR=/(^|[\/_.-])imagen?([\/_.-]|$)|flux|dall-?e|stable-?diffusion|seedream|midjourney|ideogram|qwen-image/i;
 /* Sama seperti di tahap 14, tapi untuk provider TEKS custom. Penyedia agregator
    seperti ini memuat puluhan model dengan nama panjang bergaris miring, dan
    mengetiknya manual hampir pasti berujung salah ketik. */
@@ -2044,13 +2059,13 @@ async function genImageProxy(prompt, refs, mode, refMode){
   if(!model) throw new Error('Nama model di proxy belum diisi.');
   const H={'Content-Type':'application/json','Authorization':'Bearer '+key};
 
-  if(isImagen(model)){
+  if(endpointGambar()==='images'){
     /* Endpoint ini tidak punya slot gambar masukan sama sekali. Selama ini
        refs dibuang diam-diam, sehingga rantai identitas Pose Sheet tidak
        pernah benar-benar jalan di model Imagen — wajah antar panel bebas
        melenceng tanpa ada yang memberi tahu. Sekarang dinyatakan. */
-    if(mode==='edit') throw new Error('Model Imagen tidak bisa mengedit gambar — endpoint /images/generations tidak menerima gambar masukan. Ganti ke model Gemini Image untuk memakai koreksi lintasan kedua.');
-    if(refs&&refs.length) throw new Error('Model Imagen tidak menerima reference image, jadi kunci identitas antar panel tidak bisa bekerja. Matikan "Kunci identitas dari panel pertama", atau ganti ke model Gemini Image.');
+    if(mode==='edit') throw new Error('Endpoint /images/generations tidak menerima gambar masukan, jadi koreksi tidak bisa dijalankan lewat sana. Kalau modelmu sebenarnya mendukung image-to-image, ubah Endpoint di atas ke "chat/completions".');
+    if(refs&&refs.length) throw new Error('Endpoint /images/generations tidak menerima reference image, jadi kunci identitas antar panel tidak bisa bekerja. Matikan "Kunci identitas dari panel pertama", atau ubah Endpoint di atas ke "chat/completions" kalau modelmu mendukung image-to-image.');
     const d=await postJSON(base+'/images/generations',{method:'POST',headers:H,
       body:JSON.stringify(Object.assign({model, prompt, n:1, response_format:'b64_json'}, extraParams()))},'Image');
     const it=(d.data&&d.data[0])||{};
@@ -3042,6 +3057,7 @@ function mergeLoadedState(d){
   if(state.render.provider!=='proxy') state.render.provider='google';
   if(typeof state.render.proxyModel!=='string'||!state.render.proxyModel) state.render.proxyModel='gemini-2.5-flash-image';
   if(typeof state.render.extra!=='string') state.render.extra='';
+  if(!['auto','chat','images'].includes(state.render.endpoint)) state.render.endpoint='auto';
   if(state.render.sheet!=='label') state.render.sheet='rapat';
   /* Project yang tersimpan sebelum perbaikan ini memakai model berbayar
      sebagai default, dan dibiarkan begitu render-nya pasti gagal 429.
@@ -3600,7 +3616,16 @@ function renderPanel(){
               : '<input data-path="render.proxyModel" value="'+esc(r.proxyModel)+'" placeholder="gemini-3.1-flash-image">')+
             '<button class="btn sm" id="btnAmbilModel" style="margin-top:7px">⟳ Ambil daftar model dari proxy</button>'+
             '<div class="hint">Klik tombol di atas untuk mengambil daftar aslinya dari proxy — model gambar diurutkan paling atas, dan yang bukan model gambar diberi tanda supaya tidak salah pilih. Tanpa itu, salin persis dari kolom <b>Model Information</b> di dashboard proxy. Model bernama <code>imagen…</code> dikirim ke <code>/images/generations</code>; selain itu ke <code>/chat/completions</code>, karena model Gemini memang tidak bisa lewat endpoint images di LiteLLM.</div></div>'+
-          '<div class="field full"><label>Parameter Tambahan <span style="color:var(--faint);font-weight:400">— opsional</span></label><input data-path="render.extra" value="'+esc(r.extra||'')+'" placeholder=\'{"modalities":["image","text"]}\'>'+
+          '<div class="field"><label>Endpoint</label><select data-path="render.endpoint">'+
+            '<option value="auto"'+(r.endpoint==='auto'||!r.endpoint?' selected':'')+'>Auto — tebak dari nama model</option>'+
+            '<option value="chat"'+(r.endpoint==='chat'?' selected':'')+'>/chat/completions — bisa terima gambar masukan</option>'+
+            '<option value="images"'+(r.endpoint==='images'?' selected':'')+'>/images/generations — tanpa gambar masukan</option>'+
+          '</select><div class="hint">Terpakai: <b>/'+esc(endpointGambar()==='images'?'images/generations':'chat/completions')+'</b>. '+
+            (endpointGambar()==='images'
+              ? 'Endpoint ini tidak punya slot gambar masukan, jadi kunci identitas dan koreksi lintasan kedua mati.'
+              : 'Endpoint ini menerima gambar masukan, jadi kunci identitas dan koreksi lintasan kedua bisa jalan.')+
+            ' Ubah manual kalau tebakannya salah — model gpt-image umumnya butuh /images/generations, model Gemini Image butuh /chat/completions.</div></div>'+
+          '<div class="field"><label>Parameter Tambahan <span style="color:var(--faint);font-weight:400">— opsional</span></label><input data-path="render.extra" value="'+esc(r.extra||'')+'" placeholder=\'{"modalities":["image","text"]}\'>'+
             '<div class="hint">JSON yang digabungkan ke body permintaan. Isi ini hanya kalau proxy-mu membalas teks tanpa gambar.</div></div>'
         : '<div class="field full"><label>API Key Gambar</label><input type="password" data-path="api.imgKey" value="'+esc(state.api.imgKey)+'" placeholder="'+(state.api.geminiKey?'kosongkan untuk memakai key Gemini yang sudah diisi di ⚙ API':'AIza…')+'">'+
             '<div class="hint">Key dibuat gratis di aistudio.google.com/apikey.</div></div>'+
