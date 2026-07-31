@@ -386,8 +386,13 @@ const state = {
   uploads:{ refs:[] },
   refmode:'komposit',
   realism:{
-    tekstur:'detail', garis:'normal', imperfeksi:'ringan', kilap:'natural',
-    kamera:'iphone', cahaya:'jendela', grain:'halus', rias:'minim', tubuh:'natural', gerak:'penuh', bobot:'sedang'
+    /* polos + ekstrem jadi default berdasarkan uji banding terkontrol: varian
+       A (minim + detail) dan B (polos + ekstrem) memakai pencahayaan yang sama
+       persis, dan B menang telak — pori terlihat, kemerahan tidak rata,
+       jerawat kecil, warna kulit belang. Riasan sekecil apa pun ternyata cukup
+       untuk meratakan tekstur yang susah payah diminta. */
+    tekstur:'ekstrem', garis:'normal', imperfeksi:'ringan', kilap:'natural',
+    kamera:'iphone', cahaya:'jendela', grain:'halus', rias:'polos', tubuh:'natural', gerak:'penuh', bobot:'sedang'
   },
   refs:{}, persona:{}, dna:{}, wardrobe:{}, voice:{}, content:{}, compliance:{},
   sheet:[], scenes:[], repair:[],
@@ -482,7 +487,7 @@ const F = {
     {k:'rumah',l:'Set Rumah / Loungewear',long:1},
     {k:'makeup',l:'Makeup & Grooming',long:1},
     {k:'aksesoris',l:'Aksesoris Tetap',long:1},
-    {k:'wardrobe_lock',l:'🔒 Wardrobe Lock — aksesoris yang selalu ada',long:1,lock:1}
+    {k:'wardrobe_lock',l:'🔒 Wardrobe Lock — aksesoris yang selalu ada (sebut bahan & warna)',long:1,lock:1}
   ],
   voice:[
     {k:'karakter_suara',l:'Karakter Suara',long:1},
@@ -1552,7 +1557,8 @@ const STAGE_TASK={
     '- Setiap set wardrobe: sebutkan atasan, bawahan, alas kaki, dan outer bila ada — lengkap dengan warna dan bahan.\n'+
     '- Makeup: gaya harian yang bisa direplikasi, jangan berubah drastis antar konten.\n'+
     '- FIELD aksesoris: daftar aksesoris tetap. Sebutkan JENIS ANTING hanya SEKALI — jangan menulis hoops di satu tempat lalu stud di tempat lain.\n'+
-    '- FIELD wardrobe_lock: BAHASA INGGRIS, 1 baris, maksimal 2 benda. WAJIB diambil dari daftar aksesoris di atas dan disebut dengan kata yang sama persis — ini ringkasannya, BUKAN daftar baru. Kalau aksesoris menyebut anting hoops, wardrobe_lock juga harus hoops, bukan stud. Daftar yang berbeda membuat prompt menyuruh engine memakai dua jenis anting sekaligus.',
+    '- FIELD wardrobe_lock: BAHASA INGGRIS, 1 baris, maksimal 2 benda. WAJIB diambil dari daftar aksesoris di atas dan disebut dengan kata yang sama persis — ini ringkasannya, BUKAN daftar baru. Kalau aksesoris menyebut anting hoops, wardrobe_lock juga harus hoops, bukan stud. Daftar yang berbeda membuat prompt menyuruh engine memakai dua jenis anting sekaligus.\n'+
+    '  Tiap benda WAJIB disertai BAHAN dan WARNA, bukan nama bendanya saja. Kata "choker" terlalu longgar — pita beludru hitam dan rantai perak sama-sama sah disebut choker, dan di hasil nyata benda itu memang berganti-ganti antar shot. Tulis "thin black velvet choker", "small gold stud earrings".',
   voice:()=>
     'TUGAS: Rancang identitas suara talent ini untuk voice over dan lipsync.\n'+
     'Aturan:\n'+
@@ -3043,7 +3049,7 @@ function mergeLoadedState(d){
   /* setelan realisme lama / rusak dikembalikan ke opsi yang valid */
   /* Project lama belum punya kontrol riasan. Jangan jatuh ke opsi pertama
      lewat aturan umum di bawah — arahkan ke yang disarankan. */
-  if(!REALISM.rias.opt[state.realism.rias]) state.realism.rias='minim';
+  if(!REALISM.rias.opt[state.realism.rias]) state.realism.rias='polos';
   Object.keys(REALISM).forEach(g=>{ if(!REALISM[g].opt[state.realism[g]]) state.realism[g]=Object.keys(REALISM[g].opt)[0]; });
   if(!MOTION.opt[state.realism.gerak]) state.realism.gerak='penuh';
   /* project lama bisa menyimpan durasi di atas batas engine */
