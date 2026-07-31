@@ -590,7 +590,15 @@ const REALISM={
     label:'Ketidaksempurnaan',
     opt:{
       bersih:{l:'Bersih', en:'clear skin with a scattering of faint freckles'},
-      ringan:{l:'Ringan (disarankan)', en:'realistic minor imperfections: one or two small blemishes, faint acne scarring on one cheek, mild redness around the nostrils and chin, uneven under-eye tone, a small mole off-centre'},
+      /* "a small mole off-centre" dibuang dari sini. Blok realisme ditempel ke
+         SETIAP prompt gambar di setiap project, jadi kalimat itu meminta tahi
+         lalat pada semua talent yang pernah dibuat tool ini — terlepas dari
+         Character DNA-nya, dan tidak bisa dihilangkan dengan mengedit Identity
+         Lock. Itu sumber kedua, dan yang paling menentukan, dari keluhan
+         "kenapa semua hasil render bertahi lalat".
+         Tanda unik adalah urusan tahap 04 yang berbeda per talent; blok
+         realisme hanya boleh mengurus SIFAT PERMUKAAN kulit yang berlaku umum. */
+      ringan:{l:'Ringan (disarankan)', en:'realistic minor imperfections: one or two small blemishes, faint acne scarring on one cheek, mild redness around the nostrils and chin, uneven under-eye tone, slightly uneven pore density across the cheeks'},
       nyata:{l:'Sangat nyata', en:'unretouched imperfections: a few active small blemishes, visible pigmentation patches, diffuse redness across the cheeks and nose, a dry flaking patch, faint old scarring, asymmetric features'}
     }
   },
