@@ -221,6 +221,7 @@ table.tl textarea:focus{background:var(--panel2);border-color:var(--amber)}
 }
 .toast.err{border-left-color:var(--red)}
 .toast.ok{border-left-color:var(--green)}
+.toast.warn{border-left-color:var(--amber)}
 
 .empty{
   border:1px dashed var(--line2);border-radius:var(--r);padding:34px 20px;text-align:center;color:var(--muted);
@@ -736,11 +737,41 @@ const OA_PRESETS={
   openrouter:{name:'OpenRouter', base:'https://openrouter.ai/api/v1', key:a=>a.orKey, model:a=>a.orModel||'openai/gpt-4o-mini'},
   custom:{name:'API custom', base:null, key:a=>a.customKey, model:a=>a.customModel}
 };
-async function callAI(prompt, maxTokens=1600, images){
+/* Error salah-konfigurasi (key/base kosong) ditandai agar TIDAK memicu failover:
+   kalau provider pilihan user belum disetel, itu harus diperbaiki user — bukan
+   ditutupi diam-diam dengan provider lain yang kebetulan ada key-nya. */
+function cfgErr(msg){ const e=new Error(msg); e.config=true; return e; }
+
+/* Hanya provider ini yang bisa membaca gambar. Saat ada foto talent/produk
+   terlampir, cadangan WAJIB dipilih dari sini — jatuh ke provider teks-saja
+   membuat prompt "amati langsung dari foto" dijawab dengan mengarang. */
+const VISION_OK=new Set(['builtin','claude','gemini']);
+
+function providerReady(id){
+  const a=state.api;
+  if(id==='claude')     return !!a.claudeKey;
+  if(id==='gemini')     return !!a.geminiKey;
+  if(id==='groq')       return !!a.groqKey;
+  if(id==='openrouter') return !!a.orKey;
+  if(id==='custom')     return !!(a.customKey&&(a.customBase||'').trim());
+  return false; /* builtin: tak punya key untuk diverifikasi & hanya hidup di dalam
+                   Claude.ai, jadi tak pernah dipakai sebagai cadangan otomatis. */
+}
+function providerName(id){ return (PROVIDERS.find(p=>p.id===id)||{}).name||id; }
+
+/* Urutan cadangan mengikuti urutan PROVIDERS: provider terpilih dicoba lebih dulu
+   (di callAI), lalu sisanya yang key-nya sudah terisi. */
+function fallbackChain(images){
+  const sel=state.api.provider, needVision=!!(images&&images.length);
+  return PROVIDERS.map(p=>p.id).filter(id=>
+    id!==sel && providerReady(id) && (!needVision||VISION_OK.has(id)));
+}
+
+async function callProvider(pid, prompt, maxTokens=1600, images){
   const a=state.api, MAX_CHUNK=6;
-  if(a.provider==='builtin'||a.provider==='claude'){
-    const own=a.provider==='claude';
-    if(own&&!a.claudeKey) throw new Error('API key Claude belum diisi (tombol ⚙ API).');
+  if(pid==='builtin'||pid==='claude'){
+    const own=pid==='claude';
+    if(own&&!a.claudeKey) throw cfgErr('API key Claude belum diisi (tombol ⚙ API).');
     const headers=own
       ? {'Content-Type':'application/json','x-api-key':a.claudeKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}
       : {'Content-Type':'application/json'};
@@ -764,8 +795,8 @@ async function callAI(prompt, maxTokens=1600, images){
     }
     return full;
   }
-  if(a.provider==='gemini'){
-    if(!a.geminiKey) throw new Error('API key Gemini belum diisi (tombol ⚙ API).');
+  if(pid==='gemini'){
+    if(!a.geminiKey) throw cfgErr('API key Gemini belum diisi (tombol ⚙ API).');
     const model=a.geminiModel||'gemini-2.5-flash';
     const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(a.geminiKey);
     const firstParts=(images&&images.length)
@@ -785,14 +816,14 @@ async function callAI(prompt, maxTokens=1600, images){
     if(!full) throw new Error('Gemini tidak mengembalikan teks. Coba model lain di ⚙ API.');
     return full;
   }
-  if(OA_PRESETS[a.provider]){
-    const P=OA_PRESETS[a.provider];
+  if(OA_PRESETS[pid]){
+    const P=OA_PRESETS[pid];
     const key=P.key(a);
-    if(!key) throw new Error('API key '+P.name+' belum diisi (tombol ⚙ API).');
+    if(!key) throw cfgErr('API key '+P.name+' belum diisi (tombol ⚙ API).');
     const base=(P.base||a.customBase||'').replace(/\/+$/,'');
-    if(!base) throw new Error('Base URL belum diisi (tombol ⚙ API).');
+    if(!base) throw cfgErr('Base URL belum diisi (tombol ⚙ API).');
     const headers={'Content-Type':'application/json','Authorization':'Bearer '+key};
-    if(a.provider==='openrouter'){ headers['X-Title']='Framework Brain Director'; }
+    if(pid==='openrouter'){ headers['X-Title']='Framework Brain Director'; }
     let full='';
     for(let g=0; g<MAX_CHUNK; g++){
       const messages=full?[{role:'user',content:prompt},{role:'assistant',content:full}]:[{role:'user',content:prompt}];
@@ -805,7 +836,49 @@ async function callAI(prompt, maxTokens=1600, images){
     if(!full) throw new Error('Balasan kosong dari '+P.name+'. Cek nama model di ⚙ API.');
     return full;
   }
-  throw new Error('Provider tidak dikenal.');
+  throw cfgErr('Provider tidak dikenal.');
+}
+
+/* Provider cadangan yang sedang menggantikan pilihan user. Dipakai agar toast
+   peringatan muncul sekali per pergantian, bukan di setiap panggilan — satu klik
+   "⚡ Generate semua" bisa memicu belasan panggilan berurutan. */
+let activeFallback=null;
+
+/* callAI = callProvider + failover otomatis.
+   Sebelumnya satu kegagalan transien di tengah runAll() (mis. Gemini kena
+   rate-limit di tahap ke-5) mematikan seluruh pipeline dan membuang hasil
+   tahap-tahap sebelumnya. Sekarang panggilan itu dilanjutkan ke provider lain
+   yang key-nya sudah terisi. Yang TIDAK di-failover: error konfigurasi (cfgErr),
+   supaya salah setel tetap terlihat oleh user. */
+async function callAI(prompt, maxTokens=1600, images){
+  const sel=state.api.provider;
+  const tried=[];
+  let lastErr;
+  try{
+    const out=await callProvider(sel, prompt, maxTokens, images);
+    activeFallback=null; /* provider utama pulih */
+    return out;
+  }catch(e){
+    if(e&&e.config) throw e;
+    tried.push(providerName(sel)); lastErr=e;
+  }
+  for(const id of fallbackChain(images)){
+    try{
+      setBusy(true, providerName(sel)+' gagal — beralih ke '+providerName(id)+'…');
+      const out=await callProvider(id, prompt, maxTokens, images);
+      if(activeFallback!==id){
+        activeFallback=id;
+        toast(providerName(sel)+' sedang bermasalah — dilanjutkan dengan '+providerName(id)+'.','warn');
+      }
+      return out;
+    }catch(e){
+      if(e&&e.config) continue; /* cadangan salah setel: lewati diam-diam */
+      tried.push(providerName(id)); lastErr=e;
+    }
+  }
+  throw new Error('Semua provider gagal ('+tried.join(', ')+'). '
+    +'Pesan terakhir: '+(lastErr&&lastErr.message||'tidak diketahui')
+    +' — isi API key provider cadangan lewat ⚙ API agar pipeline tidak berhenti.');
 }
 
 /* ---------------- tema visual resolver + real-time location research ---------------- */
@@ -1726,9 +1799,18 @@ function renderApiModal(){
   $('#provNote').textContent = notes[a.provider]||common;
 }
 async function testApi(){
-  try{ setBusy(true,'Tes koneksi AI…');
-    const r=await callAI('Balas HANYA JSON: {"ok":true}',60);
-    parseJSONLoose(r); toast('Koneksi AI berhasil ✓','ok');
+  const sel=state.api.provider;
+  try{ setBusy(true,'Tes koneksi '+providerName(sel)+'…');
+    /* Sengaja callProvider, bukan callAI: tombol ini harus menguji provider yang
+       DIPILIH user. Lewat callAI, failover bisa menutupi provider yang rusak dan
+       melaporkan "berhasil" padahal yang menjawab provider lain. */
+    const r=await callProvider(sel,'Balas HANYA JSON: {"ok":true}',60);
+    parseJSONLoose(r); toast('Koneksi '+providerName(sel)+' berhasil ✓','ok');
+    const cad=fallbackChain();
+    toast(cad.length
+      ? 'Cadangan siap: '+cad.map(providerName).join(' → ')
+      : 'Belum ada provider cadangan — isi satu API key lain agar pipeline tidak berhenti saat server sibuk.',
+      cad.length?'ok':'warn');
   }catch(e){ toast(e.message,'err'); }
   finally{ setBusy(false); }
 }
