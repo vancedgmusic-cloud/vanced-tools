@@ -1075,7 +1075,13 @@ const isSpeakingMode=()=>String(state.setup.suara||'').toLowerCase().includes('l
 
 function schemaOf(fields){ return '{'+fields.map(f=>'"'+f.k+'":""').join(',')+'}'; }
 
+/* Contoh gaya dari koreksi user disisipkan di sini supaya SEMUA tahap ikut
+   belajar tanpa perlu menyentuh enam string prompt satu per satu. */
 function promptStage(id, fb){
+  const base=promptStageBase(id, fb);
+  return base ? base+memoryHint(id) : base;
+}
+function promptStageBase(id, fb){
   const ctx=buildContext();
   if(id==='knowledge') return HEADER+'\n'+ctx+'\n\nTAHAP: KNOWLEDGE EXTRACTION — pahami produknya dulu, belum membuat konten. Isi setiap field dengan spesifik dan ringkas (maks 20 kata per field).'+(visionCapableImages()?' Foto talent/produk terlampir di pesan ini — amati langsung warna, material, dan detail visual asli dari foto tersebut, jangan menerka.':'')+fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.knowledge);
   if(id==='marketing') return HEADER+'\n'+ctx+'\n\nTAHAP: MARKETING ANALYSIS. Turunkan dari analisis produk: audiens nyata, pain point emosional, desire, objection realistis, emotional trigger, buying motivation konkret. Ringkas (maks 22 kata per field).'+fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.marketing);
@@ -1193,7 +1199,8 @@ async function genStage(id, fb){
   const images=id==='knowledge'?visionCapableImages():undefined;
   const data=await callJSON(promptStage(id, fb), 1400, images);
   const clean={}; map[id].forEach(f=>clean[f.k]=String(data[f.k]??''));
-  state[id]=clean; state.done[id]=true; delete state.dirty[id]; markDownstream(id);
+  state[id]=clean; aiOrig[id]={...clean}; /* patokan untuk mendeteksi koreksi user */
+  state.done[id]=true; delete state.dirty[id]; markDownstream(id);
 }
 async function genScene(i, fb){
   const dur=+state.setup.durasi||10, rows=Math.max(2,Math.round(dur/2)); const total=totalScenes();
@@ -1264,6 +1271,7 @@ async function genCapHash(fb){
   setBusy(true,'Caption…');
   const c=await callJSON(promptStage('caption',fb),900);
   state.caption={utama:String(c.utama||''), alternatif:String(c.alternatif||'')};
+  aiOrig.caption={...state.caption};
   setBusy(true,'Hashtag…');
   const h=await callJSON(promptStage('hashtag',fb),700);
   state.hashtag={ tiktok:(Array.isArray(h.tiktok)?h.tiktok:[]).join(' '), shopee:(Array.isArray(h.shopee)?h.shopee:[]).join(' ') };
@@ -1653,7 +1661,10 @@ const PANELS={
     '</div><div class="hint" style="margin-top:10px">File .json bisa dipindah ke device/browser lain lewat tombol 📂 Buka di atas — ini cadangan permanen di luar browser ini.</div></div>'+
     '<div class="card"><h3>Penyimpanan Browser (Local Storage)</h3>'+
     '<div class="hint" style="margin-top:0">Project ini otomatis tersimpan di local storage browser yang kamu pakai sekarang — tetap ada walau tab ditutup atau ke-refresh, baik dibuka di Claude.ai maupun browser biasa (kalau local storage didukung/tidak diblokir mode privat). API key TIDAK ikut tersimpan di sini, tetap hanya di memori sesi ini — pakai .json di atas untuk memindahkan project ke device/browser lain.</div>'+
-    '<div class="toolbar" style="margin-top:10px"><button class="btn small danger" id="btnClearLocal">🗑 Hapus data lokal</button></div></div>';
+    '<div class="toolbar" style="margin-top:10px"><button class="btn small danger" id="btnClearLocal">🗑 Hapus data lokal</button></div>'+
+    '<h3 style="margin-top:18px">Memori Gaya</h3>'+
+    '<div class="hint" style="margin-top:0">Setiap kali kamu mengedit sendiri hasil AI, perubahan itu direkam sebagai contoh selera dan dipakai di project berikutnya — jadi AI makin lama makin mengikuti gayamu. Tersimpan terpisah dari project (tidak ikut terhapus saat ganti project, tidak ikut ke file .json). Saat ini: <b>'+memCount()+' koreksi tersimpan</b>. Hapus kalau AI mulai meniru gaya yang tidak kamu inginkan lagi.</div>'+
+    '<div class="toolbar" style="margin-top:10px"><button class="btn small danger" id="btnClearMem">🧠 Reset memori gaya</button></div></div>';
   }
 };
 function renderPanel(){
@@ -1667,6 +1678,13 @@ function renderPanel(){
     $('#btnClearLocal').onclick=()=>{
       if(!confirm('Hapus data project yang tersimpan otomatis di browser ini? File .json yang sudah kamu unduh tidak akan terpengaruh.')) return;
       try{ localStorage.removeItem(LS_KEY); toast('Data lokal dihapus.','ok'); }
+      catch(e){ toast('Tidak bisa mengakses local storage di browser ini.','err'); }
+    };
+    $('#btnClearMem').onclick=()=>{
+      const n=memCount();
+      if(!n){ toast('Belum ada koreksi tersimpan — edit sendiri hasil AI untuk mulai mengisinya.','warn'); return; }
+      if(!confirm('Hapus '+n+' koreksi gaya yang sudah dipelajari? Project dan file .json tidak terpengaruh.')) return;
+      try{ localStorage.removeItem(LS_MEM); toast('Memori gaya direset.','ok'); renderPanel(); }
       catch(e){ toast('Tidak bisa mengakses local storage di browser ini.','err'); }
     };
   }
@@ -1712,6 +1730,71 @@ function syncCustomVisibility(){
 function render(){ renderRail(); renderPanel(); persistState(); }
 
 /* ---------------- project save/load ---------------- */
+/* ---------------- memori gaya: belajar dari koreksi manual user ----------------
+   Sebelumnya feedback revisi (fbLine) hanya hidup selama satu sesi lalu hilang,
+   jadi tiap project baru AI mengulang kesalahan gaya yang sama. Bank ini merekam
+   saat user MENGEDIT SENDIRI hasil AI — koreksi manual adalah sinyal selera yang
+   paling jujur — lalu menyuntikkannya sebagai contoh di prompt project berikutnya.
+
+   Disimpan di KUNCI TERPISAH dari project. Kalau ikut LS_KEY, bank ini akan
+   terhapus tiap ganti project, padahal justru lintas-project gunanya. */
+const LS_MEM='brainDirectorMemory_v1';
+const MEM_MAX=6;    /* entri per tahap — dibatasi agar localStorage tidak penuh */
+const MEM_CLIP=220; /* potong teks panjang: prompt tahap sudah panjang, jangan membengkak */
+const MEM_STAGES=['knowledge','marketing','angle','brief','caption'];
+
+/* Tulisan asli AI per tahap, pembanding untuk mendeteksi koreksi user. Sengaja
+   TIDAK disimpan di state: ini data sementara, tak perlu ikut ke file .json. */
+let aiOrig={};
+
+function memLoad(){
+  try{ const d=JSON.parse(localStorage.getItem(LS_MEM)||'{}');
+       return (d&&typeof d==='object'&&!Array.isArray(d))?d:{}; }
+  catch(e){ return {}; }
+}
+function memSave(m){ try{ localStorage.setItem(LS_MEM, JSON.stringify(m)); }catch(e){} }
+function memCount(){ return Object.values(memLoad()).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0); }
+function memClip(s){ s=String(s??'').replace(/\s+/g,' ').trim();
+  return s.length>MEM_CLIP ? s.slice(0,MEM_CLIP)+'…' : s; }
+
+/* Simpan satu koreksi: AI menulis `ai`, user menggantinya jadi `user`. */
+function memRecord(stage, field, ai, user){
+  ai=memClip(ai); user=memClip(user);
+  if(!ai||!user||ai===user) return;   /* bukan koreksi */
+  if(user.length<8) return;           /* kemungkinan masih setengah mengetik */
+  const m=memLoad();
+  /* Satu entri terbaru per field: user sering menyunting field yang sama
+     berulang kali, dan hanya versi finalnya yang mencerminkan maunya. */
+  const arr=(Array.isArray(m[stage])?m[stage]:[]).filter(e=>e&&e.k!==field);
+  arr.push({k:field, ai, user, at:Date.now()});
+  m[stage]=arr.slice(-MEM_MAX);
+  memSave(m);
+}
+
+/* Debounce: event 'input' menyala tiap ketikan — tanpa ini setiap huruf
+   tersimpan sebagai "koreksi". Hanya nilai yang sudah mengendap yang direkam. */
+let memTimer=null, memPending=null;
+function memQueue(stage, field){
+  memPending={stage, field};
+  clearTimeout(memTimer);
+  memTimer=setTimeout(()=>{
+    const p=memPending; memPending=null; if(!p) return;
+    memRecord(p.stage, p.field, (aiOrig[p.stage]||{})[p.field], getPath(state, p.stage+'.'+p.field));
+  }, 1200);
+}
+
+/* Yang disuntik ke prompt adalah ARAH koreksi (sebelum → sesudah), bukan cuma
+   hasil akhirnya. Pasangan itulah yang mengajarkan selera; hasil akhir saja
+   gampang ditiru mentah-mentah oleh model dan bikin output seragam. */
+function memoryHint(stage){
+  const arr=memLoad()[stage];
+  if(!Array.isArray(arr)||!arr.length) return '';
+  const lines=arr.slice(-3).map(e=>'- Field "'+e.k+'": AI pernah menulis "'+e.ai+'" → user mengubahnya jadi "'+e.user+'"');
+  return '\n\nGAYA YANG DISUKAI USER (dari koreksi manual di project sebelumnya). '
+    +'Tiru ARAH perubahannya — panjang kalimat, tingkat formalitas, cara menyebut produk — '
+    +'JANGAN menyalin isinya mentah-mentah, produk dan konteks project ini berbeda:\n'+lines.join('\n');
+}
+
 const LS_KEY='brainDirectorProject_v1';
 /* IDE BARU: penyimpanan otomatis via localStorage — supaya aplikasi ini tidak cuma jalan
    di dalam Claude.ai (provider "builtin"), tapi juga aman dipakai standalone di browser
@@ -1823,6 +1906,10 @@ document.addEventListener('input', e=>{
   if(e.target.dataset.detail!=null){
     setPath(state,'scenes.'+e.target.dataset.detail+'.detail_produk', v.split('\n').map(x=>x.trim()).filter(Boolean));
   } else setPath(state,p,v);
+  /* Koreksi manual user pada hasil AI = sinyal selera paling jujur. Direkam
+     (setelah didebounce) untuk jadi contoh gaya di project berikutnya. */
+  const mm=/^([a-z]+)\.([A-Za-z0-9_]+)$/.exec(p);
+  if(mm && MEM_STAGES.includes(mm[1])) memQueue(mm[1], mm[2]);
   /* BUGFIX: perubahan jumlah scene kini menandai storyboard & prompts "PERLU REGENERASI",
      supaya jumlah scene di setup dan hasil generate tidak diam-diam berbeda. */
   if(p==='setup.jumlahScene' && state.scenes.length && totalScenes()!==state.scenes.length){
