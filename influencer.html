@@ -218,6 +218,18 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
 .panelcard img{width:100%;border-radius:8px;border:1px solid var(--line);display:block;margin-bottom:8px;background:var(--panel3)}
 .panelcard .none{border:1px dashed var(--line2);border-radius:8px;padding:22px 12px;text-align:center;color:var(--faint);font-size:12px}
 
+/* ---------- grid character sheet ---------- */
+.cellgrid{display:grid;gap:4px;margin-top:12px}
+.cell{position:relative;aspect-ratio:2/3;background:var(--panel3);border:1px solid var(--line);border-radius:4px;overflow:hidden;cursor:pointer;padding:0}
+.cell img{width:100%;height:100%;object-fit:cover;display:block}
+.cell .idx{position:absolute;top:2px;left:3px;font-family:var(--mono);font-size:8.5px;color:var(--faint);background:#0d1016cc;border-radius:3px;padding:0 3px}
+.cell.done{border-color:#2c4a3a}
+.cell:hover{border-color:var(--violet)}
+.cell .kat{position:absolute;bottom:2px;left:3px;font-family:var(--mono);font-size:8px;color:var(--muted)}
+.gridprev{max-width:100%;border:1px solid var(--line);border-radius:var(--r-sm);display:block;margin-top:12px;background:#fff}
+.estimate{display:flex;flex-wrap:wrap;gap:14px;font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px}
+.estimate b{color:var(--text)}
+
 /* ---------- feed preview ---------- */
 .feed{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;max-width:420px;border:1px solid var(--line);border-radius:var(--r-sm);padding:3px;background:var(--panel2)}
 .feed div{aspect-ratio:4/5;background:var(--panel3);border-radius:2px;overflow:hidden}
@@ -411,10 +423,10 @@ const state={
   persona:{ disclosure:true },
   shoot:{
     jumlah:6, aspek:'2:3', tema:'', outfit:'', mood:'', platform:'Instagram feed + Reels cover',
-    kamera:'shot on 85mm lens at f/1.8, natural available light, photorealistic, sharp focus on the face, realistic skin texture with visible pores and fine flyaway hairs, subtle film grain',
-    negatif:'plastic skin, over-smoothed skin, waxy face, extra fingers, deformed hands, distorted face, watermark, text artifacts, logo, lowres, cartoon, 3d render'
+    realisme:'phone', kamera:'', jiwa:'', negatif:''
   },
-  sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[] },
+  sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[],
+          grid:{ cols:4, rows:3, aspek:'2:3', latar:'studio', label:true, cells:[], sheetImg:null } },
   kalender:{ hari:14, mulai:'', rows:[] },
   shots:[],
   anchor:null,
@@ -526,6 +538,137 @@ const SHEET_PANELS=[
    prompt:'a flat lay mood board photographed from directly above on a neutral surface: fabric swatches, accessories, and small everyday objects that represent this person\'s personal style and color palette. No people, no faces, no text, no lettering. Soft natural daylight, clean minimal styling.', noIdentity:1}
 ];
 const panelDef=id=>SHEET_PANELS.find(p=>p.id===id);
+
+/* =====================================================================
+   SISTEM REALISME — inti dari aturan "tidak boleh terlihat AI slop"
+
+   Tiga blok terpisah, ketiganya masuk ke SETIAP prompt gambar:
+   1. REALISM  — medium tangkap (kamera/film). Menentukan "rasa" fotonya.
+   2. LIFE     — ketidaksempurnaan manusia + momen tertangkap. Ini yang bikin
+                 subjeknya punya nyawa, bukan patung lilin.
+   3. ANTI_SLOP— daftar negatif yang menyerang penyakit khas gambar AI.
+
+   Kata "photorealistic" sengaja TIDAK dipakai: di banyak model kata itu justru
+   menarik hasil ke arah render 3D yang licin. Yang dipakai "unretouched
+   photograph" + deskripsi medium yang konkret.
+===================================================================== */
+const REALISM=[
+  {id:'phone', name:'Candid HP', desc:'Paling terasa nyata untuk konten sosial.',
+   tech:'shot on a modern smartphone rear camera, natural available light only, slight handheld tilt, mild sensor noise in the shadows, no beauty filter, no skin smoothing, the kind of frame someone actually posts to their story'},
+  {id:'film35', name:'Film 35mm', desc:'Hangat, berbutir, susah dipalsukan.',
+   tech:'shot on 35mm film, Kodak Portra 400, natural film grain, gentle halation around highlights, slightly muted greens and warm skin rendering, imperfect focus, scanned without digital sharpening'},
+  {id:'prime85', name:'Prime 85mm', desc:'Potret rapi tapi tetap organik.',
+   tech:'shot on a full-frame camera with an 85mm f/1.8 prime lens, shallow depth of field with natural bokeh falloff, one identifiable directional light source with honest shadow gradation, no fill light'},
+  {id:'docu', name:'Dokumenter', desc:'Reportase, subjek tidak sadar difoto.',
+   tech:'documentary reportage photography, 35mm f/2, available light only, the subject caught mid-action and unaware of the camera, slightly imperfect framing, nothing staged'},
+  {id:'custom', name:'Custom', desc:'Tulis sendiri di kolom bawah.', tech:''}
+];
+const realismDef=id=>REALISM.find(r=>r.id===id)||REALISM[0];
+
+/* Blok "jiwa" — ketidaksempurnaan yang membedakan manusia dari mannequin. */
+const LIFE_DEFAULT='Real human imperfection is mandatory: visible skin pores and real skin texture, uneven skin tone, faint blemishes and slight natural redness around the nose and chin, natural under-eye shadow, fine baby hairs at the hairline with a few strands out of place, naturally asymmetric features with one eyebrow slightly higher, unretouched lips with fine lines, natural imperfect teeth. The subject is caught mid-moment rather than posing for the camera: weight shifted onto one leg, hands genuinely doing something, a real expression with crinkles at the corners of the eyes and warm catchlights in the pupils, a hint of motion in the hair or fingers. Clothing has real wrinkles, creases and natural drape. Light comes from one identifiable direction with honest falloff and real shadows.';
+
+const ANTI_SLOP_DEFAULT='AI-generated look, plastic skin, waxy skin, airbrushed, beauty filter, face smoothing, poreless skin, glossy plastic sheen, doll-like, mannequin, wax figure, dead eyes, vacant stare, blank soulless expression, perfectly symmetrical face, flawless veneer teeth, perfect untouched hair, HDR, oversaturated, overprocessed, digital painting, illustration, 3d render, CGI, octane render, cartoon, anime, uncanny valley, stiff mannequin posing, staged catalog stock photo, studio backdrop in an outdoor scene, watermark, text, logo, extra fingers, six fingers, deformed hands, fused limbs, distorted proportions, lowres, blurry mess';
+
+/* Nilai efektif: kalau user mengosongkan kolomnya, pakai default di atas. */
+/* =====================================================================
+   PUSTAKA POSE — bahan grid character sheet
+
+   Tiap entri hanya mendeskripsikan FRAMING + POSE + AKSI. Tidak ada satu pun
+   deskripsi wajah: identitas datang dari identity lock yang diprepend otomatis.
+   Urutannya sengaja diselang-seling antar kategori supaya sel bertetangga di
+   grid tidak mirip. Kategori 'FB' (badan utuh) muncul paling sering karena
+   itu yang paling sering dibutuhkan sebagai acuan.
+===================================================================== */
+const POSE_LIB=[
+  {k:'FB', l:'Berdiri netral',      p:'full body, standing relaxed with weight on one leg, arms loose at the sides'},
+  {k:'CU', l:'Close-up tenang',     p:'tight head-and-shoulders close-up, chin slightly down, calm resting face'},
+  {k:'AC', l:'Menyibak rambut',     p:'medium shot, one hand tucking hair behind the ear mid-motion'},
+  {k:'FB', l:'Melangkah',           p:'full body, walking toward the camera mid-stride, one foot lifted, bag swinging'},
+  {k:'ST', l:'Duduk bersandar',     p:'seated on a chair leaning back, one arm draped over the backrest, legs crossed'},
+  {k:'SO', l:'Mirror selfie',       p:'full body mirror selfie, phone held at chest height partially covering the frame, casual stance'},
+  {k:'MD', l:'Menyesap minuman',    p:'waist-up, holding a cup with both hands and taking a sip, eyes lowered'},
+  {k:'FB', l:'Bersandar dinding',   p:'full body, leaning back against a wall with one knee bent and the sole against the wall'},
+  {k:'HD', l:'Detail tangan',       p:'close-up of the hands only, fingers interlaced, resting on the lap, jewelry visible'},
+  {k:'34', l:'Tiga perempat',       p:'three-quarter body from the knees up, torso angled away, head turned back to camera'},
+  {k:'AC', l:'Tertawa lepas',       p:'medium shot, head thrown slightly back caught mid-laugh, shoulders raised'},
+  {k:'FB', l:'Berdiri menyamping',  p:'full body in profile, standing still and looking down the street, hands in pockets'},
+  {k:'ST', l:'Duduk di lantai',     p:'seated on the floor with knees pulled up, arms wrapped around the shins'},
+  {k:'CU', l:'Close-up menoleh',    p:'close-up, head turned sharply to look off-frame, neck extended'},
+  {k:'SO', l:'POV memegang produk', p:'waist-up, holding an unbranded product up toward the camera, other hand gesturing at it'},
+  {k:'FB', l:'Berputar',            p:'full body caught mid-turn, skirt or fabric swinging outward, hair lifting'},
+  {k:'MD', l:'Bertopang dagu',      p:'waist-up, elbow on a table, chin resting on the back of the hand, looking away'},
+  {k:'34', l:'Merapikan lengan',    p:'three-quarter body, adjusting a sleeve or a watch strap, head tilted down at the wrist'},
+  {k:'FB', l:'Menaiki tangga',      p:'full body from below, climbing a few steps, one hand on the railing'},
+  {k:'AC', l:'Menunjuk',            p:'medium shot, pointing off-frame at something with an interested expression'},
+  {k:'CU', l:'Profil samping',      p:'strict side profile close-up, jaw and neckline clearly visible'},
+  {k:'ST', l:'Duduk di kursi kafe', p:'seated at a small cafe table, forearms on the table, leaning into the conversation'},
+  {k:'FB', l:'Berdiri membelakangi',p:'full body seen from behind, standing and looking out at the view, weight on one hip'},
+  {k:'SO', l:'GRWM di cermin',      p:'waist-up in front of a mirror, applying something to the face, elbow raised'},
+  {k:'MD', l:'Melipat lengan',      p:'waist-up, arms folded loosely, shoulders relaxed, slight lean to one side'},
+  {k:'HD', l:'Memegang cangkir',    p:'close-up of hands wrapped around a warm mug on a table, steam rising'},
+  {k:'FB', l:'Jongkok',             p:'full body crouching down on the balls of the feet, forearms resting on the knees'},
+  {k:'AC', l:'Menoleh dipanggil',   p:'medium shot, caught turning toward the camera as if someone just called their name'},
+  {k:'34', l:'Tangan di saku',      p:'three-quarter body, both hands in jacket pockets, shoulders slightly hunched'},
+  {k:'CU', l:'Menunduk tersenyum',  p:'close-up looking down with a small private smile, eyelashes catching the light'},
+  {k:'ST', l:'Duduk di anak tangga',p:'seated on outdoor steps, one leg extended, leaning back on both hands'},
+  {k:'SO', l:'Berjalan menjauh',    p:'full body seen from behind walking away down a path, glancing back over the shoulder'},
+  {k:'MD', l:'Merentangkan tangan', p:'waist-up, arms opening outward in an expressive gesture mid-sentence'},
+  {k:'FB', l:'Berdiri di pintu',    p:'full body framed in a doorway, one hand on the door frame, half stepping through'},
+  {k:'HD', l:'Menulis',             p:'close-up of hands writing in a notebook, pen mid-stroke, sleeve pushed up'},
+  {k:'AC', l:'Mengecek ponsel',     p:'medium shot, looking down at a phone with a small reaction forming on the face'},
+  {k:'34', l:'Menoleh ke bahu',     p:'three-quarter body, back to camera, head turned over the shoulder toward the lens'},
+  {k:'CU', l:'Mata terpejam',       p:'close-up with eyes closed and face tilted toward the light, calm breath'},
+  {k:'FB', l:'Duduk di kursi panjang',p:'full body seated on a bench, one arm along the backrest, ankles crossed'},
+  {k:'SO', l:'Unboxing',            p:'waist-up at a table opening a plain box, both hands busy, leaning in with curiosity'},
+  {k:'MD', l:'Menyandarkan kepala', p:'waist-up leaning the head against a window or a pole, gaze unfocused'},
+  {k:'FB', l:'Berdiri di tepi jalan',p:'full body standing at a curb waiting to cross, bag on one shoulder, looking left'},
+  {k:'HD', l:'Detail sepatu',       p:'low close-up of the feet and shoes on the ground, one foot mid-step'},
+  {k:'AC', l:'Merapikan rambut',    p:'medium shot, both hands gathering hair back, elbows raised, head tilted'},
+  {k:'34', l:'Membawa belanjaan',   p:'three-quarter body carrying a tote bag, other hand holding a drink, walking'},
+  {k:'CU', l:'Senyum lebar',        p:'close-up with a wide genuine smile, crinkles at the corners of the eyes'},
+  {k:'ST', l:'Bersila',             p:'full body sitting cross-legged on the floor, hands resting on the ankles, back straight'},
+  {k:'FB', l:'Merentang di jendela',p:'full body standing at a large window, one hand on the glass, looking outside'}
+];
+/* Pengali variasi supaya grid besar (sampai 12x12 = 144 sel) tetap unik. */
+const POSE_MODS=[
+  {l:'', p:''},
+  {l:'sudut rendah', p:'camera positioned slightly below eye level looking up'},
+  {l:'menoleh keluar frame', p:'gaze directed off-frame, not at the camera'},
+  {l:'cahaya belakang', p:'backlit, the light source behind the subject creating a rim light on the hair'},
+  {l:'tertawa', p:'caught mid-laugh, shoulders lifted'},
+  {l:'sudut atas', p:'camera slightly above eye level looking down'}
+];
+const GRID_BG={
+  studio:'against a plain seamless light gray studio backdrop, flat even lighting, nothing else in the frame',
+  lifestyle:'in a real everyday location that suits the persona, with authentic imperfect background detail'
+};
+function buildGridCells(cols, rows){
+  const n=Math.max(1,cols*rows), out=[];
+  for(let i=0;i<n;i++){
+    const base=POSE_LIB[i%POSE_LIB.length];
+    const mod=POSE_MODS[Math.floor(i/POSE_LIB.length)%POSE_MODS.length];
+    out.push({
+      kat:base.k,
+      label:base.l+(mod.l?' · '+mod.l:''),
+      pose:base.p+(mod.p?', '+mod.p:''),
+      img:null
+    });
+  }
+  return out;
+}
+function gridCellPrompt(cell){
+  return composePrompt({
+    scene:cell.pose+', '+(GRID_BG[state.sheet.grid.latar]||GRID_BG.studio),
+    negative:'grid, collage, multiple people, split frame, text labels, borders',
+    aspek:state.sheet.grid.aspek,
+    tail:'One single person, one single frame. A real, unretouched photograph — not a render, not an illustration.'
+  });
+}
+
+const techOf=()=>String(state.shoot.kamera||'').trim()||realismDef(state.shoot.realisme).tech;
+const lifeOf=()=>String(state.shoot.jiwa||'').trim()||LIFE_DEFAULT;
+const negOf =()=>String(state.shoot.negatif||'').trim()||ANTI_SLOP_DEFAULT;
 
 /* =====================================================================
    PROVIDER — mesin teks
@@ -846,7 +989,13 @@ function promptShoot(fb){
     '\n\nTAHAP: RENCANA PHOTOSHOOT. Rancang '+n+' foto berbeda untuk satu sesi konten influencer ini.'+
     '\nSetiap foto harus berbeda jelas: variasikan lokasi, jarak kamera (close-up / medium / full body), outfit, waktu, aktivitas, dan ekspresi. Jangan ada dua foto yang mirip.'+
     '\nField judul, tujuan, outfit, lokasi, pose, pencahayaan dalam '+state.talent.bahasa+' dan singkat.'+
-    '\nField prompt WAJIB bahasa Inggris, 45–90 kata, mendeskripsikan HANYA: outfit, lokasi/latar, pose & aktivitas, ekspresi, pencahayaan, dan komposisi. JANGAN mendeskripsikan wajah, umur, etnis, atau rambut di field prompt — identitas sudah dikunci terpisah dan akan ditambahkan otomatis di depan prompt. Jangan tulis aspect ratio atau setelan kamera; itu juga ditambahkan otomatis.'+
+    '\nField prompt WAJIB bahasa Inggris, 45–90 kata, mendeskripsikan HANYA: outfit, lokasi/latar, pose & aktivitas, ekspresi, pencahayaan, dan komposisi. JANGAN mendeskripsikan wajah, umur, etnis, atau rambut di field prompt — identitas sudah dikunci terpisah dan akan ditambahkan otomatis di depan prompt. Jangan tulis aspect ratio, setelan kamera, atau kata "photorealistic"; ketiganya ditambahkan otomatis.'+
+    '\nSYARAT ANTI-KAKU (wajib, ini pembeda foto nyata dan foto AI). Setiap prompt harus memuat:'+
+    '\n  (a) satu MIKRO-AKSI yang sedang berlangsung, bukan pose diam — menyibak rambut, menyesap kopi, membetulkan tali tas, tertawa sambil menoleh, melangkah;'+
+    '\n  (b) satu INTERAKSI dengan lingkungan — bersandar di kusen, tangan menyentuh meja, kaki menginjak trotoar basah;'+
+    '\n  (c) satu DETAIL LINGKUNGAN yang spesifik dan tidak sempurna — cat mengelupas, gelas kopi setengah kosong, kabel lampu menjuntai, bayangan daun;'+
+    '\n  (d) arah cahaya yang jelas (dari jendela kiri, matahari sore dari belakang, lampu neon di atas).'+
+    '\nDILARANG: subjek berdiri tegak menghadap kamera dengan senyum netral, latar polos tanpa konteks, kata "perfect", "flawless", "beautiful", "stunning".'+
     '\nField negative: bahasa Inggris, hal spesifik yang harus dihindari di foto itu (boleh kosong).'+
     fbLine(fb)+
     '\nBalas HANYA satu objek JSON valid: {"shots":[{"judul":"string","tujuan":"string","outfit":"string","lokasi":"string","pose":"string","pencahayaan":"string","prompt":"string","negative":"string"}]} dengan tepat '+n+' item.';
@@ -875,12 +1024,16 @@ function promptKalender(fb){
     '\nSkema: {"rows":[{"hari":"string","platform":"string","pilar":"string","format":"string","ide":"string","hook":"string","tipe":"edukasi|hiburan|personal|promosi"}]} dengan tepat '+hari+' item.';
 }
 function promptQA(){
-  return 'Kamu adalah QA artist untuk produksi AI influencer. Foto terlampir adalah hasil generate. Bandingkan wajah di foto itu dengan deskripsi identitas yang seharusnya:\n\n"'+
+  return 'Kamu adalah QA artist untuk produksi AI influencer, dan kamu terkenal galak. Foto terlampir adalah hasil generate. Bandingkan wajah di foto itu dengan deskripsi identitas yang seharusnya:\n\n"'+
     String(state.identity.identity_lock||'').trim()+'"\n\n'+
-    'Nilai dua hal: (1) seberapa cocok wajah di foto dengan deskripsi identitas, (2) cacat teknis yang sering muncul di gambar AI — jumlah jari, bentuk tangan, mata asimetris, gigi, aksesori yang menyatu dengan kulit, teks/watermark aneh, anggota badan hilang.\n'+
-    'Field skor: angka 0–100, di mana 100 berarti identitas persis sama dan tidak ada cacat. Field masalah: daftar temuan konkret, kosongkan kalau bersih. Field saran: satu kalimat instruksi perbaikan yang bisa langsung dipakai untuk render ulang.\n'+
+    'Nilai TIGA hal terpisah.\n'+
+    '1. skor_identitas (0–100): seberapa cocok wajah di foto dengan deskripsi identitas di atas.\n'+
+    '2. skor_realisme (0–100): seberapa meyakinkan foto ini sebagai foto asli yang diambil manusia. Turunkan nilainya kalau kamu melihat gejala khas gambar AI — kulit terlalu mulus tanpa pori, wajah terlalu simetris, kulit mengilap seperti plastik atau lilin, mata kosong tanpa pantulan cahaya, ekspresi mati/kaku, gigi terlalu sempurna, rambut terlalu rapi tanpa helai lepas, pencahayaan tanpa arah yang jelas, latar terlalu bersih, pose kaku menghadap kamera seperti katalog.\n'+
+    '3. skor_teknis (0–100): cacat anatomi dan artefak — jumlah jari, bentuk tangan, telinga, gigi, aksesori yang menyatu dengan kulit, anggota badan hilang atau ganda, teks/watermark aneh, garis yang putus.\n'+
+    'Field skor: rata-rata ketiganya, dibulatkan. Field slop: daftar gejala AI yang kamu lihat, kosongkan kalau foto ini benar-benar meyakinkan. Field masalah: cacat teknis konkret. Field saran: satu kalimat instruksi perbaikan yang bisa langsung dipakai untuk render ulang.\n'+
+    'Jangan sungkan memberi nilai rendah — gunanya pemeriksaan ini untuk menyaring foto yang tidak layak pakai.\n'+
     'Jawab dalam '+state.talent.bahasa+'. '+JSON_RULE+
-    '\nSkema: {"skor":0,"identitas_cocok":"ya|meleset sedikit|meleset jauh","masalah":["string"],"saran":"string"}';
+    '\nSkema: {"skor":0,"skor_identitas":0,"skor_realisme":0,"skor_teknis":0,"identitas_cocok":"ya|meleset sedikit|meleset jauh","slop":["string"],"masalah":["string"],"saran":"string"}';
 }
 function refinePrompt(instruksi){
   return composePrompt({
@@ -908,13 +1061,16 @@ function lockLine(){
     ? 'SUBJECT — keep this exact same person in every image, identical facial identity: '
     : 'SUBJECT — a single consistent fictional person, identical facial identity in every image: ')+lock;
 }
-function composePrompt({scene, negative, aspek, tail, noIdentity}){
+function composePrompt({scene, negative, aspek, tail, noIdentity, noLife}){
   const P=[];
   if(!noIdentity){ const l=lockLine(); if(l) P.push(l); }
   if(String(scene||'').trim()) P.push('SCENE: '+String(scene).trim());
-  if(state.shoot.kamera) P.push('TECHNICAL: '+state.shoot.kamera+'.');
-  P.push('Aspect ratio '+(aspek||state.shoot.aspek)+'. '+(tail||'Photorealistic candid photograph, not an illustration.'));
-  const neg=[negative, state.shoot.negatif].map(x=>String(x||'').trim()).filter(Boolean).join(', ');
+  const tech=techOf(); if(tech) P.push('CAPTURE: '+tech+'.');
+  /* Panel benda (mood board) tidak butuh blok jiwa yang bicara soal kulit. */
+  if(!noLife) P.push('REALISM: '+lifeOf());
+  P.push('Aspect ratio '+(aspek||state.shoot.aspek)+'. '+
+    (tail||'This is a real, unretouched photograph taken by a person — not a render, not an illustration, not a stock photo.'));
+  const neg=[negative, negOf()].map(x=>String(x||'').trim()).filter(Boolean).join(', ');
   if(neg) P.push('AVOID: '+neg+'.');
   return P.join('\n\n');
 }
@@ -927,7 +1083,7 @@ function panelPrompt(def){
   return composePrompt({
     scene:def.prompt+(brand?' Style guidance — '+brand+'.':''),
     negative:'collage borders, text labels, captions, watermark, numbers, uneven face between panels',
-    aspek:def.aspek, noIdentity:def.noIdentity,
+    aspek:def.aspek, noIdentity:def.noIdentity, noLife:def.noIdentity,
     tail:'Clean reference-sheet layout, photorealistic photography, no text or lettering anywhere in the image.'
   });
 }
@@ -941,7 +1097,8 @@ const HAS={
   talent:  ()=>!!(state.uploads.refs.length||state.talent.catatan),
   identity:()=>filled(F.identity,state.identity),
   persona: ()=>filled(F.persona,state.persona),
-  sheet:   ()=>filled(F.sheet,state.sheet)||state.sheet.niche_rows.length>0||state.sheet.panels.some(p=>p.imgs.length),
+  sheet:   ()=>filled(F.sheet,state.sheet)||state.sheet.niche_rows.length>0||
+               state.sheet.panels.some(p=>p.imgs.length)||state.sheet.grid.cells.some(c=>c.img),
   shoot:   ()=>state.shots.length>0,
   render:  ()=>state.shots.some(s=>s.imgs.length),
   content: ()=>state.shots.length>0&&state.shots.every(s=>s.konten)
@@ -1054,15 +1211,140 @@ async function runPanelAll(){
   else toast('Semua '+ok+' panel character sheet selesai.','ok');
 }
 
+/* ---- grid character sheet: render per sel, lalu jahit jadi satu kanvas ----
+   Tidak ada model gambar yang sanggup menaruh 144 pose berwajah konsisten dalam
+   satu kali generate — di kanvas 1024px tiap sel cuma ~85px dan wajahnya hancur.
+   Jadi tiap sel dirender terpisah pada resolusi penuh (identity lock + anchor),
+   baru digabung di browser lewat canvas. Hasil akhirnya tetap satu file PNG. */
+function gridRef(){ return state.sheet.grid; }
+function gridEmptyCount(){ return gridRef().cells.filter(c=>!c.img).length; }
+async function renderGridCell(i){
+  const g=gridRef(), cell=g.cells[i];
+  cell.img=await generateImage(gridCellPrompt(cell), g.aspek);
+  if(!state.anchor && cell.img.data) state.anchor=cell.img;
+}
+async function runGridOne(i){
+  if(busy) return;
+  try{ setBusy(true,'Merender sel '+(i+1)+'…'); await renderGridCell(i); toast('Sel '+(i+1)+' selesai.','ok'); render(); }
+  catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+let gridAbort=false;
+async function runGridAll(){
+  if(busy) return;
+  const g=gridRef();
+  const todo=g.cells.map((c,i)=>i).filter(i=>!g.cells[i].img);
+  if(!todo.length){ toast('Semua sel sudah terisi.','err'); return; }
+  gridAbort=false;
+  let ok=0, fail=0, lastErr='';
+  try{
+    for(let n=0;n<todo.length;n++){
+      if(gridAbort){ toast('Dihentikan setelah '+ok+' sel. Sisanya bisa dilanjutkan kapan saja.','ok'); break; }
+      setBusy(true,'Merender sel '+(n+1)+'/'+todo.length+' — '+g.cells[todo[n]].label+'…');
+      try{ await renderGridCell(todo[n]); ok++; if(n%4===3) render(); }
+      catch(e){ fail++; lastErr=e.message; }
+      if(n<todo.length-1) await sleep(600);
+    }
+  }finally{ setBusy(false); }
+  render();
+  if(fail) toast(ok+' sel berhasil, '+fail+' gagal. '+lastErr,'err');
+  else if(!gridAbort) toast('Semua '+ok+' sel selesai. Sekarang gabungkan jadi satu kanvas.','ok');
+}
+function loadImg(src){
+  return new Promise((res,rej)=>{
+    const el=new Image();
+    el.onload=()=>res(el);
+    el.onerror=()=>rej(new Error('gambar gagal dimuat'));
+    el.src=src;
+  });
+}
+/* Ukuran sel dihitung mundur dari batas luas kanvas supaya grid 12x12 tetap
+   muat di memori browser. Tanpa ini 144 sel @512px menembus batas canvas. */
+function gridCellSize(cols, rows, labelOn){
+  const AR=1.5, LBL=labelOn?0.13:0, MAX_PX=36e6;
+  let w=Math.floor(Math.sqrt(MAX_PX/(cols*rows*(AR+LBL))));
+  w=Math.max(120, Math.min(512, w));
+  return {w, h:Math.round(w*AR), lbl:Math.round(w*LBL)};
+}
+async function compositeGrid(){
+  if(busy) return;
+  const g=gridRef();
+  const filled=g.cells.filter(c=>c.img);
+  if(!filled.length){ toast('Belum ada sel yang dirender.','err'); return; }
+  if(filled.some(c=>c.img.remoteUrl)){
+    toast('Sebagian sel hanya berupa URL dari provider dan tidak bisa dijahit ke kanvas. Ganti mesin gambar ke Gemini Image atau gpt-image-1.','err');
+    return;
+  }
+  try{
+    setBusy(true,'Menjahit '+filled.length+' sel jadi satu kanvas…');
+    const {w:cw, h:ch, lbl}=gridCellSize(g.cols, g.rows, g.label);
+    const head=Math.round(cw*0.34);
+    const c=document.createElement('canvas');
+    c.width=g.cols*cw;
+    c.height=head+g.rows*(ch+lbl);
+    const x=c.getContext('2d');
+    x.fillStyle='#ffffff'; x.fillRect(0,0,c.width,c.height);
+
+    /* kepala lembar */
+    const nama=state.persona.nama||'AI Influencer';
+    x.fillStyle='#111318';
+    x.font='700 '+Math.round(head*0.34)+'px system-ui, sans-serif';
+    x.textBaseline='middle';
+    x.fillText(nama+' — Character Sheet', Math.round(cw*0.08), head*0.42);
+    x.fillStyle='#6b7280';
+    x.font='400 '+Math.round(head*0.2)+'px system-ui, sans-serif';
+    x.fillText(g.cols+'×'+g.rows+' pose · '+(g.latar==='studio'?'studio':'lifestyle')+
+      ' · dibuat dengan AI', Math.round(cw*0.08), head*0.75);
+
+    for(let r=0;r<g.rows;r++){
+      for(let col=0;col<g.cols;col++){
+        const i=r*g.cols+col, cell=g.cells[i];
+        const dx=col*cw, dy=head+r*(ch+lbl);
+        x.fillStyle='#f1f2f6'; x.fillRect(dx,dy,cw,ch+lbl);
+        if(cell&&cell.img&&cell.img.data){
+          const el=await loadImg(imgSrc(cell.img));
+          /* object-fit: cover — potong tengah supaya semua sel seragam */
+          const sr=el.naturalWidth/el.naturalHeight, dr=cw/ch;
+          let sw=el.naturalWidth, sh=el.naturalHeight, sx=0, sy=0;
+          if(sr>dr){ sw=el.naturalHeight*dr; sx=(el.naturalWidth-sw)/2; }
+          else{ sh=el.naturalWidth/dr; sy=(el.naturalHeight-sh)/2; }
+          x.drawImage(el, sx,sy,sw,sh, dx,dy,cw,ch);
+        }
+        if(lbl&&cell){
+          x.fillStyle='#ffffff'; x.fillRect(dx,dy+ch,cw,lbl);
+          x.fillStyle='#4b5563';
+          x.font='500 '+Math.round(lbl*0.38)+'px system-ui, sans-serif';
+          const tag=String(i+1).padStart(2,'0')+' · '+cell.label;
+          let txt=tag;
+          while(x.measureText(txt).width>cw-lbl*0.5 && txt.length>4) txt=txt.slice(0,-2);
+          x.fillText(txt+(txt.length<tag.length?'…':''), dx+lbl*0.25, dy+ch+lbl*0.55);
+        }
+        x.strokeStyle='#e3e6ec'; x.lineWidth=2;
+        x.strokeRect(dx+1,dy+1,cw-2,ch+lbl-2);
+      }
+    }
+    g.sheetImg={mimeType:'image/png', data:c.toDataURL('image/png').split(',')[1]};
+    toast('Kanvas '+c.width+'×'+c.height+' px selesai.','ok');
+    render();
+  }catch(e){ toast('Gagal menjahit kanvas: '+e.message,'err'); }
+  finally{ setBusy(false); }
+}
+
 /* ---- QA konsistensi: kirim hasil render balik ke mesin vision ---- */
 async function qaImage(img){
   if(!img.data) throw new Error('Gambar ini hanya berupa URL dari provider, tidak bisa diperiksa. Unduh lalu upload ulang kalau perlu.');
   if(!String(state.identity.identity_lock||'').trim()) throw new Error('Identity lock kosong — tidak ada acuan untuk membandingkan.');
-  const d=await callJSON(promptQA(), 900, [img]);
+  const d=await callJSON(promptQA(), 1100, [img]);
+  const cl=v=>Math.max(0,Math.min(100,Math.round(+v||0)));
+  const arr=v=>Array.isArray(v)?v.filter(Boolean).map(String):(v?[String(v)]:[]);
+  const id_=cl(d.skor_identitas), re=cl(d.skor_realisme), te=cl(d.skor_teknis);
   img.qa={
-    skor:Math.max(0,Math.min(100,+d.skor||0)),
+    /* Kalau model lupa mengisi skor gabungan, hitung sendiri dari sub-skornya. */
+    skor: d.skor!=null?cl(d.skor):Math.round((id_+re+te)/3),
+    identitas:id_, realisme:re, teknis:te,
     cocok:d.identitas_cocok||'',
-    masalah:Array.isArray(d.masalah)?d.masalah:(d.masalah?[String(d.masalah)]:[]),
+    slop:arr(d.slop),
+    masalah:arr(d.masalah),
     saran:d.saran||''
   };
   return img.qa;
@@ -1266,6 +1548,54 @@ function viewPersona(){
     '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="sheet">Lanjut ke character sheet →</button></div>';
 }
 
+function gridCard(){
+  const g=state.sheet.grid, n=g.cols*g.rows, empty=gridEmptyCount(), done=g.cells.length-empty;
+  const {w:cw,h:chh,lbl}=gridCellSize(g.cols,g.rows,g.label);
+  const dim=(g.cols*cw)+'×'+(Math.round(cw*0.34)+g.rows*(chh+lbl));
+  const presets=[[4,3],[6,6],[8,8],[12,12]];
+  const cells=g.cells.length
+    ? '<div class="cellgrid" style="grid-template-columns:repeat('+g.cols+',1fr)">'+
+      g.cells.map((c,i)=>'<button class="cell'+(c.img?' done':'')+'" data-cell="'+i+'" title="'+esc(c.label)+'">'+
+        (c.img?'<img src="'+esc(imgSrc(c.img))+'" alt="">':'')+
+        '<span class="idx">'+(i+1)+'</span><span class="kat">'+esc(c.kat)+'</span></button>').join('')+'</div>'+
+      '<div class="hint">Klik satu sel untuk merender ulang sel itu saja. Hijau = sudah terisi.</div>'
+    : '<div class="empty" style="padding:22px"><div class="big">Daftar pose belum dibangun</div>'+
+      '<p>Tentukan ukuran grid lalu klik “Bangun daftar pose”. Pustaka berisi 48 pose lintas framing — badan utuh, tiga perempat, medium, close-up, duduk, aksi, format sosial, dan detail tangan — dikali 6 variasi sudut &amp; ekspresi.</p></div>';
+
+  return '<div class="card"><h3>🧩 Grid pose — satu kanvas utuh</h3>'+
+    '<p class="hint" style="margin:-6px 0 12px">Tiap sel dirender <b>terpisah</b> pada resolusi penuh dengan identity lock dan anchor yang sama, lalu dijahit jadi <b>satu file PNG</b>. Cara ini yang membuat 12×12 tetap tajam — satu kali generate tidak akan sanggup.</p>'+
+    '<div class="kvgrid">'+
+      '<div class="kv"><label>Kolom</label><input type="number" min="2" max="12" data-path="sheet.grid.cols" value="'+esc(g.cols)+'"></div>'+
+      '<div class="kv"><label>Baris</label><input type="number" min="2" max="12" data-path="sheet.grid.rows" value="'+esc(g.rows)+'"></div>'+
+      '<div class="kv"><label>Latar</label><select data-path="sheet.grid.latar">'+
+        '<option value="studio"'+(g.latar==='studio'?' selected':'')+'>Studio polos — acuan pose murni</option>'+
+        '<option value="lifestyle"'+(g.latar==='lifestyle'?' selected':'')+'>Lifestyle — langsung pakai jadi konten</option>'+
+      '</select></div>'+
+      '<div class="kv"><label>Rasio sel</label><select data-path="sheet.grid.aspek">'+
+        ASPECTS.map(a=>'<option value="'+a.id+'"'+(g.aspek===a.id?' selected':'')+'>'+esc(a.label)+'</option>').join('')+'</select></div>'+
+    '</div>'+
+    '<div class="mini">Ukuran cepat</div><div class="chips">'+
+      presets.map(([c,r])=>'<button class="chip'+(g.cols===c&&g.rows===r?' sel':'')+'" data-gridsize="'+c+'x'+r+'">'+c+'×'+r+
+        '<span class="rs">'+(c*r)+' pose</span></button>').join('')+'</div>'+
+    '<div class="estimate"><span>Sel: <b>'+n+'</b></span><span>Panggilan API: <b>'+n+'</b></span>'+
+      '<span>Kanvas akhir: <b>'+dim+' px</b></span>'+
+      (g.cells.length?'<span>Terisi: <b>'+done+'/'+g.cells.length+'</b></span>':'')+'</div>'+
+    (n>=64?'<div class="check warn" style="margin-top:10px"><span class="sym">!</span><div>'+n+
+      ' sel berarti '+n+' panggilan API gambar dan bisa memakan waktu lama. Prosesnya bisa dihentikan di tengah jalan dan dilanjutkan nanti — sel yang sudah jadi tidak dirender ulang.</div></div>':'')+
+    '<div class="toolbar" style="margin-top:14px">'+
+      '<button class="btn needidle" data-gridbuild="1">⚙ Bangun daftar pose ('+n+')</button>'+
+      '<button class="btn primary needidle" data-gridall="1"'+(!g.cells.length||state.api.img==='manual'?' disabled':'')+'>▶ Render sel kosong ('+empty+')</button>'+
+      (busy?'<button class="btn danger" data-gridstop="1">■ Hentikan</button>':'')+
+      '<button class="btn go needidle" data-gridjoin="1"'+(done?'':' disabled')+'>🧵 Gabung jadi satu kanvas</button>'+
+      '<div class="spacer"></div>'+
+      (g.sheetImg?'<button class="btn needidle" data-griddl="1">⬇ Unduh kanvas (.png)</button>':'')+
+      (g.cells.length?'<button class="btn danger small needidle" data-gridclear="1">Kosongkan</button>':'')+
+    '</div>'+
+    cells+
+    (g.sheetImg?'<div class="mini">Hasil gabungan</div><img class="gridprev" src="'+esc(imgSrc(g.sheetImg))+'" alt="character sheet">':'')+
+  '</div>';
+}
+
 function viewSheet(){
   const S=state.sheet;
   const chips=(items,selected,attr)=>'<div class="chips">'+items.map(it=>{
@@ -1317,6 +1647,7 @@ function viewSheet(){
     '</div>'+reviseHTML('sheet','mis. palet lebih earthy, tambah niche kuliner')+'</div>'+
     (nicheTable?'<div class="card"><h3>📚 Panduan per niche</h3>'+nicheTable+'</div>':'')+
     (platTable?'<div class="card"><h3>📱 Panduan per platform</h3>'+platTable+'</div>':'')+
+    gridCard()+
     '<div class="card"><h3>🖼 Panel referensi visual</h3>'+
       '<div class="rulebanner"><span class="sym">▲</span><div>Panel <b>Turnaround</b> adalah acuan wajah terbaik yang bisa dibuat aplikasi ini — begitu jadi, ia otomatis dipakai sebagai anchor untuk semua render berikutnya. Render panel ini duluan.</div></div>'+
       '<div class="toolbar"><button class="btn primary needidle" data-panelall="1"'+(state.api.img==='manual'?' disabled':'')+'>⚡ Render semua panel</button>'+
@@ -1364,9 +1695,24 @@ function viewShoot(){
       '<div class="kv"><label>Tema / lokasi</label><input data-path="shoot.tema" placeholder="mis. kafe minimalis Jakarta pagi hari" value="'+esc(s.tema)+'"></div>'+
       '<div class="kv"><label>Arah outfit</label><input data-path="shoot.outfit" placeholder="mis. casual neutral tone, linen" value="'+esc(s.outfit)+'"></div>'+
       '<div class="kv"><label>Mood</label><input data-path="shoot.mood" placeholder="mis. hangat, tenang, sedikit playful" value="'+esc(s.mood)+'"></div>'+
-      '<div class="kv full"><label>Setelan teknis (ikut di semua prompt)</label><textarea data-path="shoot.kamera" rows="2">'+esc(s.kamera)+'</textarea></div>'+
-      '<div class="kv full"><label>Negative global</label><textarea data-path="shoot.negatif" rows="2">'+esc(s.negatif)+'</textarea></div>'+
     '</div></div>'+
+    '<div class="card"><h3>🎞 Realisme <span class="stamp done">anti AI-slop</span></h3>'+
+      '<p class="hint" style="margin:-6px 0 12px">Tiga blok ini ikut di <b>setiap</b> prompt gambar. Kosongkan kolomnya untuk memakai bawaan — jangan dihapus isinya kalau tidak yakin, ini yang membuat hasilnya tidak terlihat seperti patung lilin.</p>'+
+      '<label>Medium tangkap</label><div class="tiles" style="margin-bottom:14px">'+
+        REALISM.map(r=>'<button class="tile'+(s.realisme===r.id?' sel':'')+'" data-realisme="'+esc(r.id)+'">'+
+          '<b>'+esc(r.name)+'</b><span>'+esc(r.desc)+'</span></button>').join('')+'</div>'+
+      '<div class="kvgrid">'+
+        '<div class="kv full"><label>Blok CAPTURE — kamera / film</label>'+
+          '<textarea data-path="shoot.kamera" rows="3" placeholder="'+esc(realismDef(s.realisme).tech)+'">'+esc(s.kamera)+'</textarea>'+
+          '<div class="hint">Kosong = pakai preset "'+esc(realismDef(s.realisme).name)+'" di atas.</div></div>'+
+        '<div class="kv full"><label>Blok REALISM — ketidaksempurnaan &amp; momen tertangkap</label>'+
+          '<textarea data-path="shoot.jiwa" rows="5" placeholder="'+esc(LIFE_DEFAULT.slice(0,110))+'…">'+esc(s.jiwa)+'</textarea>'+
+          '<div class="hint">Pori kulit, asimetri, helai rambut lepas, berat badan bertumpu satu kaki, kerutan di sudut mata, pantulan cahaya di pupil. Ini sumber "aura" yang kamu maksud — tanpa blok ini modelnya default ke wajah katalog.</div></div>'+
+        '<div class="kv full"><label>Blok AVOID — daftar anti-slop</label>'+
+          '<textarea data-path="shoot.negatif" rows="4" placeholder="'+esc(ANTI_SLOP_DEFAULT.slice(0,110))+'…">'+esc(s.negatif)+'</textarea></div>'+
+      '</div>'+
+      '<div class="check ok" style="margin-top:12px"><span class="sym">✓</span><div>Kata <code>photorealistic</code> sengaja tidak dipakai di prompt mana pun — di banyak model kata itu justru menarik hasilnya ke render 3D yang licin. Yang dipakai <i>“a real, unretouched photograph”</i> plus deskripsi medium yang konkret.</div></div>'+
+    '</div>'+
     '<div class="toolbar">'+stampHTML('shoot')+'<div class="spacer"></div>'+
       '<button class="btn primary needidle" data-gen="shoot">✦ '+(state.shots.length?'Susun ulang daftar foto':'Susun daftar foto')+'</button></div>'+
     (state.shots.length?shots+reviseHTML('shoot','mis. tambah 2 foto outdoor sore hari, kurangi close-up')
@@ -1377,8 +1723,11 @@ function viewShoot(){
 function qaHTML(im){
   const q=im.qa; if(!q) return '';
   const cls=q.skor>=85?'good':(q.skor>=70?'mid':'bad');
-  return '<div class="qa '+cls+'"><b>'+q.skor+'/100</b>'+(q.cocok?' · '+esc(q.cocok):'')+
-    (q.masalah&&q.masalah.length?'<ul>'+q.masalah.map(m=>'<li>'+esc(m)+'</li>').join('')+'</ul>':'')+
+  const sub=[q.identitas!=null&&'wajah '+q.identitas, q.realisme!=null&&'nyata '+q.realisme, q.teknis!=null&&'teknis '+q.teknis]
+    .filter(Boolean).join(' · ');
+  const list=[].concat((q.slop||[]).map(x=>['slop',x]), (q.masalah||[]).map(x=>['',x]));
+  return '<div class="qa '+cls+'"><b>'+q.skor+'/100</b>'+(sub?' <span style="color:var(--muted)">'+esc(sub)+'</span>':'')+
+    (list.length?'<ul>'+list.map(([tag,m])=>'<li>'+(tag?'<b>slop:</b> ':'')+esc(m)+'</li>').join('')+'</ul>':'')+
     (q.saran?'<div style="margin-top:4px;color:var(--muted)">'+esc(q.saran)+'</div>':'')+'</div>';
 }
 function viewRender(){
@@ -1602,6 +1951,7 @@ function exportSheetHTML(){
     'td{padding:9px 11px;border-bottom:1px solid #edeff3;vertical-align:top}'+
     '.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}'+
     'figure{margin:0}figure img{width:100%;max-height:62vh;object-fit:contain;background:#f3f4f7;border-radius:10px;border:1px solid #e3e6ec;display:block}'+
+    'figure img.wide{max-height:none}'+
     'figcaption{font-size:12px;color:#6b7280;margin-top:6px;text-align:center}'+
     'pre{background:#f3f4f7;border:1px solid #e3e6ec;border-radius:8px;padding:13px;font-size:12.5px;white-space:pre-wrap;word-break:break-word}'+
     '.muted{color:#9ca3af;font-size:13px}'+
@@ -1611,6 +1961,8 @@ function exportSheetHTML(){
     '<h1>'+esc(p.nama||'AI Influencer')+'</h1>'+
     (p.tagline?'<div class="tag">'+esc(p.tagline)+'</div>':'')+
     '<div class="ai">VIRTUAL INFLUENCER · DIBUAT DENGAN AI</div>'+
+    (S.grid&&S.grid.sheetImg?'<h2>Grid pose '+S.grid.cols+'×'+S.grid.rows+'</h2>'+
+      '<figure><img class="wide" src="'+esc(imgSrc(S.grid.sheetImg))+'" alt="grid pose"></figure>':'')+
     (panelImgs?'<h2>Panel referensi</h2><div class="grid">'+panelImgs+'</div>':'')+
     '<h2>Persona</h2><dl>'+defList(F.persona,p)+'</dl>'+
     '<h2>Identitas visual</h2><dl>'+defList(F.identity.filter(f=>f.k!=='identity_lock'),id)+'</dl>'+
@@ -1682,6 +2034,8 @@ async function downloadAllImages(){
     const slot=state.sheet.panels.find(x=>x.id===def.id);
     (slot&&slot.imgs||[]).forEach((im,j)=>jobs.push([im, slug(state.persona.nama)+'-sheet-'+def.id+'-'+(j+1)+'.png']));
   });
+  const g=state.sheet.grid;
+  if(g.sheetImg) jobs.push([g.sheetImg, slug(state.persona.nama)+'-character-sheet-'+g.cols+'x'+g.rows+'.png']);
   if(!jobs.length){ toast('Belum ada gambar untuk diunduh.','err'); return; }
   for(const [im,name] of jobs){ await saveOneImage(im,name); await sleep(350); }
   toast(jobs.length+' file diunduh.','ok');
@@ -1698,6 +2052,8 @@ function saveProject(){
   if(!withImages){
     (snap.shots||[]).forEach(s=>{ s.imgs=[]; });
     ((snap.sheet||{}).panels||[]).forEach(p=>{ p.imgs=[]; });
+    const sg=(snap.sheet||{}).grid;
+    if(sg){ (sg.cells||[]).forEach(c=>{ c.img=null; }); sg.sheetImg=null; }
     snap.anchor=null;
   }
   snap._app='ai-influencer-studio'; snap._v=1;
@@ -1731,6 +2087,8 @@ function loadProject(file){
         if(!Array.isArray(state.sheet[k])) state.sheet[k]=[];
       });
       state.sheet.panels.forEach(pn=>{ if(!Array.isArray(pn.imgs)) pn.imgs=[]; });
+      state.sheet.grid=Object.assign({cols:4,rows:3,aspek:'2:3',latar:'studio',label:true,cells:[],sheetImg:null}, state.sheet.grid||{});
+      if(!Array.isArray(state.sheet.grid.cells)) state.sheet.grid.cells=[];
       state.kalender=Object.assign({hari:14,mulai:'',rows:[]}, state.kalender||{});
       if(!Array.isArray(state.kalender.rows)) state.kalender.rows=[];
       toast('Project dimuat.','ok'); go('talent');
@@ -1888,6 +2246,38 @@ document.addEventListener('click', async e=>{
     if(k<0) arr.push(id); else arr.splice(k,1);
     render(); return;
   }
+  if(t.dataset.gridsize){
+    const [c,r]=t.dataset.gridsize.split('x').map(Number);
+    state.sheet.grid.cols=c; state.sheet.grid.rows=r; render(); return;
+  }
+  if(t.dataset.gridbuild){
+    const g=state.sheet.grid;
+    g.cols=Math.max(2,Math.min(12,+g.cols||4));
+    g.rows=Math.max(2,Math.min(12,+g.rows||3));
+    const lama=g.cells;
+    g.cells=buildGridCells(g.cols,g.rows);
+    /* Sel yang posenya sama persis tetap membawa gambarnya — ganti ukuran grid
+       tidak membuang hasil render yang sudah dibayar. */
+    let dipakai=0;
+    g.cells.forEach(c=>{
+      const hit=lama.find(o=>o.pose===c.pose&&o.img);
+      if(hit){ c.img=hit.img; dipakai++; }
+    });
+    g.sheetImg=null;
+    toast('Daftar '+g.cells.length+' pose dibangun'+(dipakai?' — '+dipakai+' hasil render lama dipakai ulang.':'.'),'ok');
+    render(); return;
+  }
+  if(t.dataset.gridall){ runGridAll(); return; }
+  if(t.dataset.gridstop){ gridAbort=true; toast('Akan berhenti setelah sel yang sedang jalan selesai.','ok'); return; }
+  if(t.dataset.gridjoin){ compositeGrid(); return; }
+  if(t.dataset.griddl){
+    saveOneImage(state.sheet.grid.sheetImg, slug(state.persona.nama)+'-character-sheet-'+state.sheet.grid.cols+'x'+state.sheet.grid.rows+'.png');
+    return;
+  }
+  if(t.dataset.gridclear){
+    state.sheet.grid.cells=[]; state.sheet.grid.sheetImg=null; render(); return;
+  }
+  if(t.dataset.cell!=null){ runGridOne(+t.dataset.cell); return; }
   if(t.dataset.panel){ runPanel(t.dataset.panel); return; }
   if(t.dataset.panelall){ runPanelAll(); return; }
   if(t.dataset.pdl){
@@ -1923,6 +2313,7 @@ document.addEventListener('click', async e=>{
   /* ---- kalender & isi cepat ---- */
   if(t.dataset.kalender){ runKalender(''); return; }
   if(t.dataset.setaspek){ state.shoot.aspek=t.dataset.setaspek; render(); return; }
+  if(t.dataset.realisme){ state.shoot.realisme=t.dataset.realisme; render(); return; }
   if(t.dataset.preset){
     const r=state.sheet.niche_rows.find(x=>x.niche===t.dataset.preset);
     if(!r){ toast('Susun character sheet dulu supaya panduan niche ini terisi.','err'); return; }

@@ -122,8 +122,9 @@ persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis ca
 
 Whitelist restore ada di konstanta `KEEP`. Gambar hasil render **tidak** ikut file
 project kecuali user mencentang toggle-nya (`withImages`) — ini berlaku untuk
-`shots[].imgs` **dan** `sheet.panels[].imgs`; kalau menambah tempat penyimpanan
-gambar baru, tambahkan juga di `saveProject`.
+`shots[].imgs`, `sheet.panels[].imgs`, `sheet.grid.cells[].img`, **dan**
+`sheet.grid.sheetImg`; kalau menambah tempat penyimpanan gambar baru, tambahkan
+juga di `saveProject`.
 
 ### Tahap `sheet` — character sheet
 
@@ -142,6 +143,55 @@ foto, caption, dan kalender semuanya menurunkan diri dari sini.
 - Tiap panel punya rasionya sendiri (`def.aspek`) — karena itu `generateImage()`,
   `geminiImage()`, dan `openaiImage()` menerima parameter `aspek` yang menimpa
   `state.shoot.aspek`.
+
+### Sistem realisme (aturan user: hasil tidak boleh terlihat AI slop)
+
+Tiga blok masuk ke **setiap** prompt gambar lewat `composePrompt()`:
+
+1. `CAPTURE` — medium tangkap, dari preset `REALISM` (`phone`, `film35`, `prime85`,
+   `docu`, `custom`). Menentukan "rasa" fotonya.
+2. `REALISM` — `LIFE_DEFAULT`: pori kulit, warna kulit tak rata, asimetri wajah,
+   helai rambut lepas, berat bertumpu satu kaki, kerutan sudut mata, pantulan di
+   pupil, kain berkerut, cahaya berarah. Ini sumber "aura"-nya.
+3. `AVOID` — `ANTI_SLOP_DEFAULT`: plastic skin, wax figure, dead eyes, perfectly
+   symmetrical face, HDR, CGI, uncanny valley, catalog stock photo, dst.
+
+Kolom `shoot.kamera` / `shoot.jiwa` / `shoot.negatif` **kosong = pakai default**
+(`techOf()`, `lifeOf()`, `negOf()`). Isi user menimpa default.
+
+**Kata `photorealistic` sengaja tidak dipakai di prompt mana pun** — di banyak
+model kata itu justru menarik hasil ke render 3D yang licin. Penggantinya
+`"a real, unretouched photograph"` + deskripsi medium yang konkret. Jangan
+memasukkannya kembali.
+
+`promptShoot()` juga memaksa tiap prompt adegan memuat mikro-aksi, interaksi
+lingkungan, detail lingkungan tak sempurna, dan arah cahaya yang jelas — serta
+melarang pose tegak menghadap kamera dan kata "perfect/flawless/stunning".
+
+`promptQA()` menilai **tiga skor terpisah**: `skor_identitas`, `skor_realisme`
+(khusus mendeteksi gejala AI slop), `skor_teknis`. Kalau model lupa mengirim
+`skor` gabungan, `qaImage()` menghitungnya sendiri dari rata-rata ketiganya.
+
+### Grid character sheet — satu kanvas utuh
+
+`state.sheet.grid` = `{cols, rows, aspek, latar, label, cells[], sheetImg}`.
+Ukuran sampai 12×12 (144 pose).
+
+Tidak ada model gambar yang sanggup menaruh 144 pose berwajah konsisten dalam
+satu kali generate, jadi **tiap sel dirender terpisah** pada resolusi penuh
+(identity lock + anchor yang sama) lalu **dijahit di browser** lewat canvas
+(`compositeGrid()`). Hasil akhirnya tetap satu file PNG.
+
+- `POSE_LIB` = 48 pose lintas 8 kategori framing (`FB` badan utuh, `34`, `MD`,
+  `CU`, `ST` duduk, `AC` aksi, `SO` format sosial, `HD` detail tangan), sengaja
+  diselang-seling supaya sel bertetangga tidak mirip. Dikali `POSE_MODS`
+  (6 variasi sudut/ekspresi) → cukup untuk 144 sel unik.
+- `gridCellSize()` menghitung mundur ukuran sel dari batas 36 juta piksel.
+  Tanpa ini grid 12×12 menembus batas canvas browser.
+- `runGridAll()` hanya merender sel yang kosong dan bisa dihentikan
+  (`gridAbort`) lalu dilanjutkan — 144 panggilan API tidak boleh hangus.
+- Membangun ulang grid **memakai ulang** gambar sel yang posenya sama persis,
+  dan membatalkan `sheetImg` karena ukurannya tak lagi cocok.
 
 ### Fitur render lanjutan
 
