@@ -1,7 +1,14 @@
 # Framework Brain Director
 
-Single-file browser app (`index.html`, ~1.9k lines). Bahasa Indonesia UI.
-Pipeline riset produk → storyboard → video prompt → ekspor props Remotion.
+Dua single-file browser app yang berdiri sendiri, UI Bahasa Indonesia:
+
+- `index.html` (~1.9k baris) — pipeline riset produk → storyboard → video prompt
+  → ekspor props Remotion. Dokumen ini membahasnya kecuali disebut lain.
+- `influencer.html` — AI Influencer Studio. Lihat bagian di bawah.
+
+Keduanya tidak saling impor. Konvensinya sama (`getPath`/`setPath` + `data-path`,
+`parseJSONLoose`, `postJSON`, key dibuang lewat pola `/key$/i`), jadi perbaikan
+di salah satunya biasanya perlu disalin manual ke yang lain.
 
 Satu file berisi `<style>` + markup + `<script>` (mulai baris ~302). `'use strict'`.
 Tidak dipecah ke file terpisah — app dipakai lewat `file://` dan juga sebagai
@@ -82,7 +89,49 @@ sedang aktif dan tidak menimpanya dari file.
 Key hanya dikirim ke API resmi provider-nya. Jangan tambah endpoint pihak ketiga,
 telemetry, atau logging yang menyentuh key.
 
+## `influencer.html` — AI Influencer Studio
+
+Pipeline: `talent → identity → persona → shoot → render → content → export`.
+Bikin virtual influencer dari foto talent: baca fotonya, kunci identitas, susun
+persona, rencanakan sesi foto, render gambarnya, tulis caption.
+
+**Dua mesin AI terpisah** di `state.api`, dipilih sendiri-sendiri:
+
+- `api.txt` — teks & vision (`gemini`, `claude`, `dinoiki`, `koboillm`, `compat`).
+  Dinoiki & KoboiLLM adalah gateway/reseller Indonesia; base URL-nya **selalu bisa
+  diedit user**, jangan dikunci — key yang mereka jual bisa key upstream asli
+  (OpenAI/Anthropic/Gemini) atau key gateway sendiri.
+- `api.img` — gambar (`gemini_image`, `openai_image`, `compat_image`, `manual`).
+  `gemini_image` menerima foto referensi langsung; `openai_image` pakai
+  `/images/edits` multipart kalau ada referensi **dan** model cocok `/gpt-image/i`,
+  selain itu `/images/generations`.
+
+### Aturan domain (jangan dilanggar)
+
+- **`identity.identity_lock` bersifat FIXED.** `finalPrompt()` selalu memprepend-nya
+  ke setiap prompt gambar. Tanpa itu tiap foto menghasilkan orang berbeda. AI
+  penyusun shot **dilarang** menulis deskripsi wajah di `shots[].prompt` — prompt
+  adegan hanya boleh berisi outfit, lokasi, pose, ekspresi, cahaya, komposisi.
+- **Mode `locked` (wajah persis) hanya boleh aktif setelah `talent.consent`.**
+  `refsForImage()` memeriksa ulang consent sebelum mengirim foto. Jangan longgarkan.
+- **Mode `inspired` tidak pernah mengirim foto orang asli ke mesin gambar.**
+  Konsistensi datang dari identity lock, lalu dari `state.anchor` — hasil render
+  pertama yang otomatis jadi acuan wajah untuk render berikutnya.
+- Field kredensial: `geminiKey`, `claudeKey`, `dinoikiKey`, `koboiKey`, `compatKey`,
+  `imgGeminiKey`, `imgOaKey`. Semua berakhiran `Key` supaya kena filter ekspor.
+
+Whitelist restore ada di konstanta `KEEP`. Gambar hasil render **tidak** ikut file
+project kecuali user mencentang toggle-nya (`withImages`).
+
 ## Verifikasi perubahan
 
-Tidak ada test runner. Buka di browser, cek console bersih, lalu smoke test:
-setup → input → generate satu tahap AI → ekspor Remotion → cek JSON-nya valid.
+Tidak ada test runner. Buka di browser, cek console bersih, lalu smoke test.
+
+- `index.html`: setup → input → generate satu tahap AI → ekspor Remotion → cek
+  JSON-nya valid.
+- `influencer.html`: isi key → upload foto → generate identitas → susun rencana
+  foto → render → ekspor project, lalu buka file .json-nya dan pastikan tidak ada
+  API key di dalamnya.
+
+Satu error console yang wajar muncul di kedua file saat offline: stylesheet Google
+Fonts gagal dimuat. Font jatuh ke `system-ui`, bukan bug.

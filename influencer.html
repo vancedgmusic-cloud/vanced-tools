@@ -1,0 +1,1405 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Influencer Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0F1218; --panel:#161A22; --panel2:#1C212C; --panel3:#222834;
+  --line:#2A3040; --line2:#39415A;
+  --text:#EAEDF4; --muted:#9AA3B6; --faint:#6B7488;
+  --amber:#F5A83B; --amber-soft:#F5A83B22; --amber-ink:#181005;
+  --teal:#57D0BE; --teal-soft:#57D0BE1c;
+  --red:#F1685A; --red-soft:#F1685A1f;
+  --green:#5CC98B; --green-soft:#5CC98B1f;
+  --violet:#A78BFA; --violet-soft:#A78BFA1c;
+  --r:12px; --r-sm:8px;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--text); font-family:var(--sans);
+  font-size:14.5px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--violet);color:#12101c}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{
+  font-family:inherit;font-size:13.5px;color:var(--text);
+  background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:8px 10px;width:100%;outline:none;transition:border-color .15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--violet)}
+textarea{resize:vertical;min-height:64px;line-height:1.5}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239AA3B6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;font-weight:600}
+a{color:var(--teal)}
+
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-rows:auto 1fr;height:100vh}
+header.top{
+  display:flex;align-items:center;gap:14px;padding:10px 16px;
+  border-bottom:1px solid var(--line);background:var(--panel);
+  position:relative;z-index:5;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand .mark{
+  width:34px;height:34px;border-radius:8px;display:grid;place-items:center;
+  background:linear-gradient(140deg,var(--violet),#6d4fd6);color:#12101c;
+  font-weight:900;font-size:14px;letter-spacing:-.5px;
+}
+.brand h1{font-size:15px;font-weight:800;letter-spacing:.02em;line-height:1.1}
+.brand small{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;letter-spacing:.06em}
+.top .grow{flex:1;min-width:10px}
+.statusline{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);min-width:0}
+.recdot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.busy .recdot{background:var(--red);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.busy .recdot{animation:none}}
+.top .actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.btn{
+  border:1px solid var(--line);background:var(--panel2);color:var(--text);
+  border-radius:var(--r-sm);padding:7px 12px;font-size:12.5px;font-weight:600;
+  display:inline-flex;align-items:center;gap:7px;transition:.15s;white-space:nowrap;
+}
+.btn:hover{border-color:var(--line2);background:var(--panel3)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--violet);border-color:var(--violet);color:#12101c}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.go{background:var(--teal);border-color:var(--teal);color:#0a1a17}
+.btn.go:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--red);border-color:#5a3a38}
+.btn.small{padding:5px 9px;font-size:11.5px}
+
+/* ---------- body layout ---------- */
+.body{display:grid;grid-template-columns:250px 1fr;min-height:0}
+nav.rail{
+  border-right:1px solid var(--line);background:var(--panel);
+  overflow-y:auto;padding:14px 10px 24px;
+}
+.rail .railtitle{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);padding:0 8px 10px;text-transform:uppercase}
+.step{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  background:none;border:1px solid transparent;border-radius:10px;
+  padding:8px 8px;margin-bottom:2px;color:var(--muted);position:relative;
+}
+.step:hover{background:var(--panel2);color:var(--text)}
+.step.active{background:var(--panel3);border-color:var(--line2);color:var(--text)}
+.step .no{font-family:var(--mono);font-size:10.5px;color:var(--faint);width:22px;flex:none}
+.step.active .no{color:var(--violet)}
+.step .lbl{flex:1;font-size:13px;font-weight:600}
+.step .led{width:7px;height:7px;border-radius:50%;background:var(--line2);flex:none}
+.step .led.done{background:var(--green)}
+.step .led.dirty{background:var(--amber)}
+.railnote{margin:14px 8px 0;padding:10px;border:1px dashed var(--line);border-radius:10px;font-size:11.5px;color:var(--faint);line-height:1.5}
+
+main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
+.panelhead{margin-bottom:18px}
+.panelhead .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--violet);text-transform:uppercase;margin-bottom:6px}
+.panelhead h2{font-size:22px;font-weight:800;letter-spacing:-.01em}
+.panelhead p{color:var(--muted);margin-top:5px;max-width:70ch;font-size:13.5px}
+
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:18px;margin-bottom:16px;
+}
+.card h3{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.kvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px 14px}
+.kv.full{grid-column:1/-1}
+.hint{font-size:11.5px;color:var(--faint);margin-top:4px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.toolbar .spacer{flex:1}
+.stamp{font-family:var(--mono);font-size:10.5px;color:var(--faint);border:1px solid var(--line);border-radius:99px;padding:3px 9px}
+.stamp.done{color:var(--green);border-color:#2c4a3a}
+.stamp.dirty{color:var(--amber);border-color:#54401f}
+.mini{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;margin:16px 0 8px}
+.revise{display:flex;gap:8px;margin-top:14px;border-top:1px dashed var(--line);padding-top:14px;flex-wrap:wrap}
+.revise textarea{flex:1;min-width:220px;min-height:44px}
+.revise .btn{align-self:flex-start}
+
+/* ---------- mode / choice tiles ---------- */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.tile{
+  border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--panel2);
+  text-align:left;color:var(--muted);
+}
+.tile.sel{border-color:var(--violet);color:var(--text);background:var(--violet-soft)}
+.tile.sel.warn{border-color:var(--amber);background:var(--amber-soft)}
+.tile b{display:block;font-size:13px;color:var(--text);margin-bottom:3px}
+.tile span{font-size:11.5px;line-height:1.4;display:block}
+.tile:disabled{opacity:.45;cursor:not-allowed}
+
+/* ---------- uploads ---------- */
+.dropzone{
+  border:1px dashed var(--line2);border-radius:var(--r);padding:24px 18px;text-align:center;
+  color:var(--muted);background:var(--panel2);transition:.15s;
+}
+.dropzone.hot{border-color:var(--violet);background:var(--violet-soft);color:var(--text)}
+.dropzone .big{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px}
+.dropzone p{font-size:12px;max-width:56ch;margin:0 auto}
+.thumbs{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.thumb{position:relative;width:96px}
+.thumb img{width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block}
+.thumb .x{
+  position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;
+  background:var(--red);color:#fff;border:none;font-size:12px;line-height:1;
+}
+.thumb .cap{font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-top:4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.consent{
+  display:flex;gap:10px;align-items:flex-start;border:1px solid #54401f;background:var(--amber-soft);
+  border-radius:var(--r);padding:12px 14px;margin-top:14px;font-size:13px;
+}
+.consent input[type=checkbox]{width:16px;height:16px;flex:none;margin-top:2px;accent-color:var(--amber)}
+.consent label{text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--text);font-weight:500;margin:0;line-height:1.5}
+
+/* ---------- shots ---------- */
+.shot{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:18px;background:var(--panel)}
+.shothead{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.shothead .no{font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.14em;color:var(--violet)}
+.shothead .ttl{font-size:13.5px;font-weight:700}
+.shothead .spacer{flex:1}
+.shotbody{padding:16px}
+.promptbox{
+  font-family:var(--mono);font-size:12px;line-height:1.6;background:var(--panel2);
+  border:1px solid var(--line);border-radius:var(--r-sm);width:100%;min-height:120px;padding:12px;
+}
+.gallery{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px}
+.gitem{position:relative;width:170px}
+.gitem img{width:170px;border-radius:10px;border:1px solid var(--line);display:block;background:var(--panel2)}
+.gitem.anchor img{border-color:var(--teal);box-shadow:0 0 0 2px var(--teal-soft)}
+.gitem .row{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+.gitem .row .btn{padding:3px 7px;font-size:10.5px}
+.anchorbadge{
+  position:absolute;top:6px;left:6px;font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  background:var(--teal);color:#0a1a17;border-radius:99px;padding:2px 7px;font-weight:700;
+}
+
+/* ---------- validation / banners ---------- */
+.check{display:flex;gap:10px;padding:10px 12px;border-radius:var(--r-sm);margin-bottom:8px;font-size:13px;border:1px solid var(--line);background:var(--panel2)}
+.check .sym{font-family:var(--mono);flex:none}
+.check.ok{border-color:#2c4a3a;background:var(--green-soft)}.check.ok .sym{color:var(--green)}
+.check.warn{border-color:#54401f;background:var(--amber-soft)}.check.warn .sym{color:var(--amber)}
+.check.err{border-color:#5a3a38;background:var(--red-soft)}.check.err .sym{color:var(--red)}
+.rulebanner{
+  display:flex;gap:12px;align-items:flex-start;border:1px solid #54401f;background:var(--amber-soft);
+  border-radius:var(--r);padding:12px 14px;margin-bottom:18px;font-size:13px;
+}
+.rulebanner .sym{font-family:var(--mono);color:var(--amber);font-weight:600;flex:none}
+.empty{border:1px dashed var(--line2);border-radius:var(--r);padding:34px 20px;text-align:center;color:var(--muted)}
+.empty .big{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
+.empty p{font-size:12.5px;max-width:56ch;margin:0 auto 16px}
+
+/* ---------- modal ---------- */
+.overlay{position:fixed;inset:0;background:#0009;z-index:40;display:none;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line2);border-radius:14px;max-width:680px;width:100%;padding:20px}
+.modal h2{font-size:17px;font-weight:800;margin-bottom:4px}
+.modal .sub{color:var(--muted);font-size:12.5px;margin-bottom:16px}
+.provgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:14px}
+.prov{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel2);text-align:left;color:var(--muted)}
+.prov.sel{border-color:var(--violet);color:var(--text);background:var(--violet-soft)}
+.prov b{display:block;font-size:12.5px;color:var(--text);margin-bottom:2px}
+.prov span{font-size:10.5px;line-height:1.35;display:block}
+.keynote{font-size:11.5px;color:var(--faint);border:1px dashed var(--line);border-radius:8px;padding:9px 11px;margin-top:12px;line-height:1.5}
+.modal .foot{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.modal .seg{border-top:1px solid var(--line);margin:18px 0 14px;padding-top:16px}
+.modal .seg h3{font-size:13px;font-weight:800;margin-bottom:3px}
+.modal .seg .sub{margin-bottom:12px}
+.field{margin-bottom:12px}
+
+/* ---------- toast ---------- */
+.toasts{position:fixed;top:14px;right:14px;z-index:60;display:flex;flex-direction:column;gap:8px;max-width:340px}
+.toast{
+  background:var(--panel3);border:1px solid var(--line2);border-left:3px solid var(--teal);
+  border-radius:10px;padding:10px 14px;font-size:12.5px;box-shadow:0 8px 30px #0007;
+}
+.toast.err{border-left-color:var(--red)}
+.toast.ok{border-left-color:var(--green)}
+
+@media (max-width:900px){
+  .body{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  nav.rail{display:flex;overflow-x:auto;overflow-y:hidden;border-right:none;border-bottom:1px solid var(--line);padding:8px 10px;gap:4px}
+  .rail .railtitle,.railnote{display:none}
+  .step{width:auto;flex:none;margin-bottom:0;padding:6px 10px}
+  .step .lbl{font-size:12px;white-space:nowrap}
+  main{padding:16px 14px 60px}
+  .kvgrid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <div class="brand">
+      <div class="mark">AI</div>
+      <h1>AI Influencer Studio<small>TALENT REF → IDENTITAS → PERSONA → FOTO → KONTEN</small></h1>
+    </div>
+    <div class="grow"></div>
+    <div class="statusline" id="statusline"><span class="recdot"></span><span id="statustext">Siaga</span></div>
+    <div class="actions">
+      <button class="btn small" id="btnLoad" title="Buka project .json">📂 Buka</button>
+      <button class="btn small" id="btnSave" title="Simpan project sebagai .json">💾 Simpan</button>
+      <button class="btn small" id="btnApi">⚙ API</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <nav class="rail" id="rail"></nav>
+    <main id="main"></main>
+  </div>
+</div>
+
+<!-- API modal -->
+<div class="overlay" id="apiOverlay">
+  <div class="modal">
+    <h2>Mesin AI &amp; API Key</h2>
+    <div class="sub">Ada dua mesin terpisah: <b>mesin teks</b> (menganalisis foto, menulis persona &amp; caption) dan <b>mesin gambar</b> (merender fotonya). Key hanya hidup di memori tab ini.</div>
+
+    <div class="seg" style="border-top:none;margin-top:0;padding-top:0">
+      <h3>1 · Mesin teks &amp; vision</h3>
+      <div class="sub">Membaca foto referensi dan menulis semua teks.</div>
+      <div class="provgrid" id="txtGrid"></div>
+      <div id="txtFields"></div>
+      <div class="keynote" id="txtNote"></div>
+    </div>
+
+    <div class="seg">
+      <h3>2 · Mesin gambar</h3>
+      <div class="sub">Merender foto AI influencer-nya.</div>
+      <div class="provgrid" id="imgGrid"></div>
+      <div id="imgFields"></div>
+      <div class="keynote" id="imgNote"></div>
+    </div>
+
+    <div class="foot">
+      <button class="btn ghost" id="btnTestTxt">Tes mesin teks</button>
+      <button class="btn ghost" id="btnTestImg">Tes mesin gambar</button>
+      <button class="btn primary" id="btnCloseApi">Selesai</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<input type="file" id="fileInput" accept=".json" style="display:none">
+<input type="file" id="refInput" accept="image/*" multiple style="display:none">
+
+<script>
+/* =====================================================================
+   AI Influencer Studio — single-file app (pendamping Framework Brain Director)
+   Alur: Foto referensi → Identitas visual (identity lock) → Persona →
+         Rencana photoshoot → Render foto → Caption & script → Ekspor.
+
+   Aturan inti:
+   - IDENTITY LOCK bersifat FIXED. Selalu diprepend ke setiap prompt gambar
+     supaya wajah tidak berubah antar foto. AI tidak boleh menyusun ulang.
+   - Mode "wajah persis" hanya aktif setelah user mencentang pernyataan izin.
+   - Mode "wajah baru" TIDAK pernah mengirim foto asli ke mesin gambar.
+   - API key hidup di memori saja dan dibuang dari file project (pola /key$/i).
+===================================================================== */
+'use strict';
+
+/* ---------------- util ---------------- */
+const $=s=>document.querySelector(s);
+const $$=s=>Array.from(document.querySelectorAll(s));
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function setPath(obj, path, val){
+  const ks=path.split('.'); let o=obj;
+  for(let i=0;i<ks.length-1;i++){ const k=isNaN(ks[i])?ks[i]:+ks[i]; if(o[k]==null) o[k]={}; o=o[k]; }
+  const last=isNaN(ks.at(-1))?ks.at(-1):+ks.at(-1); o[last]=val;
+}
+function getPath(obj, path){ return path.split('.').reduce((o,k)=>o==null?o:o[isNaN(k)?k:+k], obj); }
+function toast(msg, type=''){
+  const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
+  $('#toasts').appendChild(t); setTimeout(()=>t.remove(), 6000);
+}
+function download(name, text, mime='text/plain'){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type:mime}));
+  a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+function downloadImage(img, name){
+  const a=document.createElement('a'); a.href=imgSrc(img); a.download=name;
+  a.target='_blank'; a.rel='noopener'; a.click();
+}
+const imgSrc=img=>img.remoteUrl?img.remoteUrl:('data:'+img.mimeType+';base64,'+img.data);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const slug=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'influencer';
+
+let busy=false;
+function setBusy(b, text){
+  busy=b; $('#statusline').classList.toggle('busy',b);
+  $('#statustext').textContent = b ? (text||'Memproses…') : 'Siaga';
+  $$('.needidle').forEach(el=>el.disabled=b);
+}
+
+/* ---------------- state ---------------- */
+/* Tidak ada localStorage: persistence lewat Simpan/Buka project (.json).
+   Kalau menambah key top-level di sini, daftarkan juga di KEEP pada loadProject. */
+const state={
+  api:{
+    txt:'gemini',
+    geminiKey:'', geminiModel:'gemini-2.5-flash',
+    claudeKey:'', claudeModel:'claude-sonnet-4-6',
+    dinoikiBase:'https://api.openai.com/v1', dinoikiKey:'', dinoikiModel:'gpt-4o-mini',
+    koboiBase:'', koboiKey:'', koboiModel:'',
+    compatBase:'', compatKey:'', compatModel:'',
+    img:'gemini_image',
+    imgGeminiKey:'', imgGeminiModel:'gemini-2.5-flash-image',
+    imgOaBase:'https://api.openai.com/v1', imgOaKey:'', imgOaModel:'gpt-image-1'
+  },
+  talent:{ mode:'inspired', consent:false, catatan:'', bahasa:'Indonesia (santai, ala creator)' },
+  uploads:{ refs:[] },
+  identity:{},
+  persona:{ disclosure:true },
+  shoot:{
+    jumlah:6, aspek:'2:3', tema:'', outfit:'', mood:'', platform:'Instagram feed + Reels cover',
+    kamera:'shot on 85mm lens at f/1.8, natural available light, photorealistic, sharp focus on the face, realistic skin texture with visible pores and fine flyaway hairs, subtle film grain',
+    negatif:'plastic skin, over-smoothed skin, waxy face, extra fingers, deformed hands, distorted face, watermark, text artifacts, logo, lowres, cartoon, 3d render'
+  },
+  shots:[],
+  anchor:null,
+  dirty:{}
+};
+
+/* ---------------- steps ---------------- */
+const STEPS=[
+  {id:'talent',   no:'01', label:'Foto Referensi'},
+  {id:'identity', no:'02', label:'Identitas Visual', ai:true},
+  {id:'persona',  no:'03', label:'Persona & Brand',  ai:true},
+  {id:'shoot',    no:'04', label:'Rencana Foto',     ai:true},
+  {id:'render',   no:'05', label:'Render Foto'},
+  {id:'content',  no:'06', label:'Caption & Script', ai:true},
+  {id:'export',   no:'07', label:'Ekspor'}
+];
+/* Tahap yang jadi kotor ketika tahap di kirinya di-regenerate. */
+const REGEN_ORDER=['identity','persona','shoot','content'];
+let current='talent';
+
+/* ---------------- definisi field ---------------- */
+/* Sumber kebenaran tunggal untuk: render form, konteks prompt (kvText),
+   dan skema JSON yang diminta ke AI (schemaOf). Tambah field cukup di sini. */
+const F={
+  identity:[
+    {k:'jenis_kelamin', l:'Gender / presentasi'},
+    {k:'rentang_usia',  l:'Rentang usia'},
+    {k:'etnis',         l:'Etnis / penampilan'},
+    {k:'bentuk_wajah',  l:'Bentuk wajah & rahang'},
+    {k:'kulit',         l:'Warna & tekstur kulit'},
+    {k:'rambut',        l:'Rambut (gaya, warna, panjang)'},
+    {k:'mata',          l:'Mata & alis'},
+    {k:'hidung_bibir',  l:'Hidung & bibir'},
+    {k:'ciri_khas',     l:'Ciri khas (lesung, tahi lalat, dll)'},
+    {k:'perawakan',     l:'Tinggi & perawakan'},
+    {k:'gaya_busana',   l:'Gaya busana khas'},
+    {k:'vibe',          l:'Vibe / aura keseluruhan'},
+    {k:'identity_lock', l:'IDENTITY LOCK — English, dipakai di SEMUA prompt', t:1, full:1}
+  ],
+  persona:[
+    {k:'nama',           l:'Nama influencer'},
+    {k:'usia',           l:'Usia'},
+    {k:'domisili',       l:'Domisili'},
+    {k:'niche',          l:'Niche utama'},
+    {k:'tagline',        l:'Tagline'},
+    {k:'gaya_bicara',    l:'Gaya bicara'},
+    {k:'kepribadian',    l:'Kepribadian'},
+    {k:'target_audiens', l:'Target audiens'},
+    {k:'bio',            l:'Bio Instagram (maks 150 karakter)', t:1, full:1},
+    {k:'pilar_konten',   l:'Pilar konten (3–5 pilar)',           t:1, full:1},
+    {k:'brand_cocok',    l:'Kategori brand yang cocok',          t:1, full:1},
+    {k:'pantangan',      l:'Pantangan / yang tidak pernah dilakukan', t:1, full:1}
+  ]
+};
+const schemaOf=f=>'{'+f.map(x=>'"'+x.k+'":"string"').join(',')+'}';
+const kvText=(fields,obj)=>fields.filter(f=>obj&&obj[f.k]).map(f=>'- '+f.l+': '+obj[f.k]).join('\n');
+const filled=(fields,obj)=>fields.some(f=>obj&&String(obj[f.k]||'').trim());
+
+const ASPECTS=[
+  {id:'2:3',  label:'Potret 2:3 · feed',      gem:'2:3',  oa:'1024x1536'},
+  {id:'3:4',  label:'Potret 3:4',             gem:'3:4',  oa:'1024x1536'},
+  {id:'4:5',  label:'Potret 4:5 · IG feed',   gem:'3:4',  oa:'1024x1536'},
+  {id:'1:1',  label:'Kotak 1:1',              gem:'1:1',  oa:'1024x1024'},
+  {id:'9:16', label:'Story / Reels 9:16',     gem:'9:16', oa:'1024x1536'},
+  {id:'4:3',  label:'Lanskap 4:3',            gem:'4:3',  oa:'1536x1024'}
+];
+const aspectOf=id=>ASPECTS.find(a=>a.id===id)||ASPECTS[0];
+
+/* =====================================================================
+   PROVIDER — mesin teks
+===================================================================== */
+const TXT_PROVIDERS=[
+  {id:'gemini',   name:'Google Gemini',  desc:'Key AI Studio (AIza…). Paling ramah browser.'},
+  {id:'claude',   name:'Claude API',     desc:'Key Anthropic (sk-ant-…).'},
+  {id:'dinoiki',  name:'Dinoiki',        desc:'Key dari dinoiki.com. Isi base URL sesuai dashboard.'},
+  {id:'koboillm', name:'KoboiLLM',       desc:'Key dari koboillm.com. Isi base URL sesuai dashboard.'},
+  {id:'compat',   name:'OpenAI-compatible', desc:'OpenAI, OpenRouter, Groq, DeepSeek, endpoint lain.'}
+];
+/* Dinoiki & KoboiLLM adalah gateway/reseller: key-nya bisa berupa key upstream
+   asli (OpenAI/Anthropic/Gemini) atau key gateway mereka sendiri. Karena itu
+   base URL selalu bisa diedit, bukan dikunci. */
+const OA={
+  dinoiki:  {name:'Dinoiki',  base:a=>a.dinoikiBase, key:a=>a.dinoikiKey, model:a=>a.dinoikiModel},
+  koboillm: {name:'KoboiLLM', base:a=>a.koboiBase,   key:a=>a.koboiKey,   model:a=>a.koboiModel},
+  compat:   {name:'API custom', base:a=>a.compatBase, key:a=>a.compatKey, model:a=>a.compatModel}
+};
+
+const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|exhausted|too many|unavailable|failed to fetch|quota/i;
+/* postJSON: retry otomatis 3x untuk error transien (429/5xx/server penuh).
+   Error non-transien dilempar langsung supaya user cepat tahu salahnya apa. */
+async function postJSON(url, opts, label){
+  let lastMsg='';
+  for(let att=0; att<3; att++){
+    if(att){
+      setBusy(true,'Server AI sibuk — mencoba ulang ('+att+'/2)…');
+      await sleep(att===1?2500:6000);
+    }
+    let status=0, d=null, raw='';
+    try{
+      const r=await fetch(url,opts); status=r.status;
+      raw=await r.text();
+      try{ d=raw?JSON.parse(raw):null; }catch(_){ d=null; }
+    }catch(e){ lastMsg=e.message||'gagal terhubung'; continue; }
+    const errMsg=(d&&d.error)?(d.error.message||JSON.stringify(d.error)):(status>=400?raw.slice(0,300):'');
+    if(status>=200&&status<300&&!errMsg) return d;
+    lastMsg=errMsg||('HTTP '+status);
+    if(!(status===429||status>=500||TRANSIENT.test(lastMsg))) throw new Error(label+': '+lastMsg);
+  }
+  throw new Error(label+': '+lastMsg+' — server sedang penuh. Tunggu 1–2 menit atau ganti provider di ⚙ API.');
+}
+
+/* Loop kontinuasi: kalau output berhenti karena batas token, potongan yang sudah
+   ada dikirim balik sebagai pesan assistant supaya AI melanjutkan dari titik itu. */
+const MAX_CHUNK=6;
+async function callAI(prompt, maxTokens=1600, images){
+  const a=state.api;
+
+  if(a.txt==='claude'){
+    if(!a.claudeKey) throw new Error('API key Claude belum diisi (tombol ⚙ API).');
+    const headers={'Content-Type':'application/json','x-api-key':a.claudeKey,
+      'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
+    const first=(images&&images.length)
+      ? [{type:'text',text:prompt}, ...images.map(im=>({type:'image',source:{type:'base64',media_type:im.mimeType,data:im.data}}))]
+      : prompt;
+    let full='';
+    for(let g=0; g<MAX_CHUNK; g++){
+      const messages=full?[{role:'user',content:first},{role:'assistant',content:full}]:[{role:'user',content:first}];
+      const d=await postJSON('https://api.anthropic.com/v1/messages',
+        {method:'POST',headers,body:JSON.stringify({model:a.claudeModel||'claude-sonnet-4-6',max_tokens:Math.max(maxTokens,2048),messages})},'Claude API');
+      full+=(d.content||[]).map(b=>b.text||'').join('');
+      if(d.stop_reason!=='max_tokens') break;
+    }
+    if(!full) throw new Error('Claude tidak mengembalikan teks.');
+    return full;
+  }
+
+  if(a.txt==='gemini'){
+    if(!a.geminiKey) throw new Error('API key Gemini belum diisi (tombol ⚙ API).');
+    const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(a.geminiModel||'gemini-2.5-flash')+':generateContent?key='+encodeURIComponent(a.geminiKey);
+    const first=(images&&images.length)
+      ? [{text:prompt}, ...images.map(im=>({inlineData:{mimeType:im.mimeType,data:im.data}}))]
+      : [{text:prompt}];
+    let full='';
+    for(let g=0; g<MAX_CHUNK; g++){
+      const contents=full?[{role:'user',parts:first},{role:'model',parts:[{text:full}]}]:[{role:'user',parts:first}];
+      const d=await postJSON(url,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contents,generationConfig:{maxOutputTokens:Math.max(maxTokens,3000)}})},'Gemini');
+      const c=d.candidates?.[0];
+      full+=(c?.content?.parts||[]).map(p=>p.text||'').join('');
+      if(c?.finishReason!=='MAX_TOKENS') break;
+    }
+    if(!full) throw new Error('Gemini tidak mengembalikan teks. Coba model lain di ⚙ API.');
+    return full;
+  }
+
+  const P=OA[a.txt];
+  if(!P) throw new Error('Provider teks tidak dikenal.');
+  const key=P.key(a);
+  if(!key) throw new Error('API key '+P.name+' belum diisi (tombol ⚙ API).');
+  const base=String(P.base(a)||'').replace(/\/+$/,'');
+  if(!base) throw new Error('Base URL '+P.name+' belum diisi (tombol ⚙ API).');
+  const model=P.model(a);
+  if(!model) throw new Error('Nama model '+P.name+' belum diisi (tombol ⚙ API).');
+  const headers={'Content-Type':'application/json','Authorization':'Bearer '+key};
+  const first=(images&&images.length)
+    ? [{type:'text',text:prompt}, ...images.map(im=>({type:'image_url',image_url:{url:'data:'+im.mimeType+';base64,'+im.data}}))]
+    : prompt;
+  /* Sebagian model baru menolak max_tokens dan minta max_completion_tokens. */
+  let tokenField='max_tokens', full='';
+  for(let g=0; g<MAX_CHUNK; g++){
+    const messages=full?[{role:'user',content:first},{role:'assistant',content:full}]:[{role:'user',content:first}];
+    const body={model,messages}; body[tokenField]=Math.max(maxTokens,2048);
+    let d;
+    try{
+      d=await postJSON(base+'/chat/completions',{method:'POST',headers,body:JSON.stringify(body)},P.name);
+    }catch(e){
+      if(tokenField==='max_tokens'&&/max_completion_tokens/i.test(e.message)){
+        tokenField='max_completion_tokens'; g--; continue;
+      }
+      throw e;
+    }
+    const ch=d.choices?.[0];
+    full+=ch?.message?.content||'';
+    if(ch?.finish_reason!=='length') break;
+  }
+  if(!full) throw new Error('Balasan kosong dari '+P.name+'. Cek nama model di ⚙ API.');
+  return full;
+}
+
+/* Model teks yang bisa membaca gambar. Gateway OpenAI-compatible dianggap bisa —
+   kalau ternyata tidak, errornya jelas dan user tinggal ganti model. */
+function refsForVision(){
+  const imgs=state.uploads.refs.slice(0,4);
+  return imgs.length?imgs:undefined;
+}
+
+/* ---------------- parsing JSON longgar ---------------- */
+/* Model sering membalas JSON kepotong / dengan newline mentah di dalam string.
+   repairJSON menambal itu; jangan diganti JSON.parse polos. */
+function repairJSON(t){
+  let out='', inStr=false, escN=false;
+  for(const ch of t){
+    if(inStr){
+      if(escN){ out+=ch; escN=false; continue; }
+      if(ch==='\\'){ out+=ch; escN=true; continue; }
+      if(ch==='"'){ inStr=false; out+=ch; continue; }
+      if(ch==='\n'){ out+='\\n'; continue; }
+      if(ch==='\r'){ out+='\\r'; continue; }
+      if(ch==='\t'){ out+='\\t'; continue; }
+      out+=ch; continue;
+    }
+    if(ch==='"'){ inStr=true; }
+    out+=ch;
+  }
+  if(inStr) out+='"';
+  const stack=[];
+  let s=false, e=false;
+  for(const ch of out){
+    if(s){ if(e){e=false;continue;} if(ch==='\\'){e=true;continue;} if(ch==='"') s=false; continue; }
+    if(ch==='"') s=true;
+    else if(ch==='{'||ch==='[') stack.push(ch);
+    else if(ch==='}'||ch===']') stack.pop();
+  }
+  out=out.replace(/,\s*$/,'');
+  while(stack.length){ out += stack.pop()==='{' ? '}' : ']'; }
+  return out;
+}
+function parseJSONLoose(text){
+  let t=String(text||'').trim().replace(/^```(?:json)?/i,'').replace(/```\s*$/,'').trim();
+  const a=t.search(/[{[]/);
+  if(a>-1) t=t.slice(a);
+  const b=Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
+  if(b>0){ try{ return JSON.parse(t.slice(0,b+1)); }catch(e){} }
+  try{ return JSON.parse(repairJSON(t)); }
+  catch(e){ throw new Error('Balasan AI bukan JSON valid. Coba generate ulang. Cuplikan: '+t.slice(0,120)); }
+}
+async function callJSON(prompt, maxTokens, images){
+  try{ return parseJSONLoose(await callAI(prompt, maxTokens, images)); }
+  catch(err){
+    return parseJSONLoose(await callAI(prompt+'\nPENTING: keluarkan HANYA satu objek JSON valid dalam SATU baris. Escape newline di dalam string sebagai \\n. Jangan ada teks lain.', maxTokens, images));
+  }
+}
+
+/* =====================================================================
+   PROVIDER — mesin gambar
+===================================================================== */
+const IMG_PROVIDERS=[
+  {id:'gemini_image', name:'Gemini Image',  desc:'gemini-2.5-flash-image (Nano Banana). Terbaik untuk konsistensi wajah dari foto referensi.'},
+  {id:'openai_image', name:'OpenAI Images', desc:'gpt-image-1 lewat /images/generations & /images/edits.'},
+  {id:'compat_image', name:'Gateway lain',  desc:'Endpoint /images/generations OpenAI-compatible (Dinoiki, KoboiLLM, dll). Tanpa foto referensi.'},
+  {id:'manual',       name:'Tanpa render',  desc:'Aplikasi hanya menyusun prompt; kamu render sendiri di tool lain.'}
+];
+function b64ToBlob(b64, mime){
+  const bin=atob(b64); const len=bin.length; const arr=new Uint8Array(len);
+  for(let i=0;i<len;i++) arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime||'image/png'});
+}
+/* Gemini image: kirim varian payload dari yang paling kaya ke yang paling polos.
+   Versi API berbeda menerima opsi yang berbeda, jadi turun tangga saat ditolak. */
+async function geminiImage(prompt, refs){
+  const a=state.api;
+  const key=a.imgGeminiKey||a.geminiKey;
+  if(!key) throw new Error('API key Gemini untuk mesin gambar belum diisi (⚙ API).');
+  const model=a.imgGeminiModel||'gemini-2.5-flash-image';
+  const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(key);
+  const parts=[{text:prompt}, ...(refs||[]).map(im=>({inlineData:{mimeType:im.mimeType,data:im.data}}))];
+  const ar=aspectOf(state.shoot.aspek).gem;
+  const variants=[
+    {responseModalities:['IMAGE'], imageConfig:{aspectRatio:ar}},
+    {responseModalities:['IMAGE']},
+    {responseModalities:['TEXT','IMAGE']}
+  ];
+  let lastErr=null;
+  for(const generationConfig of variants){
+    try{
+      const d=await postJSON(url,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contents:[{role:'user',parts}],generationConfig})},'Gemini Image');
+      const got=(d.candidates?.[0]?.content?.parts||[]).find(p=>p.inlineData&&p.inlineData.data);
+      if(got) return {mimeType:got.inlineData.mimeType||'image/png', data:got.inlineData.data};
+      const why=(d.candidates?.[0]?.content?.parts||[]).map(p=>p.text||'').join(' ').trim()
+        || d.promptFeedback?.blockReason || '';
+      lastErr=new Error('Gemini Image tidak mengembalikan gambar'+(why?': '+why.slice(0,200):'. Coba longgarkan prompt atau ganti model.'));
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr||new Error('Gemini Image gagal.');
+}
+async function openaiImage(prompt, refs, cfgBase, cfgKey, cfgModel, label, allowRefs){
+  const base=String(cfgBase||'').replace(/\/+$/,'');
+  if(!base) throw new Error('Base URL '+label+' belum diisi (⚙ API).');
+  if(!cfgKey) throw new Error('API key '+label+' belum diisi (⚙ API).');
+  const model=cfgModel||'gpt-image-1';
+  const size=aspectOf(state.shoot.aspek).oa;
+  const useEdit=allowRefs && refs && refs.length && /gpt-image/i.test(model);
+  let d;
+  if(useEdit){
+    /* /images/edits menerima foto referensi sebagai multipart; jangan set
+       Content-Type manual supaya browser menuliskan boundary-nya sendiri. */
+    const fd=new FormData();
+    fd.append('model',model); fd.append('prompt',prompt); fd.append('size',size); fd.append('n','1');
+    refs.slice(0,4).forEach((im,i)=>fd.append('image[]', b64ToBlob(im.data,im.mimeType), 'ref'+i+'.png'));
+    d=await postJSON(base+'/images/edits',{method:'POST',headers:{'Authorization':'Bearer '+cfgKey},body:fd},label);
+  }else{
+    d=await postJSON(base+'/images/generations',
+      {method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfgKey},
+       body:JSON.stringify({model,prompt,size,n:1})},label);
+  }
+  const item=d.data?.[0];
+  if(item?.b64_json) return {mimeType:'image/png', data:item.b64_json};
+  if(item?.url) return {mimeType:'image/png', data:'', remoteUrl:item.url};
+  throw new Error(label+': balasan tidak berisi gambar.');
+}
+/* Foto referensi yang benar-benar dikirim ke mesin gambar.
+   Mode "wajah baru" TIDAK pernah mengirim foto orang asli — hanya anchor hasil
+   render (yang sudah berupa wajah buatan AI). */
+function refsForImage(){
+  const out=[];
+  if(state.anchor) out.push(state.anchor);
+  if(state.talent.mode==='locked' && state.talent.consent) out.push(...state.uploads.refs.slice(0,3));
+  return out.slice(0,4);
+}
+async function generateImage(prompt){
+  const a=state.api, refs=refsForImage();
+  if(a.img==='manual') throw new Error('Mesin gambar diset "Tanpa render". Pilih mesin gambar di ⚙ API, atau salin prompt-nya ke tool lain.');
+  if(a.img==='gemini_image') return geminiImage(prompt, refs);
+  if(a.img==='openai_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'OpenAI Images', true);
+  if(a.img==='compat_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'Gateway gambar', false);
+  throw new Error('Mesin gambar tidak dikenal.');
+}
+
+/* =====================================================================
+   PROMPT BUILDER
+===================================================================== */
+const HEADER='Kamu adalah art director + talent manager untuk AI influencer (virtual influencer) di media sosial Indonesia. Jawabanmu presisi, tidak bertele-tele, dan sadar bahwa hasilnya dipakai untuk produksi konten nyata.';
+const JSON_RULE='Balas HANYA satu objek JSON valid tanpa penjelasan, tanpa markdown, tanpa blok kode.';
+const fbLine=fb=>fb?('\n\nREVISI DARI USER (wajib dipatuhi, override instruksi sebelumnya): '+fb):'';
+
+function modeLine(){
+  return state.talent.mode==='locked'
+    ? 'MODE IDENTITAS: WAJAH KONSISTEN. User memakai foto talent yang ia miliki izinnya dan ingin hasilnya memakai wajah yang sama persis dengan foto referensi. Deskripsikan ciri wajah pada foto seakurat mungkin.'
+    : 'MODE IDENTITAS: WAJAH BARU. Foto referensi HANYA dipakai sebagai arah gaya (rentang usia, vibe, gaya rambut, gaya busana, mood). Rancang orang FIKTIF yang ORISINAL — jangan menyalin ciri wajah spesifik orang di foto, jangan menyebut nama orang nyata, dan pastikan hasilnya tidak dikenali sebagai orang tersebut.';
+}
+function buildContext(){
+  const L=[];
+  L.push(modeLine());
+  L.push('Bahasa output teks: '+state.talent.bahasa+'.');
+  if(state.talent.catatan) L.push('Catatan dari user: '+state.talent.catatan);
+  const it=kvText(F.identity,state.identity); if(it) L.push('\n[Identitas Visual]\n'+it);
+  const pt=kvText(F.persona,state.persona);   if(pt) L.push('\n[Persona]\n'+pt);
+  const s=state.shoot;
+  const sh=[s.tema&&('Tema/lokasi: '+s.tema), s.outfit&&('Arah outfit: '+s.outfit),
+            s.mood&&('Mood: '+s.mood), s.platform&&('Platform: '+s.platform)].filter(Boolean).join('\n');
+  if(sh) L.push('\n[Arahan Photoshoot]\n'+sh);
+  return L.join('\n');
+}
+function promptIdentity(fb){
+  const hasImg=state.uploads.refs.length>0;
+  return HEADER+'\n'+buildContext()+
+    '\n\nTAHAP: IDENTITAS VISUAL.'+
+    (hasImg?' Foto referensi terlampir di pesan ini — amati langsung, jangan menerka.':' Belum ada foto referensi; rancang dari catatan user.')+
+    '\nSusun "character bible" untuk satu orang yang akan dipakai berulang di semua foto.'+
+    '\nIsi setiap field ringkas dalam '+state.talent.bahasa+' (maks 18 kata), KECUALI field identity_lock.'+
+    '\nField identity_lock WAJIB dalam bahasa Inggris, satu paragraf 60–100 kata, format deskripsi subjek untuk image generator: umur, etnis, bentuk wajah, kulit, rambut, mata, alis, hidung, bibir, ciri khas, perawakan. Jangan menyebut pakaian, latar, pose, kamera, atau nama orang nyata di identity_lock — hanya identitas fisik yang tidak berubah antar foto.'+
+    fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.identity);
+}
+function promptPersona(fb){
+  return HEADER+'\n'+buildContext()+
+    '\n\nTAHAP: PERSONA & BRAND. Bangun persona yang konsisten dengan identitas visual di atas dan terasa seperti orang Indonesia betulan, bukan stok karakter.'+
+    '\nNama harus terasa natural untuk pasar Indonesia. Bio maksimal 150 karakter. Pilar konten 3–5 butir dipisah baris baru. Pantangan berisi hal yang tidak akan pernah ia posting.'+
+    '\nSemua dalam '+state.talent.bahasa+'.'+
+    fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.persona);
+}
+function promptShoot(fb){
+  const n=Math.max(1,Math.min(12,+state.shoot.jumlah||6));
+  return HEADER+'\n'+buildContext()+
+    '\n\nTAHAP: RENCANA PHOTOSHOOT. Rancang '+n+' foto berbeda untuk satu sesi konten influencer ini.'+
+    '\nSetiap foto harus berbeda jelas: variasikan lokasi, jarak kamera (close-up / medium / full body), outfit, waktu, aktivitas, dan ekspresi. Jangan ada dua foto yang mirip.'+
+    '\nField judul, tujuan, outfit, lokasi, pose, pencahayaan dalam '+state.talent.bahasa+' dan singkat.'+
+    '\nField prompt WAJIB bahasa Inggris, 45–90 kata, mendeskripsikan HANYA: outfit, lokasi/latar, pose & aktivitas, ekspresi, pencahayaan, dan komposisi. JANGAN mendeskripsikan wajah, umur, etnis, atau rambut di field prompt — identitas sudah dikunci terpisah dan akan ditambahkan otomatis di depan prompt. Jangan tulis aspect ratio atau setelan kamera; itu juga ditambahkan otomatis.'+
+    '\nField negative: bahasa Inggris, hal spesifik yang harus dihindari di foto itu (boleh kosong).'+
+    fbLine(fb)+
+    '\nBalas HANYA satu objek JSON valid: {"shots":[{"judul":"string","tujuan":"string","outfit":"string","lokasi":"string","pose":"string","pencahayaan":"string","prompt":"string","negative":"string"}]} dengan tepat '+n+' item.';
+}
+function promptContent(i, fb){
+  const sh=state.shots[i];
+  return HEADER+'\n'+buildContext()+
+    '\n\nTAHAP: CAPTION & SCRIPT untuk FOTO '+(i+1)+'.'+
+    '\nDetail foto ini:\n- Judul: '+(sh.judul||'-')+'\n- Tujuan: '+(sh.tujuan||'-')+'\n- Outfit: '+(sh.outfit||'-')+'\n- Lokasi: '+(sh.lokasi||'-')+'\n- Pose: '+(sh.pose||'-')+
+    '\nTulis dengan suara persona di atas, dalam '+state.talent.bahasa+'. Hook maksimal 12 kata dan scroll-stopping. Caption 2–4 kalimat, terasa personal, bukan iklan. Hashtag 8–12 buah relevan dipisah spasi. Script video 15–20 detik dalam format bernomor per beat, siap dibaca.'+
+    (state.persona.disclosure?'\nWAJIB: sertakan penanda konten AI (mis. "dibuat dengan AI" atau tagar #AIgenerated) di akhir caption dan di field hashtag.':'')+
+    fbLine(fb)+'\n'+JSON_RULE+
+    '\nSkema: {"hook":"string","caption":"string","hashtag":"string","script":"string"}';
+}
+
+/* IDENTITY LOCK bersifat FIXED: selalu diprepend ke setiap prompt gambar supaya
+   wajah tidak melenceng. AI penyusun shot dilarang menulis ulang bagian ini. */
+function finalPrompt(sh){
+  const P=[];
+  const lock=String(state.identity.identity_lock||'').trim();
+  if(lock){
+    P.push((state.talent.mode==='locked'
+      ? 'SUBJECT — keep this exact same person in every image, identical facial identity: '
+      : 'SUBJECT — a single consistent fictional person, identical facial identity in every image: ')+lock);
+  }
+  const scene=String(sh.prompt||'').trim();
+  if(scene) P.push('SCENE: '+scene);
+  if(state.shoot.kamera) P.push('TECHNICAL: '+state.shoot.kamera+'.');
+  P.push('Aspect ratio '+state.shoot.aspek+'. Photorealistic candid photograph, not an illustration.');
+  const neg=[sh.negative, state.shoot.negatif].map(x=>String(x||'').trim()).filter(Boolean).join(', ');
+  if(neg) P.push('AVOID: '+neg+'.');
+  return P.join('\n\n');
+}
+
+/* =====================================================================
+   AI RUNNERS
+===================================================================== */
+/* Sudah ada isinya atau belum — dipakai untuk lampu status di rail dan untuk
+   menandai tahap kotor. Tahap yang masih kosong tidak pernah ditandai "kotor". */
+const HAS={
+  talent:  ()=>!!(state.uploads.refs.length||state.talent.catatan),
+  identity:()=>filled(F.identity,state.identity),
+  persona: ()=>filled(F.persona,state.persona),
+  shoot:   ()=>state.shots.length>0,
+  render:  ()=>state.shots.some(s=>s.imgs.length),
+  content: ()=>state.shots.length>0&&state.shots.every(s=>s.konten)
+};
+function markDirty(id){
+  const i=REGEN_ORDER.indexOf(id);
+  if(i<0) return;
+  REGEN_ORDER.slice(i+1).forEach(k=>{ if(HAS[k]&&HAS[k]()) state.dirty[k]=true; });
+  delete state.dirty[id];
+}
+async function runStage(id, fb){
+  if(busy) return;
+  try{
+    setBusy(true, 'Menjalankan tahap '+id+'…');
+    if(id==='identity'){
+      const d=await callJSON(promptIdentity(fb), 1600, refsForVision());
+      F.identity.forEach(f=>{ if(d[f.k]!=null) state.identity[f.k]=String(d[f.k]); });
+    }else if(id==='persona'){
+      const d=await callJSON(promptPersona(fb), 1600);
+      F.persona.forEach(f=>{ if(d[f.k]!=null) state.persona[f.k]=String(d[f.k]); });
+    }else if(id==='shoot'){
+      const d=await callJSON(promptShoot(fb), 3600);
+      const arr=Array.isArray(d.shots)?d.shots:(Array.isArray(d)?d:[]);
+      if(!arr.length) throw new Error('AI tidak mengembalikan daftar foto. Coba lagi.');
+      state.shots=arr.map(s=>({
+        judul:s.judul||'', tujuan:s.tujuan||'', outfit:s.outfit||'', lokasi:s.lokasi||'',
+        pose:s.pose||'', pencahayaan:s.pencahayaan||'', prompt:s.prompt||'', negative:s.negative||'',
+        imgs:[], konten:null
+      }));
+    }
+    markDirty(id);
+    toast('Tahap '+id+' selesai.','ok');
+    render();
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function genContent(i, fb){
+  const d=await callJSON(promptContent(i, fb), 1400);
+  state.shots[i].konten={hook:d.hook||'',caption:d.caption||'',hashtag:d.hashtag||'',script:d.script||''};
+}
+async function runContentAll(){
+  if(busy) return;
+  try{
+    for(let i=0;i<state.shots.length;i++){
+      setBusy(true,'Menulis konten foto '+(i+1)+'/'+state.shots.length+'…');
+      await genContent(i,'');
+    }
+    delete state.dirty.content;
+    toast('Caption & script selesai untuk '+state.shots.length+' foto.','ok');
+    render();
+  }catch(e){ toast(e.message,'err'); render(); }
+  finally{ setBusy(false); }
+}
+async function renderShot(i){
+  const sh=state.shots[i];
+  const img=await generateImage(finalPrompt(sh));
+  sh.imgs.push(img);
+  /* Anchor pertama otomatis: hasil render pertama jadi acuan wajah berikutnya,
+     supaya foto ke-2 dan seterusnya konsisten walau tanpa foto orang asli. */
+  if(!state.anchor && img.data) state.anchor=img;
+}
+async function runRenderOne(i){
+  if(busy) return;
+  try{ setBusy(true,'Merender foto '+(i+1)+'…'); await renderShot(i); toast('Foto '+(i+1)+' selesai.','ok'); render(); }
+  catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function runRenderAll(){
+  if(busy) return;
+  let ok=0, fail=0, lastErr='';
+  try{
+    for(let i=0;i<state.shots.length;i++){
+      setBusy(true,'Merender foto '+(i+1)+'/'+state.shots.length+'…');
+      try{ await renderShot(i); ok++; render(); }
+      catch(e){ fail++; lastErr=e.message; }
+      if(i<state.shots.length-1) await sleep(700);
+    }
+  }finally{ setBusy(false); }
+  render();
+  if(fail) toast(ok+' foto berhasil, '+fail+' gagal. '+lastErr,'err');
+  else toast('Semua '+ok+' foto selesai dirender.','ok');
+}
+
+/* =====================================================================
+   UPLOAD
+===================================================================== */
+function getBase64(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve({mimeType:file.type||'image/jpeg', data:String(r.result).split(',')[1], name:file.name});
+    r.onerror=reject;
+    r.readAsDataURL(file);
+  });
+}
+async function addRefs(files){
+  const list=Array.from(files||[]).filter(f=>/^image\//.test(f.type));
+  if(!list.length) return;
+  for(const f of list){
+    if(state.uploads.refs.length>=6){ toast('Maksimal 6 foto referensi.','err'); break; }
+    if(f.size>8*1024*1024){ toast('"'+f.name+'" lebih dari 8 MB — dilewati.','err'); continue; }
+    try{ state.uploads.refs.push(await getBase64(f)); }
+    catch(e){ toast('Gagal memuat "'+f.name+'".','err'); }
+  }
+  render();
+}
+
+/* =====================================================================
+   RENDER UI
+===================================================================== */
+function stepState(id){
+  if(!HAS[id]||!HAS[id]()) return '';
+  return state.dirty[id] ? 'dirty' : 'done';
+}
+function renderRail(){
+  $('#rail').innerHTML='<div class="railtitle">Pipeline</div>'+STEPS.map(s=>{
+    const st=stepState(s.id);
+    return '<button class="step'+(current===s.id?' active':'')+'" data-go="'+s.id+'">'+
+      '<span class="no">'+s.no+'</span><span class="lbl">'+esc(s.label)+'</span>'+
+      '<span class="led '+st+'"></span></button>';
+  }).join('')+
+  '<div class="railnote">Tidak ada penyimpanan otomatis. Pakai <b>💾 Simpan</b> sebelum menutup tab — refresh = kerja hilang.</div>';
+}
+function fieldHTML(f, base, obj){
+  const v=obj[f.k]||'';
+  const inp=f.t
+    ? '<textarea data-path="'+base+'.'+f.k+'" rows="'+(f.k==='identity_lock'?5:3)+'">'+esc(v)+'</textarea>'
+    : '<input data-path="'+base+'.'+f.k+'" value="'+esc(v)+'">';
+  return '<div class="kv'+(f.full?' full':'')+'"><label>'+esc(f.l)+'</label>'+inp+'</div>';
+}
+function stampHTML(id){
+  const st=stepState(id);
+  if(st==='dirty') return '<span class="stamp dirty">perlu diperbarui</span>';
+  if(st==='done')  return '<span class="stamp done">terisi</span>';
+  return '<span class="stamp">kosong</span>';
+}
+function reviseHTML(id, label){
+  return '<div class="revise"><textarea id="rev-'+id+'" placeholder="'+esc(label)+'"></textarea>'+
+    '<button class="btn needidle" data-rev="'+id+'">↻ Revisi</button></div>';
+}
+function head(eyebrow, title, desc){
+  return '<div class="panelhead"><div class="eyebrow">'+esc(eyebrow)+'</div><h2>'+esc(title)+'</h2>'+
+    (desc?'<p>'+esc(desc)+'</p>':'')+'</div>';
+}
+
+function viewTalent(){
+  const t=state.talent, n=state.uploads.refs.length;
+  const thumbs=state.uploads.refs.map((im,i)=>
+    '<div class="thumb"><img src="'+imgSrc(im)+'" alt=""><button class="x" data-rmref="'+i+'">×</button>'+
+    '<div class="cap">'+esc(im.name||('foto '+(i+1)))+'</div></div>').join('');
+  return head('Tahap 01','Foto Referensi & Mode Identitas',
+      'Upload foto talent sebagai acuan. Foto dipakai untuk membaca gaya dan — kalau kamu pilih mode wajah konsisten — untuk mengunci wajahnya.')+
+    '<div class="card"><h3>📸 Foto referensi <span class="stamp">'+n+'/6</span></h3>'+
+      '<div class="dropzone" id="drop"><div class="big">Tarik foto ke sini atau klik untuk memilih</div>'+
+      '<p>JPG/PNG, maksimal 8 MB per foto. 2–4 foto dari sudut berbeda memberi hasil paling stabil. Foto tidak pernah dikirim ke mana pun selain penyedia AI yang kamu pilih sendiri.</p></div>'+
+      (thumbs?'<div class="thumbs">'+thumbs+'</div>':'')+
+    '</div>'+
+
+    '<div class="card"><h3>🎭 Mode identitas</h3>'+
+      '<div class="tiles">'+
+        '<button class="tile'+(t.mode==='inspired'?' sel':'')+'" data-mode="inspired"><b>Wajah baru, terinspirasi foto</b>'+
+          '<span>AI mengambil rentang usia, vibe, gaya rambut dan gaya busana dari foto, lalu membuat wajah orisinal yang bukan orang aslinya. Foto asli tidak pernah dikirim ke mesin gambar.</span></button>'+
+        '<button class="tile'+(t.mode==='locked'?' sel warn':'')+'" data-mode="locked"'+(t.consent?'':' disabled')+'><b>Wajah persis sama</b>'+
+          '<span>Wajah dikunci ke foto referensi supaya semua hasil memakai wajah yang sama. Butuh centang pernyataan izin di bawah.</span></button>'+
+      '</div>'+
+      '<div class="consent"><input type="checkbox" id="consent"'+(t.consent?' checked':'')+'>'+
+        '<label for="consent">Saya punya hak atau izin tertulis dari orang di foto ini untuk membuat citra AI dari wajahnya, dan saya bertanggung jawab atas penggunaannya. Tanpa centang ini, mode wajah persis tidak bisa dipakai.</label></div>'+
+    '</div>'+
+
+    '<div class="card"><h3>📝 Arahan awal</h3><div class="kvgrid">'+
+      '<div class="kv"><label>Bahasa output teks</label><input data-path="talent.bahasa" value="'+esc(t.bahasa)+'"></div>'+
+      '<div class="kv full"><label>Catatan untuk AI (opsional)</label>'+
+        '<textarea data-path="talent.catatan" placeholder="mis. perempuan 24 tahun, niche skincare & daily vlog, vibe clean girl Jakarta Selatan, hindari kesan glamor berlebihan">'+esc(t.catatan)+'</textarea>'+
+        '<div class="hint">Kalau kamu belum punya foto sama sekali, catatan ini saja sudah cukup untuk mulai.</div></div>'+
+    '</div></div>'+
+
+    '<div class="toolbar"><div class="spacer"></div>'+
+      '<button class="btn go needidle" data-go="identity">Lanjut ke identitas visual →</button></div>';
+}
+
+function viewIdentity(){
+  const hasSrc=state.uploads.refs.length||state.talent.catatan;
+  return head('Tahap 02','Identitas Visual','AI membaca foto referensi dan menyusun character bible. Field IDENTITY LOCK adalah kuncinya — teks itu ikut di setiap prompt gambar supaya wajahnya tidak berubah antar foto.')+
+    '<div class="rulebanner"><span class="sym">▲</span><div>IDENTITY LOCK bersifat tetap. Kamu boleh menyuntingnya manual, tapi jangan menghapusnya — tanpa itu setiap foto akan menghasilkan orang yang berbeda.</div></div>'+
+    '<div class="toolbar">'+stampHTML('identity')+'<div class="spacer"></div>'+
+      '<button class="btn primary needidle" data-gen="identity">✦ '+(filled(F.identity,state.identity)?'Generate ulang':'Generate identitas')+'</button></div>'+
+    (!hasSrc?'<div class="check warn"><span class="sym">!</span><div>Belum ada foto referensi maupun catatan. Isi salah satu di tahap 01 supaya hasilnya tidak asal.</div></div>':'')+
+    '<div class="card"><h3>🧬 Character bible</h3><div class="kvgrid">'+
+      F.identity.map(f=>fieldHTML(f,'identity',state.identity)).join('')+
+    '</div>'+reviseHTML('identity','mis. buat rambutnya lebih pendek sebahu, kesan lebih dewasa')+'</div>'+
+    '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="persona">Lanjut ke persona →</button></div>';
+}
+
+function viewPersona(){
+  return head('Tahap 03','Persona & Brand','Siapa dia, bicaranya bagaimana, dan konten apa yang masuk akal untuk dia posting.')+
+    '<div class="toolbar">'+stampHTML('persona')+'<div class="spacer"></div>'+
+      '<button class="btn primary needidle" data-gen="persona">✦ '+(filled(F.persona,state.persona)?'Generate ulang':'Generate persona')+'</button></div>'+
+    '<div class="card"><h3>👤 Profil</h3><div class="kvgrid">'+
+      F.persona.map(f=>fieldHTML(f,'persona',state.persona)).join('')+
+    '</div>'+
+    '<div class="consent" style="border-color:var(--line);background:var(--panel2)">'+
+      '<input type="checkbox" id="disclosure"'+(state.persona.disclosure?' checked':'')+'>'+
+      '<label for="disclosure">Sertakan penanda konten AI di caption dan hashtag. Beberapa platform mewajibkan pelabelan media sintetis — biarkan tercentang kecuali kamu punya alasan kuat.</label></div>'+
+    reviseHTML('persona','mis. bikin gaya bicaranya lebih blak-blakan dan lucu')+'</div>'+
+    '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="shoot">Lanjut ke rencana foto →</button></div>';
+}
+
+function viewShoot(){
+  const s=state.shoot;
+  const shots=state.shots.map((sh,i)=>
+    '<div class="shot"><div class="shothead"><span class="no">FOTO '+String(i+1).padStart(2,'0')+'</span>'+
+      '<span class="ttl">'+esc(sh.judul||'(tanpa judul)')+'</span><span class="spacer"></span>'+
+      '<button class="btn small danger needidle" data-rmshot="'+i+'">Hapus</button></div>'+
+      '<div class="shotbody"><div class="kvgrid">'+
+        '<div class="kv"><label>Judul</label><input data-path="shots.'+i+'.judul" value="'+esc(sh.judul)+'"></div>'+
+        '<div class="kv"><label>Tujuan</label><input data-path="shots.'+i+'.tujuan" value="'+esc(sh.tujuan)+'"></div>'+
+        '<div class="kv"><label>Outfit</label><input data-path="shots.'+i+'.outfit" value="'+esc(sh.outfit)+'"></div>'+
+        '<div class="kv"><label>Lokasi</label><input data-path="shots.'+i+'.lokasi" value="'+esc(sh.lokasi)+'"></div>'+
+        '<div class="kv"><label>Pose</label><input data-path="shots.'+i+'.pose" value="'+esc(sh.pose)+'"></div>'+
+        '<div class="kv"><label>Pencahayaan</label><input data-path="shots.'+i+'.pencahayaan" value="'+esc(sh.pencahayaan)+'"></div>'+
+        '<div class="kv full"><label>Prompt adegan (English — tanpa deskripsi wajah)</label>'+
+          '<textarea data-path="shots.'+i+'.prompt" rows="3">'+esc(sh.prompt)+'</textarea></div>'+
+        '<div class="kv full"><label>Negative khusus foto ini</label>'+
+          '<input data-path="shots.'+i+'.negative" value="'+esc(sh.negative)+'"></div>'+
+      '</div></div></div>').join('');
+  return head('Tahap 04','Rencana Photoshoot','Satu sesi, beberapa foto berbeda. Prompt adegan sengaja tidak memuat deskripsi wajah — identity lock ditambahkan otomatis saat render.')+
+    '<div class="card"><h3>🎬 Arahan sesi</h3><div class="kvgrid">'+
+      '<div class="kv"><label>Jumlah foto</label><input type="number" min="1" max="12" data-path="shoot.jumlah" value="'+esc(s.jumlah)+'"></div>'+
+      '<div class="kv"><label>Rasio</label><select data-path="shoot.aspek">'+
+        ASPECTS.map(a=>'<option value="'+a.id+'"'+(s.aspek===a.id?' selected':'')+'>'+esc(a.label)+'</option>').join('')+'</select></div>'+
+      '<div class="kv"><label>Platform</label><input data-path="shoot.platform" value="'+esc(s.platform)+'"></div>'+
+      '<div class="kv"><label>Tema / lokasi</label><input data-path="shoot.tema" placeholder="mis. kafe minimalis Jakarta pagi hari" value="'+esc(s.tema)+'"></div>'+
+      '<div class="kv"><label>Arah outfit</label><input data-path="shoot.outfit" placeholder="mis. casual neutral tone, linen" value="'+esc(s.outfit)+'"></div>'+
+      '<div class="kv"><label>Mood</label><input data-path="shoot.mood" placeholder="mis. hangat, tenang, sedikit playful" value="'+esc(s.mood)+'"></div>'+
+      '<div class="kv full"><label>Setelan teknis (ikut di semua prompt)</label><textarea data-path="shoot.kamera" rows="2">'+esc(s.kamera)+'</textarea></div>'+
+      '<div class="kv full"><label>Negative global</label><textarea data-path="shoot.negatif" rows="2">'+esc(s.negatif)+'</textarea></div>'+
+    '</div></div>'+
+    '<div class="toolbar">'+stampHTML('shoot')+'<div class="spacer"></div>'+
+      '<button class="btn primary needidle" data-gen="shoot">✦ '+(state.shots.length?'Susun ulang daftar foto':'Susun daftar foto')+'</button></div>'+
+    (state.shots.length?shots+reviseHTML('shoot','mis. tambah 2 foto outdoor sore hari, kurangi close-up')
+      :'<div class="empty"><div class="big">Belum ada rencana foto</div><p>Isi arahan sesi di atas lalu klik “Susun daftar foto”. AI akan membuat variasi lokasi, jarak kamera, outfit, dan ekspresi.</p></div>')+
+    (state.shots.length?'<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="render">Lanjut ke render →</button></div>':'');
+}
+
+function viewRender(){
+  const a=state.api;
+  const manual=a.img==='manual';
+  const lock=String(state.identity.identity_lock||'').trim();
+  const refs=refsForImage();
+  let info='';
+  if(state.anchor) info='Anchor aktif: foto hasil render dipakai sebagai acuan wajah untuk render berikutnya.';
+  else if(state.talent.mode==='locked') info='Foto referensi asli dikirim ke mesin gambar sebagai acuan wajah ('+refs.length+' foto).';
+  else info='Mode wajah baru: tidak ada foto orang asli yang dikirim. Konsistensi datang dari identity lock, lalu dari anchor setelah foto pertama jadi.';
+
+  const shots=state.shots.map((sh,i)=>{
+    const gal=sh.imgs.map((im,j)=>{
+      const isAnchor=state.anchor===im;
+      return '<div class="gitem'+(isAnchor?' anchor':'')+'">'+
+        (isAnchor?'<span class="anchorbadge">ANCHOR</span>':'')+
+        '<img src="'+imgSrc(im)+'" alt="">'+
+        '<div class="row">'+
+          '<button class="btn small" data-dl="'+i+'.'+j+'">Unduh</button>'+
+          (im.data?'<button class="btn small" data-anchor="'+i+'.'+j+'">Anchor</button>':'')+
+          '<button class="btn small danger" data-rmimg="'+i+'.'+j+'">Hapus</button>'+
+        '</div></div>';
+    }).join('');
+    return '<div class="shot"><div class="shothead"><span class="no">FOTO '+String(i+1).padStart(2,'0')+'</span>'+
+      '<span class="ttl">'+esc(sh.judul||'(tanpa judul)')+'</span><span class="spacer"></span>'+
+      '<span class="stamp'+(sh.imgs.length?' done':'')+'">'+sh.imgs.length+' hasil</span>'+
+      '<button class="btn small primary needidle" data-render="'+i+'"'+(manual?' disabled':'')+'>▶ Render</button></div>'+
+      '<div class="shotbody">'+
+        '<label>Prompt final yang dikirim ke mesin gambar</label>'+
+        '<textarea class="promptbox" readonly>'+esc(finalPrompt(sh))+'</textarea>'+
+        '<div class="toolbar" style="margin:8px 0 0"><button class="btn small" data-copy="'+i+'">⧉ Salin prompt</button></div>'+
+        (gal?'<div class="gallery">'+gal+'</div>':'')+
+      '</div></div>';
+  }).join('');
+
+  return head('Tahap 05','Render Foto','Identity lock + prompt adegan + setelan teknis digabung otomatis. Foto pertama yang jadi otomatis dipakai sebagai anchor wajah untuk foto-foto berikutnya.')+
+    (!lock?'<div class="check err"><span class="sym">✕</span><div>IDENTITY LOCK masih kosong. Isi tahap 02 dulu, kalau tidak setiap foto akan menghasilkan orang yang berbeda.</div></div>':'')+
+    (manual?'<div class="check warn"><span class="sym">!</span><div>Mesin gambar diset “Tanpa render”. Salin prompt di bawah ke tool gambar pilihanmu, atau pilih mesin gambar lewat ⚙ API.</div></div>'
+           :'<div class="check ok"><span class="sym">✓</span><div>'+esc(info)+'</div></div>')+
+    (!state.shots.length
+      ? '<div class="empty"><div class="big">Belum ada foto untuk dirender</div><p>Susun rencana photoshoot di tahap 04 dulu.</p><button class="btn primary" data-go="shoot">← Ke rencana foto</button></div>'
+      : '<div class="toolbar">'+
+          '<button class="btn primary needidle" data-renderall="1"'+(manual?' disabled':'')+'>⚡ Render semua ('+state.shots.length+')</button>'+
+          (state.anchor?'<button class="btn ghost needidle" data-clearanchor="1">Lepas anchor</button>':'')+
+          '<div class="spacer"></div>'+
+          '<button class="btn needidle" data-dlall="1">⬇ Unduh semua foto</button>'+
+        '</div>'+shots+
+        '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="content">Lanjut ke caption →</button></div>');
+}
+
+function viewContent(){
+  const shots=state.shots.map((sh,i)=>{
+    const k=sh.konten;
+    const prev=sh.imgs[0]?'<img src="'+imgSrc(sh.imgs[0])+'" style="width:110px;border-radius:8px;border:1px solid var(--line);float:right;margin:0 0 10px 12px">':'';
+    return '<div class="shot"><div class="shothead"><span class="no">FOTO '+String(i+1).padStart(2,'0')+'</span>'+
+      '<span class="ttl">'+esc(sh.judul||'(tanpa judul)')+'</span><span class="spacer"></span>'+
+      '<button class="btn small needidle" data-gencontent="'+i+'">'+(k?'↻ Tulis ulang':'✦ Tulis konten')+'</button></div>'+
+      '<div class="shotbody">'+prev+
+      (k?'<div class="kvgrid">'+
+        '<div class="kv full"><label>Hook</label><input data-path="shots.'+i+'.konten.hook" value="'+esc(k.hook)+'"></div>'+
+        '<div class="kv full"><label>Caption</label><textarea data-path="shots.'+i+'.konten.caption" rows="3">'+esc(k.caption)+'</textarea></div>'+
+        '<div class="kv full"><label>Hashtag</label><textarea data-path="shots.'+i+'.konten.hashtag" rows="2">'+esc(k.hashtag)+'</textarea></div>'+
+        '<div class="kv full"><label>Script video 15–20 detik</label><textarea data-path="shots.'+i+'.konten.script" rows="5">'+esc(k.script)+'</textarea></div>'+
+      '</div>'
+      :'<div style="color:var(--muted);font-size:13px">Belum ada caption untuk foto ini.</div>')+
+      '<div style="clear:both"></div></div></div>';
+  }).join('');
+  return head('Tahap 06','Caption & Script','Ditulis dengan suara persona, per foto, siap tempel.')+
+    (!state.shots.length
+      ? '<div class="empty"><div class="big">Belum ada foto</div><p>Susun rencana photoshoot dulu di tahap 04.</p><button class="btn primary" data-go="shoot">← Ke rencana foto</button></div>'
+      : '<div class="toolbar">'+stampHTML('content')+
+        '<button class="btn primary needidle" data-contentall="1">⚡ Tulis konten semua foto</button>'+
+        '<div class="spacer"></div></div>'+shots);
+}
+
+function viewExport(){
+  const nImg=state.shots.reduce((n,s)=>n+s.imgs.length,0);
+  const checks=[];
+  const push=(t,sym,msg)=>checks.push('<div class="check '+t+'"><span class="sym">'+sym+'</span><div>'+msg+'</div></div>');
+  String(state.identity.identity_lock||'').trim() ? push('ok','✓','Identity lock terisi.') : push('err','✕','Identity lock kosong — hasil foto tidak akan konsisten.');
+  filled(F.persona,state.persona) ? push('ok','✓','Persona terisi.') : push('warn','!','Persona masih kosong.');
+  state.shots.length ? push('ok','✓',state.shots.length+' foto direncanakan.') : push('err','✕','Belum ada rencana foto.');
+  nImg ? push('ok','✓',nImg+' file gambar sudah dirender.') : push('warn','!','Belum ada gambar yang dirender.');
+  state.shots.length&&state.shots.every(s=>s.konten) ? push('ok','✓','Caption lengkap untuk semua foto.') : push('warn','!','Sebagian foto belum punya caption.');
+  if(state.talent.mode==='locked') push('warn','!','Mode wajah persis aktif. Pastikan izin talent masih berlaku sebelum kontennya dipublikasikan.');
+  if(!state.persona.disclosure) push('warn','!','Penanda konten AI dimatikan. Cek dulu aturan pelabelan media sintetis di platform tujuanmu.');
+
+  return head('Tahap 07','Ekspor','Semua hasil bisa dibawa keluar. File project menyimpan semuanya kecuali API key.')+
+    '<div class="card"><h3>✅ Pemeriksaan</h3>'+checks.join('')+'</div>'+
+    '<div class="card"><h3>📦 Unduhan</h3><div class="toolbar">'+
+      '<button class="btn primary" id="btnSave2">💾 Project (.json)</button>'+
+      '<button class="btn" data-export="prompts">📄 Semua prompt (.txt)</button>'+
+      '<button class="btn" data-export="content">📄 Caption & script (.txt)</button>'+
+      '<button class="btn" data-export="mediakit">📄 Media kit persona (.md)</button>'+
+      '<button class="btn" data-dlall="1">⬇ Semua foto ('+nImg+')</button>'+
+    '</div>'+
+    '<div class="consent" style="border-color:var(--line);background:var(--panel2)">'+
+      '<input type="checkbox" id="withImages">'+
+      '<label for="withImages">Sertakan gambar hasil render di dalam file project. File jadi jauh lebih besar (bisa puluhan MB); biarkan mati kalau kamu hanya ingin menyimpan teks dan rencananya.</label></div>'+
+    '<div class="hint">API key selalu dibuang dari file project. Foto referensi ikut tersimpan supaya project bisa dilanjutkan di lain waktu.</div></div>';
+}
+
+const VIEWS={talent:viewTalent, identity:viewIdentity, persona:viewPersona, shoot:viewShoot, render:viewRender, content:viewContent, export:viewExport};
+let withImages=false;
+function render(){
+  renderRail();
+  $('#main').innerHTML=(VIEWS[current]||viewTalent)();
+  const wi=$('#withImages'); if(wi) wi.checked=withImages;
+  if(busy) $$('.needidle').forEach(el=>el.disabled=true);
+}
+function go(id){ current=id; render(); $('#main').scrollTop=0; }
+
+/* =====================================================================
+   EKSPOR
+===================================================================== */
+function exportPrompts(){
+  const L=['# Prompt gambar — '+(state.persona.nama||'AI Influencer'),
+    '# Mode identitas: '+(state.talent.mode==='locked'?'wajah konsisten dari foto referensi':'wajah baru terinspirasi foto'),
+    '# Rasio: '+state.shoot.aspek,''];
+  state.shots.forEach((sh,i)=>{
+    L.push('=== FOTO '+String(i+1).padStart(2,'0')+' — '+(sh.judul||'-')+' ===');
+    L.push(finalPrompt(sh)); L.push('');
+  });
+  download(slug(state.persona.nama)+'-prompts.txt', L.join('\n'));
+}
+function exportContent(){
+  const L=['# Caption & script — '+(state.persona.nama||'AI Influencer'),''];
+  state.shots.forEach((sh,i)=>{
+    const k=sh.konten;
+    L.push('=== FOTO '+String(i+1).padStart(2,'0')+' — '+(sh.judul||'-')+' ===');
+    if(!k){ L.push('(belum ada konten)',''); return; }
+    L.push('HOOK: '+k.hook,'','CAPTION:',k.caption,'','HASHTAG:',k.hashtag,'','SCRIPT:',k.script,'');
+  });
+  download(slug(state.persona.nama)+'-caption.txt', L.join('\n'));
+}
+function exportMediaKit(){
+  const p=state.persona;
+  const L=['# '+(p.nama||'AI Influencer'),'',
+    '> '+(p.tagline||''),'',
+    '**Virtual influencer — konten dibuat dengan AI.**','',
+    '## Profil','',
+    ...F.persona.filter(f=>p[f.k]).map(f=>'- **'+f.l+':** '+p[f.k]),
+    '','## Identitas visual','',
+    ...F.identity.filter(f=>f.k!=='identity_lock'&&state.identity[f.k]).map(f=>'- **'+f.l+':** '+state.identity[f.k]),
+    '','## Identity lock (untuk image generator)','','```',String(state.identity.identity_lock||''),'```',
+    '','## Sesi konten','',
+    ...state.shots.map((s,i)=>'- **Foto '+(i+1)+'** — '+(s.judul||'-')+(s.tujuan?' · '+s.tujuan:'')),
+    '','---','',
+    'Mode identitas: '+(state.talent.mode==='locked'?'wajah konsisten dari foto talent berizin':'wajah orisinal, hanya terinspirasi referensi')+'.'];
+  download(slug(p.nama)+'-mediakit.md', L.join('\n'));
+}
+async function downloadAllImages(){
+  const jobs=[];
+  state.shots.forEach((sh,i)=>sh.imgs.forEach((im,j)=>
+    jobs.push([im, slug(state.persona.nama)+'-foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png'])));
+  if(!jobs.length){ toast('Belum ada gambar untuk diunduh.','err'); return; }
+  for(const [im,name] of jobs){ downloadImage(im,name); await sleep(350); }
+  toast(jobs.length+' file diunduh.','ok');
+}
+
+/* =====================================================================
+   SIMPAN / BUKA PROJECT
+===================================================================== */
+/* Kredensial dibuang berdasarkan BENTUK nama field (berakhiran "Key"), bukan
+   daftar nama. Provider baru otomatis aman selama field key-nya dinamai *Key. */
+function saveProject(){
+  const snap=JSON.parse(JSON.stringify(state));
+  snap.api=Object.fromEntries(Object.entries(snap.api).map(([k,v])=>[k, /key$/i.test(k)?'':v]));
+  if(!withImages){
+    (snap.shots||[]).forEach(s=>{ s.imgs=[]; });
+    snap.anchor=null;
+  }
+  snap._app='ai-influencer-studio'; snap._v=1;
+  download(slug(state.persona.nama)+'-influencer.json', JSON.stringify(snap,null,2), 'application/json');
+  toast('Project diunduh'+(withImages?' (dengan gambar).':' — gambar tidak disertakan.'),'ok');
+}
+/* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
+const KEEP=['talent','uploads','identity','persona','shoot','shots','anchor','dirty'];
+function loadProject(file){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const d=JSON.parse(rd.result);
+      KEEP.forEach(k=>{ if(d[k]!==undefined) state[k]=d[k]; });
+      /* state.api sengaja dipertahankan: key yang sedang aktif tidak ditimpa file. */
+      state.uploads=state.uploads||{refs:[]};
+      state.uploads.refs=state.uploads.refs||[];
+      state.shots=(state.shots||[]).map(s=>Object.assign({imgs:[],konten:null},s));
+      state.dirty=state.dirty||{};
+      /* Setelah round-trip JSON, anchor jadi objek terpisah dari gambar di shots.
+         Tautkan ulang ke objek aslinya supaya badge & hapus tetap akurat. */
+      if(state.anchor&&state.anchor.data){
+        for(const s of state.shots){
+          const hit=s.imgs.find(im=>im.data===state.anchor.data);
+          if(hit){ state.anchor=hit; break; }
+        }
+      }
+      if(state.talent.mode==='locked'&&!state.talent.consent) state.talent.mode='inspired';
+      toast('Project dimuat.','ok'); go('talent');
+    }catch(e){ toast('File project tidak valid.','err'); }
+  };
+  rd.readAsText(file);
+}
+
+/* =====================================================================
+   MODAL API
+===================================================================== */
+function renderApiModal(){
+  const a=state.api;
+  $('#txtGrid').innerHTML=TXT_PROVIDERS.map(p=>
+    '<button class="prov'+(a.txt===p.id?' sel':'')+'" data-txtprov="'+p.id+'"><b>'+esc(p.name)+'</b><span>'+esc(p.desc)+'</span></button>').join('');
+  const F_=(label,path,val,ph,pw)=>'<div class="field"><label>'+esc(label)+'</label><input'+(pw?' type="password"':'')+
+    ' data-path="'+path+'" value="'+esc(val||'')+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+'></div>';
+  let t='';
+  if(a.txt==='gemini') t=F_('Gemini API Key','api.geminiKey',a.geminiKey,'AIza…',1)+F_('Model','api.geminiModel',a.geminiModel,'gemini-2.5-flash');
+  if(a.txt==='claude') t=F_('Anthropic API Key','api.claudeKey',a.claudeKey,'sk-ant-…',1)+F_('Model','api.claudeModel',a.claudeModel,'claude-sonnet-4-6');
+  if(a.txt==='dinoiki') t=F_('Base URL','api.dinoikiBase',a.dinoikiBase,'https://api.openai.com/v1')+F_('API Key Dinoiki','api.dinoikiKey',a.dinoikiKey,'',1)+F_('Model','api.dinoikiModel',a.dinoikiModel,'gpt-4o-mini');
+  if(a.txt==='koboillm') t=F_('Base URL','api.koboiBase',a.koboiBase,'lihat dashboard KoboiLLM')+F_('API Key KoboiLLM','api.koboiKey',a.koboiKey,'',1)+F_('Model','api.koboiModel',a.koboiModel,'mis. gpt-4o-mini / gemini-2.5-flash');
+  if(a.txt==='compat') t=F_('Base URL','api.compatBase',a.compatBase,'https://api.openai.com/v1 · https://openrouter.ai/api/v1')+F_('API Key','api.compatKey',a.compatKey,'',1)+F_('Model','api.compatModel',a.compatModel,'');
+  $('#txtFields').innerHTML=t;
+
+  const gatewayNote='Dinoiki dan KoboiLLM adalah gateway/reseller: key yang kamu beli bisa berupa key upstream asli (OpenAI/Anthropic/Gemini) atau key gateway mereka sendiri. Cek dashboard-mu — kalau yang kamu dapat key OpenAI asli, isi base URL https://api.openai.com/v1; kalau key Gemini (diawali AIza…), pilih saja provider Google Gemini di atas.';
+  const common=' Key hanya hidup di memori tab ini, tidak disimpan di mana pun, dan tidak ikut ke file project.';
+  const notes={
+    gemini:'Key gratis bisa dibuat di aistudio.google.com/apikey. Gemini paling ramah dipanggil langsung dari browser.'+common,
+    claude:'Key dari console.anthropic.com.'+common,
+    dinoiki:gatewayNote+common,
+    koboillm:gatewayNote+common,
+    compat:'Endpoint apa pun yang menyediakan POST /chat/completions ala OpenAI.'+common
+  };
+  $('#txtNote').textContent=(notes[a.txt]||common)+' Kalau muncul error "Failed to fetch", biasanya endpoint itu memblokir panggilan langsung dari browser (CORS) — coba Gemini atau gateway yang mengizinkannya.';
+
+  $('#imgGrid').innerHTML=IMG_PROVIDERS.map(p=>
+    '<button class="prov'+(a.img===p.id?' sel':'')+'" data-imgprov="'+p.id+'"><b>'+esc(p.name)+'</b><span>'+esc(p.desc)+'</span></button>').join('');
+  let g='';
+  if(a.img==='gemini_image') g=F_('Gemini API Key (kosongkan = pakai key mesin teks)','api.imgGeminiKey',a.imgGeminiKey,'AIza…',1)+F_('Model gambar','api.imgGeminiModel',a.imgGeminiModel,'gemini-2.5-flash-image');
+  if(a.img==='openai_image'||a.img==='compat_image') g=F_('Base URL','api.imgOaBase',a.imgOaBase,'https://api.openai.com/v1')+F_('API Key','api.imgOaKey',a.imgOaKey,'',1)+F_('Model gambar','api.imgOaModel',a.imgOaModel,'gpt-image-1');
+  $('#imgFields').innerHTML=g;
+  const inotes={
+    gemini_image:'gemini-2.5-flash-image (Nano Banana) menerima foto referensi langsung di dalam permintaan, jadi wajahnya paling stabil antar foto. Ini pilihan yang disarankan.',
+    openai_image:'Dengan foto referensi, aplikasi memakai /images/edits (khusus model gpt-image-*). Tanpa referensi, memakai /images/generations.',
+    compat_image:'Untuk gateway yang hanya menyediakan /images/generations. Foto referensi tidak bisa dikirim — konsistensi wajah hanya dari teks identity lock.',
+    manual:'Tidak ada panggilan API gambar. Aplikasi tetap menyusun prompt final yang bisa kamu salin ke Midjourney, ComfyUI, atau tool lain.'
+  };
+  $('#imgNote').textContent=inotes[a.img]||'';
+  $('#btnTestImg').disabled=(a.img==='manual');
+}
+async function testText(){
+  try{ setBusy(true,'Tes mesin teks…');
+    parseJSONLoose(await callAI('Balas HANYA JSON: {"ok":true}',60));
+    toast('Mesin teks tersambung ✓','ok');
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function testImage(){
+  try{ setBusy(true,'Tes mesin gambar…');
+    const saved=state.anchor, savedMode=state.talent.mode;
+    state.anchor=null; state.talent.mode='inspired';
+    try{ await generateImage('A plain studio photograph of a single ripe banana on a light gray seamless background, soft even lighting.'); }
+    finally{ state.anchor=saved; state.talent.mode=savedMode; }
+    toast('Mesin gambar tersambung ✓','ok');
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+
+/* =====================================================================
+   EVENTS
+===================================================================== */
+document.addEventListener('input', e=>{
+  const p=e.target.dataset.path; if(!p) return;
+  let v=e.target.value;
+  if(e.target.type==='number') v=+v;
+  setPath(state,p,v);
+  if(p==='shoot.jumlah'||p.startsWith('persona.nama')) renderRail();
+});
+document.addEventListener('change', e=>{
+  if(e.target.id==='consent'){
+    state.talent.consent=e.target.checked;
+    if(!e.target.checked&&state.talent.mode==='locked') state.talent.mode='inspired';
+    render(); return;
+  }
+  if(e.target.id==='disclosure'){ state.persona.disclosure=e.target.checked; return; }
+  if(e.target.id==='withImages'){ withImages=e.target.checked; return; }
+  if(e.target.id==='fileInput'){ const f=e.target.files[0]; if(f) loadProject(f); e.target.value=''; return; }
+  if(e.target.id==='refInput'){ addRefs(e.target.files); e.target.value=''; return; }
+  if(e.target.dataset.path&&e.target.tagName==='SELECT'){ setPath(state,e.target.dataset.path,e.target.value); render(); }
+});
+
+document.addEventListener('click', async e=>{
+  const drop=e.target.closest('#drop');
+  if(drop){ $('#refInput').click(); return; }
+  const t=e.target.closest('button'); if(!t) return;
+
+  if(t.dataset.go){ go(t.dataset.go); return; }
+  if(t.dataset.gen){ runStage(t.dataset.gen,''); return; }
+  if(t.dataset.rev){
+    const id=t.dataset.rev, fb=($('#rev-'+id)?.value||'').trim();
+    if(!fb){ toast('Tulis dulu feedback revisinya.','err'); return; }
+    runStage(id, fb); return;
+  }
+  if(t.dataset.mode){
+    if(t.dataset.mode==='locked'&&!state.talent.consent){ toast('Centang dulu pernyataan izin untuk memakai mode wajah persis.','err'); return; }
+    state.talent.mode=t.dataset.mode; state.dirty.identity=true; render(); return;
+  }
+  if(t.dataset.rmref!=null){ state.uploads.refs.splice(+t.dataset.rmref,1); render(); return; }
+  if(t.dataset.rmshot!=null){ state.shots.splice(+t.dataset.rmshot,1); render(); return; }
+  if(t.dataset.render!=null){ runRenderOne(+t.dataset.render); return; }
+  if(t.dataset.renderall){ runRenderAll(); return; }
+  if(t.dataset.gencontent!=null){
+    if(busy) return; const i=+t.dataset.gencontent;
+    try{ setBusy(true,'Menulis konten foto '+(i+1)+'…'); await genContent(i,''); toast('Konten foto '+(i+1)+' selesai.','ok'); render(); }
+    catch(err){ toast(err.message,'err'); } finally{ setBusy(false); }
+    return;
+  }
+  if(t.dataset.contentall){ runContentAll(); return; }
+  if(t.dataset.copy!=null){
+    const i=+t.dataset.copy;
+    try{ await navigator.clipboard.writeText(finalPrompt(state.shots[i])); toast('Prompt foto '+(i+1)+' disalin.','ok'); }
+    catch(err){ toast('Browser menolak akses clipboard — salin manual dari kotak prompt.','err'); }
+    return;
+  }
+  if(t.dataset.dl){
+    const [i,j]=t.dataset.dl.split('.').map(Number);
+    downloadImage(state.shots[i].imgs[j], slug(state.persona.nama)+'-foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png');
+    return;
+  }
+  if(t.dataset.anchor){
+    const [i,j]=t.dataset.anchor.split('.').map(Number);
+    state.anchor=state.shots[i].imgs[j]; toast('Anchor wajah diperbarui.','ok'); render(); return;
+  }
+  if(t.dataset.clearanchor){ state.anchor=null; toast('Anchor dilepas.','ok'); render(); return; }
+  if(t.dataset.rmimg){
+    const [i,j]=t.dataset.rmimg.split('.').map(Number);
+    const removed=state.shots[i].imgs.splice(j,1)[0];
+    if(state.anchor===removed) state.anchor=null;
+    render(); return;
+  }
+  if(t.dataset.dlall){ downloadAllImages(); return; }
+  if(t.dataset.export==='prompts'){ exportPrompts(); return; }
+  if(t.dataset.export==='content'){ exportContent(); return; }
+  if(t.dataset.export==='mediakit'){ exportMediaKit(); return; }
+  if(t.dataset.txtprov){ state.api.txt=t.dataset.txtprov; renderApiModal(); return; }
+  if(t.dataset.imgprov){ state.api.img=t.dataset.imgprov; renderApiModal(); return; }
+
+  switch(t.id){
+    case 'btnApi': renderApiModal(); $('#apiOverlay').classList.add('open'); break;
+    case 'btnCloseApi': $('#apiOverlay').classList.remove('open'); render(); break;
+    case 'btnTestTxt': testText(); break;
+    case 'btnTestImg': testImage(); break;
+    case 'btnSave': case 'btnSave2': saveProject(); break;
+    case 'btnLoad': $('#fileInput').click(); break;
+  }
+});
+
+/* drag & drop foto referensi */
+document.addEventListener('dragover', e=>{
+  const dz=e.target.closest('#drop'); if(!dz) return;
+  e.preventDefault(); dz.classList.add('hot');
+});
+document.addEventListener('dragleave', e=>{
+  const dz=e.target.closest('#drop'); if(dz) dz.classList.remove('hot');
+});
+document.addEventListener('drop', e=>{
+  const dz=e.target.closest('#drop'); if(!dz) return;
+  e.preventDefault(); dz.classList.remove('hot');
+  addRefs(e.dataTransfer?.files);
+});
+$('#apiOverlay').addEventListener('click', e=>{ if(e.target.id==='apiOverlay') { e.currentTarget.classList.remove('open'); render(); } });
+window.addEventListener('beforeunload', e=>{
+  if(state.shots.length||state.uploads.refs.length){ e.preventDefault(); e.returnValue=''; }
+});
+
+render();
+</script>
+</body>
+</html>
