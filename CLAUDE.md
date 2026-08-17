@@ -98,9 +98,16 @@ persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis ca
 **Dua mesin AI terpisah** di `state.api`, dipilih sendiri-sendiri:
 
 - `api.txt` — teks & vision (`gemini`, `claude`, `dinoiki`, `koboillm`, `compat`).
-  Dinoiki & KoboiLLM adalah gateway/reseller Indonesia; base URL-nya **selalu bisa
-  diedit user**, jangan dikunci — key yang mereka jual bisa key upstream asli
-  (OpenAI/Anthropic/Gemini) atau key gateway sendiri.
+  Dinoiki & KoboiLLM adalah gateway OpenAI-compatible asal Indonesia. Base URL
+  bawaan sudah dari dashboard user — Dinoiki `https://ai.dinoiki.com/v1`,
+  KoboiLLM `https://lite.koboillm.com/v1` (instalasi LiteLLM) — tapi tetap
+  **bisa diedit**, jangan dikunci.
+
+`fetchModels(base,key)` menarik `GET {base}/models` supaya user tidak perlu
+mengetik nama model; hasilnya masuk `MODEL_CACHE` (dikunci per base URL, sengaja
+di luar `state` supaya tidak ikut file project) lalu dirender sebagai `<datalist>`.
+**Jangan me-render ulang modal API saat kolom Base URL `change`** — node tombol
+"Tarik daftar" ikut terganti tepat saat diklik dan klik pertamanya hilang.
 - `api.img` — gambar (`gemini_image`, `openai_image`, `compat_image`, `manual`).
   `gemini_image` menerima foto referensi langsung; `openai_image` pakai
   `/images/edits` multipart kalau ada referensi **dan** model cocok `/gpt-image/i`,

@@ -410,8 +410,8 @@ const state={
     txt:'gemini',
     geminiKey:'', geminiModel:'gemini-2.5-flash',
     claudeKey:'', claudeModel:'claude-sonnet-4-6',
-    dinoikiBase:'https://api.openai.com/v1', dinoikiKey:'', dinoikiModel:'gpt-4o-mini',
-    koboiBase:'', koboiKey:'', koboiModel:'',
+    dinoikiBase:'https://ai.dinoiki.com/v1', dinoikiKey:'', dinoikiModel:'gpt-4o',
+    koboiBase:'https://lite.koboillm.com/v1', koboiKey:'', koboiModel:'',
     compatBase:'', compatKey:'', compatModel:'',
     img:'gemini_image',
     imgGeminiKey:'', imgGeminiModel:'gemini-2.5-flash-image',
@@ -676,8 +676,8 @@ const negOf =()=>String(state.shoot.negatif||'').trim()||ANTI_SLOP_DEFAULT;
 const TXT_PROVIDERS=[
   {id:'gemini',   name:'Google Gemini',  desc:'Key AI Studio (AIza…). Paling ramah browser.'},
   {id:'claude',   name:'Claude API',     desc:'Key Anthropic (sk-ant-…).'},
-  {id:'dinoiki',  name:'Dinoiki',        desc:'Key dari dinoiki.com. Isi base URL sesuai dashboard.'},
-  {id:'koboillm', name:'KoboiLLM',       desc:'Key dari koboillm.com. Isi base URL sesuai dashboard.'},
+  {id:'dinoiki',  name:'Dinoiki',        desc:'ai.dinoiki.com — OpenAI-compatible, key sk-…'},
+  {id:'koboillm', name:'KoboiLLM',       desc:'lite.koboillm.com — gateway LiteLLM.'},
   {id:'compat',   name:'OpenAI-compatible', desc:'OpenAI, OpenRouter, Groq, DeepSeek, endpoint lain.'}
 ];
 /* Dinoiki & KoboiLLM adalah gateway/reseller: key-nya bisa berupa key upstream
@@ -790,6 +790,24 @@ async function callAI(prompt, maxTokens=1600, images){
   if(!full) throw new Error('Balasan kosong dari '+P.name+'. Cek nama model di ⚙ API.');
   return full;
 }
+
+/* Gateway OpenAI-compatible (Dinoiki, LiteLLM/KoboiLLM, OpenRouter, OpenAI)
+   sama-sama menyediakan GET /models. Dipakai supaya user tidak perlu mengetik
+   nama model manual — cukup tarik daftarnya lalu pilih. */
+const MODEL_CACHE={};
+async function fetchModels(base, key, label){
+  const b=String(base||'').replace(/\/+$/,'');
+  if(!b) throw new Error('Base URL '+label+' belum diisi.');
+  const headers=key?{'Authorization':'Bearer '+key}:{};
+  const d=await postJSON(b+'/models',{method:'GET',headers},label+' (daftar model)');
+  const raw=Array.isArray(d)?d:(d.data||d.models||[]);
+  const ids=raw.map(m=>typeof m==='string'?m:(m&&(m.id||m.model_name||m.name))).filter(Boolean);
+  if(!ids.length) throw new Error(label+': daftar model kosong.');
+  return [...new Set(ids)].sort((a,b)=>a.localeCompare(b));
+}
+/* Tebakan kasar model gambar berdasarkan namanya — cuma untuk menandai di UI,
+   bukan untuk menyaring. Gateway tidak melaporkan modalitas secara konsisten. */
+const IMAGEY=/image|dall-?e|flux|imagen|banana|sdxl|stable-?diffusion|seedream|midjourney|ideogram|qwen-image/i;
 
 /* Model teks yang bisa membaca gambar. Gateway OpenAI-compatible dianggap bisa —
    kalau ternyata tidak, errornya jelas dan user tinggal ganti model. */
@@ -2106,21 +2124,34 @@ function renderApiModal(){
     '<button class="prov'+(a.txt===p.id?' sel':'')+'" data-txtprov="'+p.id+'"><b>'+esc(p.name)+'</b><span>'+esc(p.desc)+'</span></button>').join('');
   const F_=(label,path,val,ph,pw)=>'<div class="field"><label>'+esc(label)+'</label><input'+(pw?' type="password"':'')+
     ' data-path="'+path+'" value="'+esc(val||'')+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+'></div>';
+  /* Kolom model + tombol tarik daftar dari GET /models milik gateway. */
+  const F_MODEL=(path,val,ph,which,base)=>{
+    const list=MODEL_CACHE[String(base||'').replace(/\/+$/,'')]||null;
+    return '<div class="field"><label>Model'+(list?' — '+list.length+' tersedia di gateway':'')+'</label>'+
+      '<div style="display:flex;gap:8px;align-items:flex-start">'+
+        '<input data-path="'+path+'" value="'+esc(val||'')+'" list="ml-'+which+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+'>'+
+        '<button class="btn small needidle" data-fetchmodels="'+which+'" style="flex:none">↻ Tarik daftar</button>'+
+      '</div>'+
+      (list?'<datalist id="ml-'+which+'">'+list.map(m=>'<option value="'+esc(m)+'">').join('')+'</datalist>':'')+
+      (list?'<div class="hint">Ketik untuk menyaring, atau klik kolomnya untuk melihat semua.'+
+        (which==='img'?' Yang bernama image/flux/imagen/dall-e biasanya model gambar.':'')+'</div>':'')+
+    '</div>';
+  };
   let t='';
   if(a.txt==='gemini') t=F_('Gemini API Key','api.geminiKey',a.geminiKey,'AIza…',1)+F_('Model','api.geminiModel',a.geminiModel,'gemini-2.5-flash');
   if(a.txt==='claude') t=F_('Anthropic API Key','api.claudeKey',a.claudeKey,'sk-ant-…',1)+F_('Model','api.claudeModel',a.claudeModel,'claude-sonnet-4-6');
-  if(a.txt==='dinoiki') t=F_('Base URL','api.dinoikiBase',a.dinoikiBase,'https://api.openai.com/v1')+F_('API Key Dinoiki','api.dinoikiKey',a.dinoikiKey,'',1)+F_('Model','api.dinoikiModel',a.dinoikiModel,'gpt-4o-mini');
-  if(a.txt==='koboillm') t=F_('Base URL','api.koboiBase',a.koboiBase,'lihat dashboard KoboiLLM')+F_('API Key KoboiLLM','api.koboiKey',a.koboiKey,'',1)+F_('Model','api.koboiModel',a.koboiModel,'mis. gpt-4o-mini / gemini-2.5-flash');
-  if(a.txt==='compat') t=F_('Base URL','api.compatBase',a.compatBase,'https://api.openai.com/v1 · https://openrouter.ai/api/v1')+F_('API Key','api.compatKey',a.compatKey,'',1)+F_('Model','api.compatModel',a.compatModel,'');
+  if(a.txt==='dinoiki') t=F_('Base URL','api.dinoikiBase',a.dinoikiBase,'https://ai.dinoiki.com/v1')+F_('API Key Dinoiki','api.dinoikiKey',a.dinoikiKey,'sk-…',1)+F_MODEL('api.dinoikiModel',a.dinoikiModel,'gpt-4o','txt',a.dinoikiBase);
+  if(a.txt==='koboillm') t=F_('Base URL','api.koboiBase',a.koboiBase,'https://lite.koboillm.com/v1')+F_('API Key KoboiLLM','api.koboiKey',a.koboiKey,'sk-…',1)+F_MODEL('api.koboiModel',a.koboiModel,'tarik daftar untuk melihat pilihan','txt',a.koboiBase);
+  if(a.txt==='compat') t=F_('Base URL','api.compatBase',a.compatBase,'https://api.openai.com/v1 · https://openrouter.ai/api/v1')+F_('API Key','api.compatKey',a.compatKey,'',1)+F_MODEL('api.compatModel',a.compatModel,'','txt',a.compatBase);
   $('#txtFields').innerHTML=t;
 
-  const gatewayNote='Dinoiki dan KoboiLLM adalah gateway/reseller: key yang kamu beli bisa berupa key upstream asli (OpenAI/Anthropic/Gemini) atau key gateway mereka sendiri. Cek dashboard-mu — kalau yang kamu dapat key OpenAI asli, isi base URL https://api.openai.com/v1; kalau key Gemini (diawali AIza…), pilih saja provider Google Gemini di atas.';
+  const gatewayNote='Base URL sudah diisi dari dashboard masing-masing. Klik "↻ Tarik daftar" untuk menarik model yang aktif di akunmu lewat GET /models — tidak perlu hafal nama modelnya. Kalau key yang kamu beli ternyata key upstream asli (mis. Gemini diawali AIza…), pakai provider Google Gemini di atas, bukan gateway ini.';
   const common=' Key hanya hidup di memori tab ini, tidak disimpan di mana pun, dan tidak ikut ke file project.';
   const notes={
     gemini:'Key gratis bisa dibuat di aistudio.google.com/apikey. Gemini paling ramah dipanggil langsung dari browser.'+common,
     claude:'Key dari console.anthropic.com.'+common,
-    dinoiki:gatewayNote+common,
-    koboillm:gatewayNote+common,
+    dinoiki:'Dinoiki: POST '+String(a.dinoikiBase||'').replace(/\/+$/,'')+'/chat/completions dengan header Authorization: Bearer sk-…  '+gatewayNote+common,
+    koboillm:'KoboiLLM berjalan di atas LiteLLM, jadi endpoint-nya standar OpenAI. Kalau base URL ini ditolak, coba tanpa akhiran /v1 — sebagian instalasi LiteLLM melayani /chat/completions di root. '+gatewayNote+common,
     compat:'Endpoint apa pun yang menyediakan POST /chat/completions ala OpenAI.'+common
   };
   $('#txtNote').textContent=(notes[a.txt]||common)+' Kalau muncul error "Failed to fetch", biasanya endpoint itu memblokir panggilan langsung dari browser (CORS) — coba Gemini atau gateway yang mengizinkannya.';
@@ -2129,7 +2160,7 @@ function renderApiModal(){
     '<button class="prov'+(a.img===p.id?' sel':'')+'" data-imgprov="'+p.id+'"><b>'+esc(p.name)+'</b><span>'+esc(p.desc)+'</span></button>').join('');
   let g='';
   if(a.img==='gemini_image') g=F_('Gemini API Key (kosongkan = pakai key mesin teks)','api.imgGeminiKey',a.imgGeminiKey,'AIza…',1)+F_('Model gambar','api.imgGeminiModel',a.imgGeminiModel,'gemini-2.5-flash-image');
-  if(a.img==='openai_image'||a.img==='compat_image') g=F_('Base URL','api.imgOaBase',a.imgOaBase,'https://api.openai.com/v1')+F_('API Key','api.imgOaKey',a.imgOaKey,'',1)+F_('Model gambar','api.imgOaModel',a.imgOaModel,'gpt-image-1');
+  if(a.img==='openai_image'||a.img==='compat_image') g=F_('Base URL','api.imgOaBase',a.imgOaBase,'https://api.openai.com/v1 · https://ai.dinoiki.com/v1 · https://lite.koboillm.com/v1')+F_('API Key','api.imgOaKey',a.imgOaKey,'',1)+F_MODEL('api.imgOaModel',a.imgOaModel,'gpt-image-1','img',a.imgOaBase);
   $('#imgFields').innerHTML=g;
   const inotes={
     gemini_image:'gemini-2.5-flash-image (Nano Banana) menerima foto referensi langsung di dalam permintaan, jadi wajahnya paling stabil antar foto. Ini pilihan yang disarankan.',
@@ -2180,6 +2211,9 @@ document.addEventListener('change', e=>{
   if(e.target.id==='fileInput'){ const f=e.target.files[0]; if(f) loadProject(f); e.target.value=''; return; }
   if(e.target.id==='refInput'){ addRefs(e.target.files); e.target.value=''; return; }
   if(e.target.dataset.path&&e.target.tagName==='SELECT'){ setPath(state,e.target.dataset.path,e.target.value); render(); }
+  /* Jangan me-render ulang modal saat kolom Base URL blur: node tombol
+     "Tarik daftar" ikut terganti tepat saat user mengkliknya, dan klik itu
+     hilang. Datalist disegarkan setelah penarikan berhasil saja. */
 });
 
 document.addEventListener('click', async e=>{
@@ -2328,6 +2362,25 @@ document.addEventListener('click', async e=>{
   if(t.dataset.export==='mediakit'){ exportMediaKit(); return; }
   if(t.dataset.export==='sheet'){ exportSheetHTML(); return; }
   if(t.dataset.export==='kalender'){ exportKalender(); return; }
+  if(t.dataset.fetchmodels){
+    if(busy) return;
+    const a=state.api, which=t.dataset.fetchmodels;
+    let base='', key='', label='';
+    if(which==='img'){ base=a.imgOaBase; key=a.imgOaKey; label='Mesin gambar'; }
+    else if(a.txt==='dinoiki'){ base=a.dinoikiBase; key=a.dinoikiKey; label='Dinoiki'; }
+    else if(a.txt==='koboillm'){ base=a.koboiBase; key=a.koboiKey; label='KoboiLLM'; }
+    else { base=a.compatBase; key=a.compatKey; label='Gateway'; }
+    try{
+      setBusy(true,'Menarik daftar model…');
+      const list=await fetchModels(base, key, label);
+      MODEL_CACHE[String(base).replace(/\/+$/,'')]=list;
+      const img=list.filter(m=>IMAGEY.test(m)).length;
+      toast(list.length+' model ditemukan'+(img?' ('+img+' kemungkinan model gambar).':'.'),'ok');
+      renderApiModal();
+    }catch(err){ toast(err.message,'err'); }
+    finally{ setBusy(false); }
+    return;
+  }
   if(t.dataset.txtprov){ state.api.txt=t.dataset.txtprov; renderApiModal(); return; }
   if(t.dataset.imgprov){ state.api.img=t.dataset.imgprov; renderApiModal(); return; }
 
