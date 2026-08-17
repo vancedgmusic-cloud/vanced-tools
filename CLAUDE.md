@@ -236,6 +236,35 @@ satu kali generate, jadi **tiap sel dirender terpisah** pada resolusi penuh
 - Membangun ulang grid **memakai ulang** gambar sel yang posenya sama persis,
   dan membatalkan `sheetImg` karena ukurannya tak lagi cocok.
 
+### Autosave (IndexedDB)
+
+**Aturan "tidak ada localStorage" di `index.html` TIDAK berlaku di sini.** Satu grid
+12×12 berarti 144 panggilan API berbayar; kehilangan itu karena tab tertutup tidak
+bisa diterima. Snapshot disimpan ke IndexedDB (`ai-influencer-studio` → `snapshot`
+→ slot `autosave`) dan ditawarkan lewat banner pemulihan saat app dibuka lagi.
+
+- **API key tetap tidak pernah menyentuh disk.** `snapshotForDisk()` melewatkan
+  `state.api` ke penyaring `/key$/i` yang sama seperti ekspor. Jangan longgarkan.
+- `autosaveSoon()` menjarangkan diri sendiri berdasarkan `imageWeight()` — 4 s saat
+  ringan, 30 s saat gambar lewat 40 MB, karena men-serialize ratusan MB tiap
+  beberapa detik akan membekukan UI.
+- Kuota penuh → otomatis turun ke snapshot **tanpa gambar** supaya rencana dan teks
+  tetap selamat, dan banner pemulihan menandainya (`_tanpaGambar`).
+- IndexedDB diblokir (mode privat) → `dbFailed` menyetel diam, jangan munculkan
+  error berulang.
+- `normalizeState()` dipakai bersama oleh `loadProject` dan pemulihan autosave —
+  satu tempat untuk menambal bentuk state lama.
+
+### Gerbang mutu otomatis
+
+`state.qaGate` = `{on, min, retry}`. Saat aktif, `renderShot()` memeriksa tiap hasil
+lewat `qaImage()`; kalau di bawah `min`, prompt diulang dengan `FIX: <saran QA>` dan
+**hanya percobaan berskor tertinggi yang disimpan**. Sengaja **tidak** dipasang di
+`renderGridCell()` — 144 sel × (render + QA) akan melipatgandakan biaya.
+
+`state.usage` = `{img, txt, harga}` menghitung panggilan API per proyek. `harga`
+diisi user, bukan ditebak aplikasi, karena tiap gateway berbeda.
+
 ### Fitur render lanjutan
 
 - **QA konsistensi** (`qaImage`) mengirim hasil render balik ke mesin *vision* dan
@@ -248,8 +277,19 @@ satu kali generate, jadi **tiap sel dirender terpisah** pada resolusi penuh
   Gambar `remoteUrl` mencemari canvas → jatuh ke unduhan biasa; gambar di bawah
   240 px dilewati supaya labelnya tidak menutupi frame.
 
-Ekspor tambahan: character sheet sebagai HTML mandiri (gambar ditanam sebagai data
-URI) dan kalender konten sebagai CSV ber-BOM.
+### Ekspor
+
+Tiap artefak punya fungsi **penghasil isi** terpisah dari fungsi pengunduh —
+`promptsText()`, `contentText()`, `mediaKitText()`, `sheetHTML()`, `kalenderCSV()`,
+`qaCSV()`, `projectJSON()`. Arsip ZIP memakai fungsi yang sama persis, jadi isi file
+tunggal dan isi arsip tidak mungkin berbeda. Kalau menambah artefak baru, pisahkan
+juga dan daftarkan di `exportZip()`.
+
+`makeZip()` menulis ZIP sendiri (CRC32 + local header + central directory + EOCD)
+karena app ini satu file dan dipakai offline — **jangan tarik JSZip dari CDN**.
+Gambar disimpan `compress:false` (PNG sudah terkompresi), teks dideflate lewat
+`CompressionStream('deflate-raw')` bila tersedia. Zip64 tidak didukung: >65535 file
+atau >4 GB dilempar sebagai error yang bisa dibaca user.
 
 ## Verifikasi perubahan
 

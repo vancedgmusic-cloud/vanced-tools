@@ -243,6 +243,15 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
 .qa.bad{border-color:#5a3a38;background:var(--red-soft)}.qa.bad b{color:var(--red)}
 .qa ul{margin:4px 0 0 14px;padding:0}
 
+/* ---------- banner pemulihan ---------- */
+.restore{
+  display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+  border:1px solid #2c4a3a;background:var(--green-soft);border-radius:var(--r);
+  padding:12px 14px;margin-bottom:18px;font-size:13px;
+}
+.restore .sym{font-family:var(--mono);color:var(--green);font-weight:700;flex:none}
+.restore .spacer{flex:1}
+
 /* ---------- validation / banners ---------- */
 .check{display:flex;gap:10px;padding:10px 12px;border-radius:var(--r-sm);margin-bottom:8px;font-size:13px;border:1px solid var(--line);background:var(--panel2)}
 .check .sym{font-family:var(--mono);flex:none}
@@ -306,6 +315,8 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
     </div>
     <div class="grow"></div>
     <div class="statusline" id="statusline"><span class="recdot"></span><span id="statustext">Siaga</span></div>
+    <div class="statusline" id="usageBox" title="Panggilan API proyek ini · perkiraan biaya gambar"><span id="usage">🖼 0 · 💬 0</span></div>
+    <div class="statusline"><span id="autoStamp">belum tersimpan</span></div>
     <div class="actions">
       <button class="btn small" id="btnLoad" title="Buka project .json">📂 Buka</button>
       <button class="btn small" id="btnSave" title="Simpan project sebagai .json">💾 Simpan</button>
@@ -393,8 +404,18 @@ function downloadImage(img, name){
 }
 const imgSrc=img=>img.remoteUrl?img.remoteUrl:('data:'+img.mimeType+';base64,'+img.data);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const csvCell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
 const slug=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'influencer';
 
+function countCall(kind){
+  state.usage[kind]=(state.usage[kind]||0)+1;
+  const el=$('#usage');
+  if(el) el.textContent=usageText();
+}
+function usageText(){
+  const u=state.usage, biaya=(u.img||0)*(+u.harga||0);
+  return '🖼 '+(u.img||0)+' · 💬 '+(u.txt||0)+(biaya>0?' · ~$'+biaya.toFixed(2):'');
+}
 let busy=false;
 function setBusy(b, text){
   busy=b; $('#statusline').classList.toggle('busy',b);
@@ -433,6 +454,11 @@ const state={
   shots:[],
   anchor:null,
   stampAI:false,
+  /* Gerbang mutu otomatis: render → periksa → ulangi kalau di bawah ambang. */
+  qaGate:{ on:false, min:75, retry:1 },
+  /* Penghitung pemakaian per proyek. harga = perkiraan biaya per gambar (USD),
+     diisi user karena tiap gateway berbeda dan aplikasi tidak boleh menebak. */
+  usage:{ img:0, txt:0, harga:0.04 },
   dirty:{}
 };
 
@@ -1180,10 +1206,11 @@ function refinePrompt(instruksi){
     negative:'different person, changed facial identity, altered face shape'
   });
 }
-function promptContent(i, fb){
+function promptContent(i, fb, adaFoto){
   const sh=state.shots[i];
   return HEADER+'\n'+buildContext()+
     '\n\nTAHAP: CAPTION & SCRIPT untuk FOTO '+(i+1)+'.'+
+    (adaFoto?' Foto jadinya terlampir di pesan ini — sebut satu detail yang benar-benar terlihat di sana supaya caption terasa nyata, bukan tempelan.':'')+
     '\nDetail foto ini:\n- Judul: '+(sh.judul||'-')+'\n- Tujuan: '+(sh.tujuan||'-')+'\n- Outfit: '+(sh.outfit||'-')+'\n- Lokasi: '+(sh.lokasi||'-')+'\n- Pose: '+(sh.pose||'-')+
     '\nTulis dengan suara persona di atas, dalam '+state.talent.bahasa+'. Hook maksimal 12 kata dan scroll-stopping. Caption 2–4 kalimat, terasa personal, bukan iklan. Hashtag 8–12 buah relevan dipisah spasi. Script video 15–20 detik dalam format bernomor per beat, siap dibaca.'+
     (state.persona.disclosure?'\nWAJIB: sertakan penanda konten AI (mis. "dibuat dengan AI" atau tagar #AIgenerated) di akhir caption dan di field hashtag.':'')+
@@ -1275,14 +1302,22 @@ async function runStage(id, fb){
       }));
     }
     markDirty(id);
+    countCall('txt');
+    autosaveSoon(1000);
     toast('Tahap '+id+' selesai.','ok');
     render();
   }catch(e){ toast(e.message,'err'); }
   finally{ setBusy(false); }
 }
 async function genContent(i, fb){
-  const d=await callJSON(promptContent(i, fb), 1400);
+  /* Kalau fotonya sudah jadi, kirim gambarnya sekalian — caption yang menyebut
+     hal yang benar-benar terlihat di frame jauh lebih meyakinkan daripada
+     caption yang ditulis buta dari rencana. */
+  const jadi=state.shots[i].imgs.filter(im=>im.data).pop();
+  const d=await callJSON(promptContent(i, fb, !!jadi), 1400, jadi?[jadi]:undefined);
+  countCall('txt');
   state.shots[i].konten={hook:d.hook||'',caption:d.caption||'',hashtag:d.hashtag||'',script:d.script||''};
+  autosaveSoon(1500);
 }
 async function runContentAll(){
   if(busy) return;
@@ -1297,13 +1332,31 @@ async function runContentAll(){
   }catch(e){ toast(e.message,'err'); render(); }
   finally{ setBusy(false); }
 }
+/* Render satu foto. Kalau gerbang mutu menyala: hasilnya diperiksa mesin vision,
+   dan kalau di bawah ambang, dirender ulang dengan saran perbaikan dari QA
+   ditempelkan ke prompt. Yang disimpan hanya percobaan dengan skor tertinggi —
+   percobaan gagal dibuang supaya galeri tidak penuh sampah. */
 async function renderShot(i){
-  const sh=state.shots[i];
-  const img=await generateImage(finalPrompt(sh));
-  sh.imgs.push(img);
+  const sh=state.shots[i], G=state.qaGate;
+  const maxUlang=G.on?Math.max(0,Math.min(3,+G.retry||0)):0;
+  let best=null, saran='';
+  for(let att=0; att<=maxUlang; att++){
+    if(att) setBusy(true,'Skor di bawah ambang — render ulang '+att+'/'+maxUlang+'…');
+    const img=await generateImage(finalPrompt(sh)+(saran?'\n\nFIX: '+saran:''));
+    countCall('img');
+    if(!G.on||!img.data){ best=img; break; }
+    try{ await qaImage(img); countCall('txt'); }
+    catch(e){ best=img; break; }              /* QA gagal: jangan buang gambarnya */
+    img.percobaan=att+1;
+    if(!best||!best.qa||img.qa.skor>best.qa.skor) best=img;
+    if(img.qa.skor>=(+G.min||0)) break;
+    saran=img.qa.saran||'';
+  }
+  sh.imgs.push(best);
   /* Anchor pertama otomatis: hasil render pertama jadi acuan wajah berikutnya,
      supaya foto ke-2 dan seterusnya konsisten walau tanpa foto orang asli. */
-  if(!state.anchor && img.data) state.anchor=img;
+  if(!state.anchor && best.data) state.anchor=best;
+  autosaveSoon(1500);
 }
 /* ---- panel character sheet ---- */
 function panelSlot(id){
@@ -1318,6 +1371,7 @@ async function runPanel(id){
   try{
     setBusy(true,'Merender panel '+def.label+'…');
     const img=await generateImage(panelPrompt(def), def.aspek);
+    countCall('img');
     panelSlot(id).imgs.push(img);
     /* Turnaround adalah acuan wajah terbaik yang bisa dihasilkan aplikasi ini,
        jadi ia mengambil alih anchor begitu jadi. */
@@ -1338,6 +1392,7 @@ async function runPanelAll(){
       setBusy(true,'Merender panel '+(n+1)+'/'+order.length+' — '+def.label+'…');
       try{
         const img=await generateImage(panelPrompt(def), def.aspek);
+        countCall('img');
         panelSlot(def.id).imgs.push(img);
         if(def.id==='turnaround' && img.data) state.anchor=img;
         ok++; render();
@@ -1360,6 +1415,7 @@ function gridEmptyCount(){ return gridRef().cells.filter(c=>!c.img).length; }
 async function renderGridCell(i){
   const g=gridRef(), cell=g.cells[i];
   cell.img=await generateImage(gridCellPrompt(cell), g.aspek);
+  countCall('img');
   if(!state.anchor && cell.img.data) state.anchor=cell.img;
 }
 async function runGridOne(i){
@@ -1520,6 +1576,7 @@ async function runRefine(i,j,instruksi){
   try{
     setBusy(true,'Merevisi gambar…');
     const img=await generateImage(refinePrompt(instruksi), state.shoot.aspek, [src]);
+    countCall('img');
     img.dari=(j+1)+' · '+instruksi.slice(0,60);
     state.shots[i].imgs.push(img);
     toast('Revisi selesai — hasilnya ditambahkan sebagai varian baru.','ok');
@@ -1601,7 +1658,7 @@ function renderRail(){
       '<span class="no">'+s.no+'</span><span class="lbl">'+esc(s.label)+'</span>'+
       '<span class="led '+st+'"></span></button>';
   }).join('')+
-  '<div class="railnote">Tidak ada penyimpanan otomatis. Pakai <b>💾 Simpan</b> sebelum menutup tab — refresh = kerja hilang.</div>';
+  '<div class="railnote">Pekerjaanmu disimpan otomatis di browser ini. Untuk arsip yang bisa dipindah, pakai <b>🗄 Arsip .zip</b> di tahap Ekspor.</div>';
 }
 function fieldHTML(f, base, obj){
   const v=obj[f.k]||'';
@@ -1921,6 +1978,21 @@ function viewRender(){
     (!lock?'<div class="check err"><span class="sym">✕</span><div>IDENTITY LOCK masih kosong. Isi tahap 02 dulu, kalau tidak setiap foto akan menghasilkan orang yang berbeda.</div></div>':'')+
     (manual?'<div class="check warn"><span class="sym">!</span><div>Mesin gambar diset “Tanpa render”. Salin prompt di bawah ke tool gambar pilihanmu, atau pilih mesin gambar lewat ⚙ API.</div></div>'
            :'<div class="check ok"><span class="sym">✓</span><div>'+esc(info)+'</div></div>')+
+    '<div class="card"><h3>🛡 Gerbang mutu otomatis</h3>'+
+      '<p class="hint" style="margin:-6px 0 12px">Berlaku untuk render sesi foto di tahap ini — <b>bukan</b> untuk grid 144 sel, karena di sana biayanya akan berlipat. Tiap hasil render langsung diperiksa mesin vision; kalau skornya di bawah ambang, foto itu dirender ulang dengan saran perbaikan dari QA ditempelkan ke prompt, dan hanya percobaan dengan skor tertinggi yang disimpan. Penyortiran manual jadi otomatis, tapi setiap percobaan tetap satu panggilan API berbayar.</p>'+
+      '<div class="kvgrid">'+
+        '<div class="kv"><label>Status</label>'+
+          '<button class="btn '+(state.qaGate.on?'primary':'')+'" data-qagate="1" style="width:100%">'+
+          (state.qaGate.on?'✓ Aktif':'Nonaktif')+'</button></div>'+
+        '<div class="kv"><label>Skor minimum</label><input type="number" min="0" max="100" data-path="qaGate.min" value="'+esc(state.qaGate.min)+'"></div>'+
+        '<div class="kv"><label>Maks render ulang</label><input type="number" min="0" max="3" data-path="qaGate.retry" value="'+esc(state.qaGate.retry)+'"></div>'+
+        '<div class="kv"><label>Perkiraan biaya per gambar (USD)</label><input type="number" step="0.001" min="0" data-path="usage.harga" value="'+esc(state.usage.harga)+'"></div>'+
+      '</div>'+
+      (state.qaGate.on&&state.qaGate.retry>0
+        ? '<div class="check warn" style="margin-top:10px"><span class="sym">!</span><div>Dengan ambang '+esc(state.qaGate.min)+' dan maksimal '+esc(state.qaGate.retry)+
+          ' render ulang, satu foto bisa memakan sampai '+(1+(+state.qaGate.retry||0))+' panggilan gambar + '+(1+(+state.qaGate.retry||0))+' panggilan pemeriksaan.</div></div>'
+        : '')+
+    '</div>'+
     (!state.shots.length
       ? '<div class="empty"><div class="big">Belum ada foto untuk dirender</div><p>Susun rencana photoshoot di tahap 04 dulu.</p><button class="btn primary" data-go="shoot">← Ke rencana foto</button></div>'
       : '<div class="toolbar">'+
@@ -1993,7 +2065,12 @@ function viewExport(){
 
   return head('Tahap 08','Ekspor','Semua hasil bisa dibawa keluar. File project menyimpan semuanya kecuali API key.')+
     '<div class="card"><h3>✅ Pemeriksaan</h3>'+checks.join('')+'</div>'+
-    '<div class="card"><h3>📦 Unduhan</h3><div class="toolbar">'+
+    '<div class="card"><h3>🗄 Arsip lengkap</h3>'+
+      '<p class="hint" style="margin:-6px 0 12px">Satu file .zip berisi semua hasil proyek ini — foto, character sheet, prompt, caption, kalender, laporan QA, dan project.json yang bisa dimuat ulang. Dipakai untuk menyimpan proyek yang sudah selesai.</p>'+
+      '<div class="toolbar"><button class="btn go needidle" data-zip="1">🗄 Unduh arsip (.zip)</button>'+
+      '<div class="spacer"></div><span class="stamp">'+nImg+' gambar · '+state.shots.length+' foto direncanakan</span></div>'+
+    '</div>'+
+    '<div class="card"><h3>📦 Unduhan terpisah</h3><div class="toolbar">'+
       '<button class="btn primary" id="btnSave2">💾 Project (.json)</button>'+
       '<button class="btn" data-export="prompts">📄 Semua prompt (.txt)</button>'+
       '<button class="btn" data-export="content">📄 Caption & script (.txt)</button>'+
@@ -2013,18 +2090,122 @@ function viewExport(){
 
 const VIEWS={talent:viewTalent, identity:viewIdentity, persona:viewPersona, sheet:viewSheet, shoot:viewShoot, render:viewRender, content:viewContent, export:viewExport};
 let withImages=false;
+function restoreBanner(){
+  if(!pendingRestore) return '';
+  const t=new Date(pendingRestore.t).toLocaleString('id-ID');
+  const d=pendingRestore.state||{};
+  const nFoto=(d.shots||[]).length;
+  const nImg=(d.shots||[]).reduce((a,s)=>a+((s.imgs||[]).length),0)
+    +((d.sheet&&d.sheet.grid&&d.sheet.grid.cells)||[]).filter(c=>c&&c.img).length;
+  return '<div class="restore"><span class="sym">⟲</span>'+
+    '<div>Ada pekerjaan tersimpan otomatis dari <b>'+esc(t)+'</b>'+
+    (nFoto||nImg?' — '+nFoto+' foto direncanakan, '+nImg+' gambar':'')+
+    (d._tanpaGambar?' <b>(tanpa gambar — penyimpanan browser penuh saat itu)</b>':'')+
+    '. Pulihkan sebelum mulai, atau buang kalau mau mulai bersih.</div>'+
+    '<div class="spacer"></div>'+
+    '<button class="btn go" data-restore="1">⟲ Pulihkan</button>'+
+    '<button class="btn ghost" data-discard="1">Buang</button></div>';
+}
 function render(){
   renderRail();
-  $('#main').innerHTML=(VIEWS[current]||viewTalent)();
+  $('#main').innerHTML=restoreBanner()+(VIEWS[current]||viewTalent)();
+  const uEl=$('#usage'); if(uEl) uEl.textContent=usageText();
   const wi=$('#withImages'); if(wi) wi.checked=withImages;
   if(busy) $$('.needidle').forEach(el=>el.disabled=true);
 }
 function go(id){ current=id; render(); $('#main').scrollTop=0; }
 
 /* =====================================================================
+   PENULIS ZIP — tanpa pustaka luar
+
+   App ini satu file dan dipakai offline lewat file://, jadi tidak boleh
+   menarik JSZip dari CDN. Formatnya ZIP klasik: local header + data per
+   entri, lalu central directory, lalu EOCD. Gambar disimpan apa adanya
+   (PNG sudah terkompresi; mendeflate ulang cuma buang waktu), teks
+   dideflate lewat CompressionStream kalau browser menyediakannya.
+===================================================================== */
+const CRC_TABLE=(()=>{
+  const t=new Uint32Array(256);
+  for(let i=0;i<256;i++){ let c=i; for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[i]=c>>>0; }
+  return t;
+})();
+function crc32(buf){
+  let c=0xFFFFFFFF;
+  for(let i=0;i<buf.length;i++) c=CRC_TABLE[(c^buf[i])&0xFF]^(c>>>8);
+  return (c^0xFFFFFFFF)>>>0;
+}
+const ENC=new TextEncoder();
+function b64ToBytes(b64){
+  const bin=atob(b64), out=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i);
+  return out;
+}
+async function deflateRaw(buf){
+  if(typeof CompressionStream!=='function') return null;
+  try{
+    const st=new Blob([buf]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(st).arrayBuffer());
+  }catch(e){ return null; }
+}
+async function makeZip(entries, onProgress){
+  if(entries.length>65535) throw new Error('Terlalu banyak file untuk satu arsip ZIP.');
+  const local=[], central=[];
+  const d=new Date();
+  const dosTime=((d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1))&0xFFFF;
+  const dosDate=(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate())&0xFFFF;
+  let offset=0;
+  for(let i=0;i<entries.length;i++){
+    const e=entries[i];
+    const name=ENC.encode(e.name);
+    const raw=e.data;
+    const crc=crc32(raw);
+    let method=0, body=raw;
+    if(e.compress!==false){
+      const z=await deflateRaw(raw);
+      if(z && z.length<raw.length){ method=8; body=z; }
+    }
+    const lh=new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true);
+    lh.setUint16(4,20,true);
+    lh.setUint16(6,0x0800,true);           /* nama file UTF-8 */
+    lh.setUint16(8,method,true);
+    lh.setUint16(10,dosTime,true); lh.setUint16(12,dosDate,true);
+    lh.setUint32(14,crc,true);
+    lh.setUint32(18,body.length,true);
+    lh.setUint32(22,raw.length,true);
+    lh.setUint16(26,name.length,true);
+    local.push(new Uint8Array(lh.buffer), name, body);
+
+    const ch=new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true);
+    ch.setUint16(4,20,true); ch.setUint16(6,20,true);
+    ch.setUint16(8,0x0800,true); ch.setUint16(10,method,true);
+    ch.setUint16(12,dosTime,true); ch.setUint16(14,dosDate,true);
+    ch.setUint32(16,crc,true);
+    ch.setUint32(20,body.length,true);
+    ch.setUint32(24,raw.length,true);
+    ch.setUint16(28,name.length,true);
+    ch.setUint32(42,offset,true);
+    central.push(new Uint8Array(ch.buffer), name);
+
+    offset += 30+name.length+body.length;
+    if(offset>0xFFFFFFF0) throw new Error('Arsip melebihi 4 GB — matikan penyertaan gambar atau ekspor per bagian.');
+    if(onProgress) onProgress(i+1, entries.length);
+  }
+  let cdSize=0; central.forEach(p=>{ cdSize+=p.length; });
+  const eo=new DataView(new ArrayBuffer(22));
+  eo.setUint32(0,0x06054b50,true);
+  eo.setUint16(8,entries.length,true);
+  eo.setUint16(10,entries.length,true);
+  eo.setUint32(12,cdSize,true);
+  eo.setUint32(16,offset,true);
+  return new Blob([...local,...central,new Uint8Array(eo.buffer)],{type:'application/zip'});
+}
+
+/* =====================================================================
    EKSPOR
 ===================================================================== */
-function exportPrompts(){
+function promptsText(){
   const L=['# Prompt gambar — '+(state.persona.nama||'AI Influencer'),
     '# Mode identitas: '+(state.talent.mode==='locked'?'wajah konsisten dari foto referensi':'wajah baru terinspirasi foto'),
     '# Rasio: '+state.shoot.aspek,''];
@@ -2032,9 +2213,10 @@ function exportPrompts(){
     L.push('=== FOTO '+String(i+1).padStart(2,'0')+' — '+(sh.judul||'-')+' ===');
     L.push(finalPrompt(sh)); L.push('');
   });
-  download(slug(state.persona.nama)+'-prompts.txt', L.join('\n'));
+  return L.join('\n');
 }
-function exportContent(){
+function exportPrompts(){ download(slug(state.persona.nama)+'-prompts.txt', promptsText()); }
+function contentText(){
   const L=['# Caption & script — '+(state.persona.nama||'AI Influencer'),''];
   state.shots.forEach((sh,i)=>{
     const k=sh.konten;
@@ -2042,9 +2224,10 @@ function exportContent(){
     if(!k){ L.push('(belum ada konten)',''); return; }
     L.push('HOOK: '+k.hook,'','CAPTION:',k.caption,'','HASHTAG:',k.hashtag,'','SCRIPT:',k.script,'');
   });
-  download(slug(state.persona.nama)+'-caption.txt', L.join('\n'));
+  return L.join('\n');
 }
-function exportMediaKit(){
+function exportContent(){ download(slug(state.persona.nama)+'-caption.txt', contentText()); }
+function mediaKitText(){
   const p=state.persona;
   const L=['# '+(p.nama||'AI Influencer'),'',
     '> '+(p.tagline||''),'',
@@ -2058,11 +2241,12 @@ function exportMediaKit(){
     ...state.shots.map((s,i)=>'- **Foto '+(i+1)+'** — '+(s.judul||'-')+(s.tujuan?' · '+s.tujuan:'')),
     '','---','',
     'Mode identitas: '+(state.talent.mode==='locked'?'wajah konsisten dari foto talent berizin':'wajah orisinal, hanya terinspirasi referensi')+'.'];
-  download(slug(p.nama)+'-mediakit.md', L.join('\n'));
+  return L.join('\n');
 }
+function exportMediaKit(){ download(slug(state.persona.nama)+'-mediakit.md', mediaKitText()); }
 /* Character sheet sebagai satu halaman HTML mandiri: gambar ditanam sebagai
    data URI supaya file-nya bisa dikirim ke siapa pun tanpa aset terpisah. */
-function exportSheetHTML(){
+function sheetHTML(){
   const S=state.sheet, p=state.persona, id=state.identity;
   const row=(cols)=>'<tr>'+cols.map(c=>'<td>'+esc(c==null?'':c)+'</td>').join('')+'</tr>';
   const tbl=(heads,rows)=>rows.length?'<table><thead><tr>'+heads.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table>':'<p class="muted">(belum diisi)</p>';
@@ -2115,16 +2299,22 @@ function exportSheetHTML(){
       esc(state.talent.mode==='locked'?'wajah konsisten dari foto talent berizin':'wajah orisinal, hanya terinspirasi referensi')+
       '. Semua gambar dihasilkan AI.</footer>'+
     '</div></body></html>';
-  download(slug(p.nama)+'-character-sheet.html', html, 'text/html');
+  return html;
 }
-const csvCell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-function exportKalender(){
-  if(!state.kalender.rows.length){ toast('Kalender masih kosong.','err'); return; }
+function exportSheetHTML(){ download(slug(state.persona.nama)+'-character-sheet.html', sheetHTML(), 'text/html'); }
+
+function kalenderCSV(){
+  if(!state.kalender.rows.length) return '';
   const heads=['hari','platform','tipe','pilar','format','ide','hook'];
   const lines=[heads.map(csvCell).join(',')]
     .concat(state.kalender.rows.map(r=>heads.map(h=>csvCell(r[h])).join(',')));
   /* BOM supaya Excel/Sheets versi Indonesia tidak mengacak karakter beraksen. */
-  download(slug(state.persona.nama)+'-kalender.csv', '\uFEFF'+lines.join('\r\n'), 'text/csv');
+  return '\uFEFF'+lines.join('\r\n');
+}
+function exportKalender(){
+  const csv=kalenderCSV();
+  if(!csv){ toast('Kalender masih kosong.','err'); return; }
+  download(slug(state.persona.nama)+'-kalender.csv', csv, 'text/csv');
 }
 
 /* Cap label AI di pojok kanan bawah. Gambar remote (hanya URL) mencemari canvas
@@ -2180,12 +2370,116 @@ async function downloadAllImages(){
   toast(jobs.length+' file diunduh.','ok');
 }
 
+/* Arsip lengkap satu proyek dalam satu file .zip. Isinya sengaja dipisah per
+   folder bernomor supaya masih masuk akal dibuka setahun kemudian tanpa aplikasi
+   ini. project.json di akar tetap bisa dimuat ulang lewat tombol Buka. */
+function qaCSV(){
+  const heads=['file','skor','identitas','realisme','teknis','cocok','slop','masalah','saran'];
+  const rows=[heads.map(csvCell).join(',')];
+  const add=(file,q)=>{ if(q) rows.push([file,q.skor,q.identitas,q.realisme,q.teknis,q.cocok,
+    (q.slop||[]).join(' | '),(q.masalah||[]).join(' | '),q.saran].map(csvCell).join(',')); };
+  state.shots.forEach((sh,i)=>sh.imgs.forEach((im,j)=>
+    add('03-foto/foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png', im.qa)));
+  return rows.length>1 ? '\uFEFF'+rows.join('\r\n') : '';
+}
+function zipReadme(nImg){
+  const p=state.persona, g=state.sheet.grid;
+  const L=[
+    'ARSIP PROYEK — '+(p.nama||'AI Influencer'),
+    'Dibuat: '+new Date().toLocaleString('id-ID'),
+    'Aplikasi: AI Influencer Studio (influencer.html)',
+    '',
+    'RINGKASAN',
+    '- Mode identitas : '+(state.talent.mode==='locked'
+        ? 'wajah konsisten dari foto talent berizin'
+        : 'wajah orisinal, foto talent hanya jadi acuan gaya'),
+    '- Niche          : '+(state.sheet.niches.join(', ')||'-'),
+    '- Platform       : '+(state.sheet.platforms.map(id=>(PLATFORMS.find(x=>x.id===id)||{}).label).filter(Boolean).join(', ')||'-'),
+    '- Foto direncana : '+state.shots.length,
+    '- Gambar jadi    : '+nImg,
+    '- Grid pose      : '+(g.cells.length?g.cols+'x'+g.rows+' ('+g.cells.filter(c=>c.img).length+' sel terisi)':'belum dibuat'),
+    '',
+    'ISI FOLDER',
+    '  project.json          Muat lagi lewat tombol "Buka" di aplikasi.',
+    '  identity-lock.txt     Kunci identitas. Tempel di depan prompt gambar mana pun,',
+    '                        di tool apa pun, supaya wajahnya tetap orang yang sama.',
+    '  character-sheet.html  Lembar acuan mandiri, tinggal buka di browser.',
+    '  media-kit.md          Profil untuk dikirim ke brand.',
+    '  prompts.txt           Prompt final tiap foto, siap dipakai ulang.',
+    '  caption-script.txt    Caption, hashtag, dan script per foto.',
+    '  kalender.csv          Rencana posting.',
+    '  laporan-qa.csv        Skor konsistensi, realisme, dan teknis per gambar.',
+    '  01-referensi/         Foto talent yang kamu upload.',
+    '  02-character-sheet/   Panel acuan dan kanvas grid pose.',
+    '  03-foto/              Hasil render sesi foto.',
+    '',
+    'CATATAN',
+    '- Tidak ada API key di dalam arsip ini. Sudah disaring saat ekspor.',
+    '- Semua gambar dihasilkan AI. Cantumkan pelabelan sesuai aturan platform tujuan.',
+  ];
+  if(state.talent.mode==='locked') L.push(
+    '- Mode wajah persis dipakai. Simpan bukti izin talent bersama arsip ini,',
+    '  dan pastikan izinnya masih berlaku sebelum konten dipublikasikan.');
+  if(!withImages) L.push(
+    '',
+    '- project.json di arsip ini TIDAK memuat gambar (toggle "sertakan gambar" mati),',
+    '  jadi memuatnya kembali akan memulihkan teks dan rencana saja. Gambarnya ada',
+    '  di folder bernomor di atas.');
+  return L.join('\n');
+}
+async function exportZip(){
+  if(busy) return;
+  try{
+    setBusy(true,'Menyiapkan arsip…');
+    const root=slug(state.persona.nama)+'/';
+    const files=[];
+    const addText=(n,t)=>{ if(String(t||'').trim()) files.push({name:root+n, data:ENC.encode(t)}); };
+    /* Gambar tidak dideflate ulang — PNG/JPEG sudah terkompresi. */
+    const addImg=(n,im)=>{ if(im&&im.data) files.push({name:root+n, data:b64ToBytes(im.data), compress:false}); };
+
+    let nImg=0;
+    state.uploads.refs.forEach((im,i)=>addImg('01-referensi/ref-'+String(i+1).padStart(2,'0')+'.png',im));
+    SHEET_PANELS.forEach(def=>{
+      const slot=state.sheet.panels.find(x=>x.id===def.id);
+      ((slot&&slot.imgs)||[]).forEach((im,j)=>{ addImg('02-character-sheet/panel-'+def.id+'-'+(j+1)+'.png',im); nImg++; });
+    });
+    const g=state.sheet.grid;
+    if(g.sheetImg){ addImg('02-character-sheet/grid-'+g.cols+'x'+g.rows+'.png',g.sheetImg); }
+    g.cells.forEach((c,i)=>{ if(c.img){ addImg('02-character-sheet/sel/sel-'+String(i+1).padStart(3,'0')+'.png',c.img); nImg++; } });
+    state.shots.forEach((sh,i)=>sh.imgs.forEach((im,j)=>{
+      addImg('03-foto/foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png',im); nImg++;
+    }));
+
+    addText('README.txt', zipReadme(nImg));
+    addText('identity-lock.txt', String(state.identity.identity_lock||''));
+    addText('prompts.txt', promptsText());
+    addText('caption-script.txt', contentText());
+    addText('media-kit.md', mediaKitText());
+    addText('character-sheet.html', sheetHTML());
+    addText('kalender.csv', kalenderCSV());
+    addText('laporan-qa.csv', qaCSV());
+    addText('project.json', projectJSON());
+
+    if(!files.length){ toast('Belum ada apa pun untuk diarsipkan.','err'); return; }
+    const blob=await makeZip(files,(n,tot)=>{
+      if(n%10===0||n===tot) setBusy(true,'Mengemas '+n+'/'+tot+' file…');
+    });
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=slug(state.persona.nama)+'-arsip-'+new Date().toISOString().slice(0,10)+'.zip';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),8000);
+    toast(files.length+' file diarsipkan ('+(blob.size/1048576).toFixed(1)+' MB).','ok');
+  }catch(e){ toast('Gagal membuat arsip: '+e.message,'err'); }
+  finally{ setBusy(false); }
+}
+
 /* =====================================================================
    SIMPAN / BUKA PROJECT
 ===================================================================== */
 /* Kredensial dibuang berdasarkan BENTUK nama field (berakhiran "Key"), bukan
    daftar nama. Provider baru otomatis aman selama field key-nya dinamai *Key. */
-function saveProject(){
+function projectJSON(){
   const snap=JSON.parse(JSON.stringify(state));
   snap.api=Object.fromEntries(Object.entries(snap.api).map(([k,v])=>[k, /key$/i.test(k)?'':v]));
   if(!withImages){
@@ -2196,11 +2490,45 @@ function saveProject(){
     snap.anchor=null;
   }
   snap._app='ai-influencer-studio'; snap._v=1;
-  download(slug(state.persona.nama)+'-influencer.json', JSON.stringify(snap,null,2), 'application/json');
+  return JSON.stringify(snap,null,2);
+}
+function saveProject(){
+  download(slug(state.persona.nama)+'-influencer.json', projectJSON(), 'application/json');
   toast('Project diunduh'+(withImages?' (dengan gambar).':' — gambar tidak disertakan.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','shots','anchor','stampAI','dirty'];
+const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','shots','anchor','stampAI','qaGate','usage','dirty'];
+/* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
+   dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
+function normalizeState(){
+  state.uploads=state.uploads||{refs:[]};
+  state.uploads.refs=Array.isArray(state.uploads.refs)?state.uploads.refs:[];
+  state.shots=(Array.isArray(state.shots)?state.shots:[]).map(s=>Object.assign({imgs:[],konten:null},s));
+  state.shots.forEach(sh=>{ if(!Array.isArray(sh.imgs)) sh.imgs=[]; });
+  state.dirty=state.dirty||{};
+  state.talent=Object.assign({mode:'inspired',consent:false,catatan:'',bahasa:'Indonesia (santai, ala creator)'}, state.talent||{});
+  if(state.talent.mode==='locked'&&!state.talent.consent) state.talent.mode='inspired';
+  state.sheet=Object.assign({niches:[],platforms:[],panels:[],niche_rows:[],platform_rows:[]}, state.sheet||{});
+  ['niches','platforms','panels','niche_rows','platform_rows'].forEach(k=>{
+    if(!Array.isArray(state.sheet[k])) state.sheet[k]=[];
+  });
+  state.sheet.panels.forEach(pn=>{ if(!Array.isArray(pn.imgs)) pn.imgs=[]; });
+  state.sheet.grid=Object.assign({cols:4,rows:3,aspek:'2:3',latar:'studio',label:true,cells:[],sheetImg:null}, state.sheet.grid||{});
+  if(!Array.isArray(state.sheet.grid.cells)) state.sheet.grid.cells=[];
+  state.kalender=Object.assign({hari:14,mulai:'',rows:[]}, state.kalender||{});
+  if(!Array.isArray(state.kalender.rows)) state.kalender.rows=[];
+  state.qaGate=Object.assign({on:false,min:75,retry:1}, state.qaGate||{});
+  state.usage=Object.assign({img:0,txt:0,harga:0.04}, state.usage||{});
+  /* Setelah round-trip JSON, anchor jadi objek terpisah dari gambar di shots.
+     Tautkan ulang ke objek aslinya supaya badge & hapus tetap akurat. */
+  if(state.anchor&&state.anchor.data){
+    const pools=[...state.shots.map(s=>s.imgs), ...state.sheet.panels.map(p=>p.imgs)];
+    for(const pool of pools){
+      const hit=(pool||[]).find(im=>im&&im.data===state.anchor.data);
+      if(hit){ state.anchor=hit; break; }
+    }
+  }
+}
 function loadProject(file){
   const rd=new FileReader();
   rd.onload=()=>{
@@ -2208,32 +2536,123 @@ function loadProject(file){
       const d=JSON.parse(rd.result);
       KEEP.forEach(k=>{ if(d[k]!==undefined) state[k]=d[k]; });
       /* state.api sengaja dipertahankan: key yang sedang aktif tidak ditimpa file. */
-      state.uploads=state.uploads||{refs:[]};
-      state.uploads.refs=state.uploads.refs||[];
-      state.shots=(state.shots||[]).map(s=>Object.assign({imgs:[],konten:null},s));
-      state.dirty=state.dirty||{};
-      /* Setelah round-trip JSON, anchor jadi objek terpisah dari gambar di shots.
-         Tautkan ulang ke objek aslinya supaya badge & hapus tetap akurat. */
-      if(state.anchor&&state.anchor.data){
-        for(const s of state.shots){
-          const hit=s.imgs.find(im=>im.data===state.anchor.data);
-          if(hit){ state.anchor=hit; break; }
-        }
-      }
-      if(state.talent.mode==='locked'&&!state.talent.consent) state.talent.mode='inspired';
-      state.sheet=Object.assign({niches:[],platforms:[],panels:[],niche_rows:[],platform_rows:[]}, state.sheet||{});
-      ['niches','platforms','panels','niche_rows','platform_rows'].forEach(k=>{
-        if(!Array.isArray(state.sheet[k])) state.sheet[k]=[];
-      });
-      state.sheet.panels.forEach(pn=>{ if(!Array.isArray(pn.imgs)) pn.imgs=[]; });
-      state.sheet.grid=Object.assign({cols:4,rows:3,aspek:'2:3',latar:'studio',label:true,cells:[],sheetImg:null}, state.sheet.grid||{});
-      if(!Array.isArray(state.sheet.grid.cells)) state.sheet.grid.cells=[];
-      state.kalender=Object.assign({hari:14,mulai:'',rows:[]}, state.kalender||{});
-      if(!Array.isArray(state.kalender.rows)) state.kalender.rows=[];
+      normalizeState();
       toast('Project dimuat.','ok'); go('talent');
     }catch(e){ toast('File project tidak valid.','err'); }
   };
   rd.readAsText(file);
+}
+
+/* =====================================================================
+   AUTOSAVE — IndexedDB
+
+   Kerja di app ini mahal: satu grid 12x12 berarti 144 panggilan API berbayar.
+   Kehilangan itu karena tab tertutup atau browser crash tidak bisa diterima,
+   jadi snapshot disimpan lokal dan ditawarkan untuk dipulihkan saat dibuka lagi.
+
+   localStorage tidak dipakai karena batas ~5 MB tidak muat gambar. API key TETAP
+   tidak ikut disimpan — aturan "key hanya hidup di memori sesi" berlaku juga di
+   sini, jadi snapshot melewati penyaring /key$/i yang sama.
+===================================================================== */
+const DB_NAME='ai-influencer-studio', DB_STORE='snapshot', DB_SLOT='autosave';
+let dbFailed=false;
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    if(dbFailed||typeof indexedDB==='undefined') return rej(new Error('IndexedDB tidak tersedia'));
+    const r=indexedDB.open(DB_NAME,1);
+    r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains(DB_STORE)) r.result.createObjectStore(DB_STORE); };
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>{ dbFailed=true; rej(r.error||new Error('IndexedDB ditolak')); };
+  });
+}
+function idbTx(mode, fn){
+  return idbOpen().then(db=>new Promise((res,rej)=>{
+    const tx=db.transaction(DB_STORE,mode);
+    const out=fn(tx.objectStore(DB_STORE));
+    tx.oncomplete=()=>res(out&&out.result!==undefined?out.result:undefined);
+    tx.onerror=()=>rej(tx.error);
+    tx.onabort=()=>rej(tx.error||new Error('transaksi dibatalkan'));
+  }));
+}
+function snapshotForDisk(withImg){
+  const snap=JSON.parse(JSON.stringify(state));
+  snap.api=Object.fromEntries(Object.entries(snap.api).map(([k,v])=>[k, /key$/i.test(k)?'':v]));
+  if(!withImg){
+    (snap.shots||[]).forEach(x=>{ x.imgs=[]; });
+    ((snap.sheet||{}).panels||[]).forEach(x=>{ x.imgs=[]; });
+    const g=(snap.sheet||{}).grid;
+    if(g){ (g.cells||[]).forEach(c=>{ c.img=null; }); g.sheetImg=null; }
+    snap.anchor=null;
+    snap._tanpaGambar=true;
+  }
+  return snap;
+}
+/* Perkiraan kasar berat gambar, dipakai untuk mengatur jeda autosave. Grid 12x12
+   bisa ratusan MB — men-serialize itu tiap beberapa detik akan membekukan UI. */
+function imageWeight(){
+  let n=0;
+  const add=im=>{ if(im&&im.data) n+=im.data.length; };
+  state.shots.forEach(sh=>sh.imgs.forEach(add));
+  state.sheet.panels.forEach(pn=>(pn.imgs||[]).forEach(add));
+  state.sheet.grid.cells.forEach(c=>add(c.img));
+  add(state.sheet.grid.sheetImg);
+  return n;
+}
+let autoTimer=null, autoLast=0, autoOn=true, autoNoImg=false, autoRunning=false;
+function autoStamp(txt){ const el=$('#autoStamp'); if(el) el.textContent=txt; }
+async function autosaveNow(){
+  if(!autoOn||dbFailed||autoRunning) return;
+  autoRunning=true;
+  try{
+    try{
+      await idbTx('readwrite',st=>st.put({t:Date.now(), state:snapshotForDisk(!autoNoImg)}, DB_SLOT));
+    }catch(err){
+      /* Kuota penuh: rencana dan teks jauh lebih murah diselamatkan daripada
+         hilang semuanya, jadi coba sekali lagi tanpa gambar. */
+      if(autoNoImg) throw err;
+      autoNoImg=true;
+      await idbTx('readwrite',st=>st.put({t:Date.now(), state:snapshotForDisk(false)}, DB_SLOT));
+      toast('Penyimpanan browser penuh — autosave lanjut tanpa gambar. Pakai 🗄 Arsip .zip untuk menyimpan gambarnya.','err');
+    }
+    autoLast=Date.now();
+    autoStamp((autoNoImg?'tersimpan tanpa gambar ':'tersimpan ')+new Date(autoLast).toLocaleTimeString('id-ID'));
+  }catch(e){
+    /* Mode privat atau IndexedDB diblokir: berhenti diam-diam, jangan ganggu kerja. */
+    dbFailed=true;
+    autoStamp('autosave tidak tersedia');
+  }finally{ autoRunning=false; }
+}
+function autosaveSoon(ms){
+  if(!autoOn||dbFailed) return;
+  /* Makin berat gambarnya, makin jarang menyimpan. */
+  const w=imageWeight();
+  const jeda=Math.max(ms||4000, w>40e6?30000:(w>10e6?12000:4000));
+  clearTimeout(autoTimer);
+  autoTimer=setTimeout(autosaveNow, jeda);
+}
+let pendingRestore=null;
+async function checkAutosave(){
+  try{
+    const rec=await idbTx('readonly',st=>st.get(DB_SLOT));
+    if(rec&&rec.state) pendingRestore=rec;
+  }catch(e){ dbFailed=true; }
+  render();
+}
+function applySnapshot(d){
+  KEEP.forEach(k=>{ if(d[k]!==undefined) state[k]=d[k]; });
+  normalizeState();
+}
+async function restoreAutosave(){
+  if(!pendingRestore) return;
+  applySnapshot(pendingRestore.state);
+  pendingRestore=null;
+  toast('Pekerjaan terakhir dipulihkan.','ok');
+  go('talent');
+}
+async function discardAutosave(){
+  pendingRestore=null;
+  try{ await idbTx('readwrite',st=>st.delete(DB_SLOT)); }catch(e){}
+  render();
 }
 
 /* =====================================================================
@@ -2358,6 +2777,9 @@ document.addEventListener('input', e=>{
      mengganti node tombolnya sehingga klik pertamanya hilang. refreshRecs hanya
      menyentuh wadah chip, tidak pernah kolom yang sedang diketik. */
   if(/^api\..*Base$/.test(p)) refreshRecs();
+  if(p==='usage.harga'){ const el=$('#usage'); if(el) el.textContent=usageText(); }
+  /* Ketikan disimpan menyusul, bukan tiap huruf. */
+  if(!p.startsWith('api.')) autosaveSoon();
 });
 document.addEventListener('change', e=>{
   if(e.target.id==='consent'){
@@ -2424,6 +2846,10 @@ document.addEventListener('click', async e=>{
     render(); return;
   }
   if(t.dataset.dlall){ downloadAllImages(); return; }
+  if(t.dataset.zip){ exportZip(); return; }
+  if(t.dataset.restore){ restoreAutosave(); return; }
+  if(t.dataset.discard){ discardAutosave(); return; }
+  if(t.dataset.qagate){ state.qaGate.on=!state.qaGate.on; render(); return; }
 
   /* ---- character sheet ---- */
   if(t.dataset.niche){
@@ -2573,10 +2999,17 @@ document.addEventListener('drop', e=>{
 });
 $('#apiOverlay').addEventListener('click', e=>{ if(e.target.id==='apiOverlay') { e.currentTarget.classList.remove('open'); render(); } });
 window.addEventListener('beforeunload', e=>{
+  /* Autosave sudah menahan sebagian besar risiko, tapi ekspor tetap satu-satunya
+     salinan yang bisa dibawa keluar dari browser ini. */
   if(state.shots.length||state.uploads.refs.length){ e.preventDefault(); e.returnValue=''; }
 });
 
 render();
+checkAutosave();
+
+/* Simpan sekali lagi saat tab ditutup — beberapa browser masih sempat
+   menyelesaikan transaksi IndexedDB pada pagehide. */
+window.addEventListener('pagehide', ()=>{ autosaveNow(); });
 </script>
 </body>
 </html>
