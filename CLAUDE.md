@@ -207,6 +207,36 @@ model kata itu justru menarik hasil ke render 3D yang licin. Penggantinya
 `"a real, unretouched photograph"` + deskripsi medium yang konkret. Jangan
 memasukkannya kembali.
 
+**Jangan pernah menulis "seamless studio backdrop", "flat even lighting", atau
+"no cast shadows" di prompt orang.** Dua itu pemicu terkuat tampilan plastik —
+lebih kuat daripada blok anti-slop yang melawannya, karena lebih spesifik. Baik
+`SHEET_PANELS` (lewat `REF_BG`) maupun `GRID_BG.studio` memakai dinding cat nyata
+bertekstur dengan cahaya jendela berarah; kata `seamless` hanya boleh muncul di
+daftar AVOID. Pernah ada regresi persis di sini: template panel meminta studio
+sementara blok realisme meminta sebaliknya, dan template yang menang.
+
+`LIFE_DEFAULT` menyebut cacat **konkret dan berlokasi** (pori di hidung/pipi/dahi,
+kemerahan di sekitar cuping hidung, bekas jerawat samar, satu mata sedikit lebih
+kecil, gigi agak kekuningan dan tidak rata). Deskripsi umum seperti "realistic
+skin" tidak bekerja — model butuh benda spesifik untuk digambar.
+
+`promptIdentity()` melarang AI memakai kata *beautiful / gorgeous / stunning /
+flawless / perfect / model / influencer* di `identity_lock`, dan mewajibkan minimal
+dua ciri tak sempurna permanen. Kosakata glamor menarik hasil ke wajah katalog.
+
+### Pasca-proses realisme (canvas)
+
+`realismPass(img, state.post)` adalah satu-satunya bagian yang hasilnya **tidak
+bergantung model**. Menambahkan empat jejak yang selalu ada di foto kamera dan
+tidak pernah ada di keluaran model: noise sensor berbobot luminansi (bayangan
+lebih berisik), aberasi kromatik yang menguat ke tepi frame, vignette radial, dan
+**re-encode ke JPEG** — yang terakhir paling menentukan, karena PNG bersih
+sempurna adalah tanda paling gampang terbaca sebagai hasil AI.
+
+Hasilnya jadi **varian baru**, gambar asli tidak ditimpa. Karena mimeType berubah
+jadi `image/jpeg`, semua penamaan file lewat `imgExt(img)` — jangan hardcode
+`.png` lagi di unduhan atau di `exportZip`.
+
 `promptShoot()` juga memaksa tiap prompt adegan memuat mikro-aksi, interaksi
 lingkungan, detail lingkungan tak sempurna, dan arah cahaya yang jelas — serta
 melarang pose tegak menghadap kamera dan kata "perfect/flawless/stunning".

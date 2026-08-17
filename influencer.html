@@ -403,6 +403,7 @@ function downloadImage(img, name){
   a.target='_blank'; a.rel='noopener'; a.click();
 }
 const imgSrc=img=>img.remoteUrl?img.remoteUrl:('data:'+img.mimeType+';base64,'+img.data);
+const imgExt=img=>/jpe?g/i.test((img&&img.mimeType)||'')?'jpg':'png';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const csvCell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
 const slug=s=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40)||'influencer';
@@ -456,6 +457,10 @@ const state={
   stampAI:false,
   /* Gerbang mutu otomatis: render → periksa → ulangi kalau di bawah ambang. */
   qaGate:{ on:false, min:75, retry:1 },
+  /* Pasca-proses realisme. Model gambar mengeluarkan PNG bersih sempurna;
+     foto asli dari kamera tidak pernah begitu. Nilai default sengaja halus —
+     tujuannya menghilangkan kesan steril, bukan bikin foto terlihat rusak. */
+  post:{ grain:10, chroma:0.9, vignette:0.16, jpeg:0.9 },
   /* Penghitung pemakaian per proyek. harga = perkiraan biaya per gambar (USD),
      diisi user karena tiap gateway berbeda dan aplikasi tidak boleh menebak. */
   usage:{ img:0, txt:0, harga:0.04 },
@@ -553,17 +558,22 @@ const PLATFORMS=[
 ];
 /* Panel referensi. Prompt sengaja dikunci di kode (bukan dikarang AI) supaya
    lembar acuannya selalu punya komposisi yang sama dan bisa dibandingkan. */
+/* Lembar acuan TIDAK memakai latar studio mulus. Backdrop seamless + cahaya rata
+   adalah dua pemicu terkuat tampilan plastik — persis yang bikin hasil terlihat
+   seperti render 3D. Diganti dinding nyata dengan cahaya jendela berarah, tapi
+   tetap polos supaya fungsinya sebagai acuan tidak hilang. */
+const REF_BG='against a plain painted interior wall with real texture — faint roller marks, a scuff, slightly uneven paint — lit by soft directional daylight coming from one window at the side, so there is a visible shadow falling on the wall behind and a clear light side and shadow side on the face';
 const SHEET_PANELS=[
   {id:'turnaround', label:'Turnaround 4 sudut', aspek:'16:9',
-   prompt:'character reference sheet: the same person shown four times in one image, in a single evenly spaced row against a plain seamless light gray studio background — front view, three-quarter view, left profile view, and back view. Full body, standing in a relaxed neutral A-pose, wearing simple well-fitted neutral clothing, flat even studio lighting, no cast shadows on the background, exactly the same face, hairstyle and body proportions in every view.'},
+   prompt:'character reference sheet: the same person photographed four times in a single row '+REF_BG+' — front view, three-quarter view, left profile view, and back view. Full body, standing relaxed with weight on one leg, wearing simple well-worn everyday clothes with real creases, exactly the same face, hairstyle and body proportions in every view. Each of the four frames is a separate real photograph taken in the same room, not a rendered turnaround.'},
   {id:'expression', label:'Lembar ekspresi', aspek:'1:1',
-   prompt:'character expression sheet: the same person shown as six head-and-shoulders portraits in a clean 3x2 grid against a plain seamless light gray background — neutral resting face, warm genuine smile, laughing with eyes crinkled, thoughtful looking away, pleasantly surprised, and calm confident. Exactly the same face and hairstyle in every portrait, soft even studio lighting.'},
+   prompt:'expression reference sheet: the same person photographed as six candid head-and-shoulders snapshots in a clean 3x2 grid '+REF_BG+' — neutral resting face, small closed-lip smile, laughing hard with the eyes squeezed shut, thinking while glancing away, caught mid-sentence with the mouth open, and quietly tired. Exactly the same face and hairstyle in every frame. Each frame is a real candid photo, slightly different distance and angle from the last, not a rendered expression sheet.'},
   {id:'wardrobe', label:'Lembar wardrobe', aspek:'16:9',
-   prompt:'wardrobe reference sheet: the same person shown four times in one image, in a single evenly spaced row against a plain seamless light gray background, each wearing a different complete head-to-toe outfit that fits their personal style — everyday casual, smart casual for work, sporty activewear, and dressed up for an evening event. Full body front view, exactly the same face in every version, flat even studio lighting.'},
+   prompt:'wardrobe reference sheet: the same person photographed four times in a single row '+REF_BG+', each time in a different complete head-to-toe outfit that fits their real life — everyday casual, smart casual for work, sporty activewear, and dressed up for an evening out. Full body front view, clothes creased and lived-in, exactly the same face in every version.'},
   {id:'detail', label:'Detail wajah & rambut', aspek:'16:9',
-   prompt:'detail reference sheet against a plain seamless light gray background, three panels side by side: a large sharp close-up of the face from the front, a close-up of the same face in strict profile, and a close-up of the hair seen from behind showing its true length and texture. Exactly the same person in all three panels, soft even lighting, high detail on skin texture, individual hair strands and eye color.'},
+   prompt:'detail reference sheet '+REF_BG+', three panels side by side: a large sharp close-up of the face from the front showing skin texture and pores, a close-up of the same face in strict profile, and a close-up of the hair from behind showing its real length, frizz and loose strands. Exactly the same person in all three, side light raking across the skin so the texture is unmistakable.'},
   {id:'palette', label:'Papan warna & mood', aspek:'1:1',
-   prompt:'a flat lay mood board photographed from directly above on a neutral surface: fabric swatches, accessories, and small everyday objects that represent this person\'s personal style and color palette. No people, no faces, no text, no lettering. Soft natural daylight, clean minimal styling.', noIdentity:1}
+   prompt:'a flat lay photographed from directly above on a worn wooden table: fabric swatches, accessories, and small everyday objects that represent this person\'s personal style and colour palette, arranged casually and slightly crooked. No people, no faces, no text, no lettering. Window light from one side casting soft real shadows.', noIdentity:1}
 ];
 const panelDef=id=>SHEET_PANELS.find(p=>p.id===id);
 
@@ -581,22 +591,24 @@ const panelDef=id=>SHEET_PANELS.find(p=>p.id===id);
    photograph" + deskripsi medium yang konkret.
 ===================================================================== */
 const REALISM=[
-  {id:'phone', name:'Candid HP', desc:'Paling terasa nyata untuk konten sosial.',
-   tech:'shot on a modern smartphone rear camera, natural available light only, slight handheld tilt, mild sensor noise in the shadows, no beauty filter, no skin smoothing, the kind of frame someone actually posts to their story'},
-  {id:'film35', name:'Film 35mm', desc:'Hangat, berbutir, susah dipalsukan.',
-   tech:'shot on 35mm film, Kodak Portra 400, natural film grain, gentle halation around highlights, slightly muted greens and warm skin rendering, imperfect focus, scanned without digital sharpening'},
-  {id:'prime85', name:'Prime 85mm', desc:'Potret rapi tapi tetap organik.',
-   tech:'shot on a full-frame camera with an 85mm f/1.8 prime lens, shallow depth of field with natural bokeh falloff, one identifiable directional light source with honest shadow gradation, no fill light'},
-  {id:'docu', name:'Dokumenter', desc:'Reportase, subjek tidak sadar difoto.',
-   tech:'documentary reportage photography, 35mm f/2, available light only, the subject caught mid-action and unaware of the camera, slightly imperfect framing, nothing staged'},
+  {id:'phone', name:'Kamera HP', desc:'Paling susah dibedakan dari foto asli.',
+   tech:'shot on an iPhone 13 Pro rear camera, HDR off, handheld with a slight tilt, mixed indoor colour temperature that the white balance never quite corrected, visible sensor noise in the shadows, mild JPEG compression artefacts around high-contrast edges, one small blown highlight where the light source hits, no beauty filter and no portrait mode'},
+  {id:'selfie', name:'Selfie kamera depan', desc:'Arm-length, distorsi lensa lebar.',
+   tech:'front-facing phone camera selfie held at arm length, slight wide-angle distortion that enlarges whatever is nearest the lens, uneven exposure across the frame, faint smudge haze from a fingerprint on the lens, noisy shadows, casual crooked framing'},
+  {id:'film35', name:'Film 35mm', desc:'Berbutir, warna tak sempurna.',
+   tech:'shot on 35mm film, Kodak Gold 200, coarse visible grain, halation blooming around bright edges, slightly green-shifted shadows and warm skin, imperfect focus, dust specks and a faint scratch from the lab scan, no digital sharpening'},
+  {id:'compact', name:'Kamera saku lawas', desc:'Flash keras, estetika 2000-an.',
+   tech:'shot on an old point-and-shoot digital compact with direct on-camera flash, harsh flat frontal light with a hard shadow outline on the wall behind, slightly overexposed skin where the flash lands, heavy noise in the corners, low dynamic range, timestamp-era snapshot look'},
+  {id:'prime85', name:'Prime 85mm', desc:'Rapi tapi tetap organik.',
+   tech:'shot on a full-frame camera with an 85mm f/1.8 prime, shallow depth of field so the ears and shoulders fall out of focus, a single identifiable light source from one side with honest shadow gradation and no fill, slight chromatic fringing at high-contrast edges'},
   {id:'custom', name:'Custom', desc:'Tulis sendiri di kolom bawah.', tech:''}
 ];
 const realismDef=id=>REALISM.find(r=>r.id===id)||REALISM[0];
 
 /* Blok "jiwa" — ketidaksempurnaan yang membedakan manusia dari mannequin. */
-const LIFE_DEFAULT='Real human imperfection is mandatory: visible skin pores and real skin texture, uneven skin tone, faint blemishes and slight natural redness around the nose and chin, natural under-eye shadow, fine baby hairs at the hairline with a few strands out of place, naturally asymmetric features with one eyebrow slightly higher, unretouched lips with fine lines, natural imperfect teeth. The subject is caught mid-moment rather than posing for the camera: weight shifted onto one leg, hands genuinely doing something, a real expression with crinkles at the corners of the eyes and warm catchlights in the pupils, a hint of motion in the hair or fingers. Clothing has real wrinkles, creases and natural drape. Light comes from one identifiable direction with honest falloff and real shadows.';
+const LIFE_DEFAULT='This is an ordinary real person photographed casually, not a model and not a beauty campaign. Believable everyday attractiveness, never editorial perfection. SKIN, and this is mandatory: clearly visible pores across the nose, cheeks and forehead; uneven skin tone with faint redness around the nostrils, chin and the inner corners of the eyes; one or two small real blemishes or a faint old acne scar; slight natural shine only on the T-zone while the cheeks stay matte; fine peach fuzz catching the light along the jaw and upper lip; visible fine lines at the eye corners and a natural crease where the neck meets the jaw. ASYMMETRY, mandatory: the two halves of the face must not match — one eye slightly smaller and set a touch higher, one eyebrow shaped differently from the other, the smile pulling more to one side, the nose very slightly off the centre line. HAIR: not freshly styled — several loose strands escaping, a little frizz lifting away from the part, flyaways lit from behind. TEETH: real teeth, faintly off-white, not perfectly aligned. EYES: sharp catchlights showing the actual shape of the light source, visible lower waterline, slightly uneven eyelid folds. THE MOMENT: caught between expressions rather than posed, weight on one leg, hands doing something real, clothing creased and slightly out of place. Everything imperfect on purpose.';
+const ANTI_SLOP_DEFAULT='AI-generated look, CGI, 3d render, octane render, digital painting, illustration, cartoon, anime, video game character, uncanny valley, plastic skin, waxy skin, wax figure, mannequin, doll-like, porcelain skin, poreless airbrushed skin, beauty filter, face smoothing, skin retouching, frequency separation, glossy plastic sheen all over the face, dead eyes, vacant stare, blank soulless expression, perfectly symmetrical face, flawless veneer teeth, perfectly styled hair with no loose strands, professional studio lighting, softbox, ring light, beauty dish, seamless studio backdrop, smooth grey gradient background, evenly lit with no shadows, professional headshot, editorial magazine portrait, stock photography, catalogue model, glamour shot, HDR, oversaturated, overprocessed, clarity slider pushed, halo around the subject, everything in perfect focus, sterile clean image with no noise';
 
-const ANTI_SLOP_DEFAULT='AI-generated look, plastic skin, waxy skin, airbrushed, beauty filter, face smoothing, poreless skin, glossy plastic sheen, doll-like, mannequin, wax figure, dead eyes, vacant stare, blank soulless expression, perfectly symmetrical face, flawless veneer teeth, perfect untouched hair, HDR, oversaturated, overprocessed, digital painting, illustration, 3d render, CGI, octane render, cartoon, anime, uncanny valley, stiff mannequin posing, staged catalog stock photo, studio backdrop in an outdoor scene, watermark, text, logo, extra fingers, six fingers, deformed hands, fused limbs, distorted proportions, lowres, blurry mess';
 
 /* Nilai efektif: kalau user mengosongkan kolomnya, pakai default di atas. */
 /* =====================================================================
@@ -667,9 +679,12 @@ const POSE_MODS=[
   {l:'tertawa', p:'caught mid-laugh, shoulders lifted'},
   {l:'sudut atas', p:'camera slightly above eye level looking down'}
 ];
+/* Sama seperti panel: latar "seamless studio + cahaya rata" adalah pemicu utama
+   tampilan plastik. Opsi polos tetap ada supaya posenya terbaca jelas, tapi
+   diwujudkan sebagai dinding nyata dengan cahaya berarah, bukan backdrop foto. */
 const GRID_BG={
-  studio:'against a plain seamless light gray studio backdrop, flat even lighting, nothing else in the frame',
-  lifestyle:'in a real everyday location that suits the persona, with authentic imperfect background detail'
+  studio:'in front of a plain painted wall with real surface texture and a faint scuff, lit by directional daylight from one side so a soft shadow falls on the wall behind, nothing else in the frame',
+  lifestyle:'in a real everyday location that suits the persona, with authentic imperfect background detail — worn surfaces, ordinary clutter, uneven light'
 };
 function buildGridCells(cols, rows){
   const n=Math.max(1,cols*rows), out=[];
@@ -1139,6 +1154,7 @@ function promptIdentity(fb){
     '\nSusun "character bible" untuk satu orang yang akan dipakai berulang di semua foto.'+
     '\nIsi setiap field ringkas dalam '+state.talent.bahasa+' (maks 18 kata), KECUALI field identity_lock.'+
     '\nField identity_lock WAJIB dalam bahasa Inggris, satu paragraf 60–100 kata, format deskripsi subjek untuk image generator: umur, etnis, bentuk wajah, kulit, rambut, mata, alis, hidung, bibir, ciri khas, perawakan. Jangan menyebut pakaian, latar, pose, kamera, atau nama orang nyata di identity_lock — hanya identitas fisik yang tidak berubah antar foto.'+
+    '\nDILARANG memakai kata beautiful, gorgeous, stunning, flawless, perfect, model, influencer, atau glamorous di identity_lock. Kata-kata itu menarik model gambar ke wajah katalog yang licin. Pakai deskripsi netral dan spesifik seperti orang biasa, dan WAJIB sebutkan minimal dua ciri tak sempurna yang permanen — misalnya tahi lalat kecil di pipi kiri, bekas jerawat samar di dahi, gigi depan sedikit tumpang tindih, alis kiri lebih tipis, atau hidung sedikit miring ke kanan.'+
     fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.identity);
 }
 function promptPersona(fb){
@@ -1193,7 +1209,15 @@ function promptQA(){
     String(state.identity.identity_lock||'').trim()+'"\n\n'+
     'Nilai TIGA hal terpisah.\n'+
     '1. skor_identitas (0–100): seberapa cocok wajah di foto dengan deskripsi identitas di atas.\n'+
-    '2. skor_realisme (0–100): seberapa meyakinkan foto ini sebagai foto asli yang diambil manusia. Turunkan nilainya kalau kamu melihat gejala khas gambar AI — kulit terlalu mulus tanpa pori, wajah terlalu simetris, kulit mengilap seperti plastik atau lilin, mata kosong tanpa pantulan cahaya, ekspresi mati/kaku, gigi terlalu sempurna, rambut terlalu rapi tanpa helai lepas, pencahayaan tanpa arah yang jelas, latar terlalu bersih, pose kaku menghadap kamera seperti katalog.\n'+
+    '2. skor_realisme (0–100): seberapa meyakinkan foto ini sebagai foto asli yang diambil manusia. Periksa satu per satu dan turunkan nilainya untuk tiap gejala yang kamu temukan:\n'+
+    '   - kulit mulus tanpa pori yang terlihat, atau kulit mengilap merata seperti plastik/lilin\n'+
+    '   - wajah terlalu simetris; kedua sisi wajah nyaris cermin\n'+
+    '   - latar mulus bergradien tanpa tekstur, atau latar studio seamless\n'+
+    '   - cahaya rata tanpa arah yang jelas, tidak ada bayangan jatuh di latar\n'+
+    '   - gambar terlalu bersih: tanpa butiran, tanpa noise di bayangan, tajam merata di seluruh frame\n'+
+    '   - gigi terlalu putih dan terlalu rata, rambut terlalu rapi tanpa helai lepas\n'+
+    '   - mata tanpa pantulan cahaya yang jelas bentuknya, ekspresi kaku menghadap kamera\n'+
+    '   Kalau ada tiga gejala atau lebih, skor_realisme TIDAK BOLEH di atas 45.\n'+
     '3. skor_teknis (0–100): cacat anatomi dan artefak — jumlah jari, bentuk tangan, telinga, gigi, aksesori yang menyatu dengan kulit, anggota badan hilang atau ganda, teks/watermark aneh, garis yang putus.\n'+
     'Field skor: rata-rata ketiganya, dibulatkan. Field slop: daftar gejala AI yang kamu lihat, kosongkan kalau foto ini benar-benar meyakinkan. Field masalah: cacat teknis konkret. Field saran: satu kalimat instruksi perbaikan yang bisa langsung dipakai untuk render ulang.\n'+
     'Jangan sungkan memberi nilai rendah — gunanya pemeriksaan ini untuk menyaring foto yang tidak layak pakai.\n'+
@@ -1946,6 +1970,7 @@ function viewRender(){
           '<button class="btn small" data-dl="'+i+'.'+j+'">Unduh</button>'+
           (im.data?'<button class="btn small" data-anchor="'+i+'.'+j+'">Anchor</button>':'')+
           (im.data?'<button class="btn small needidle" data-qa="'+i+'.'+j+'">Periksa</button>':'')+
+          (im.data&&im.mimeType!=='image/jpeg'?'<button class="btn small needidle" data-post="'+i+'.'+j+'">🎞 Realisme</button>':'')+
           '<button class="btn small danger" data-rmimg="'+i+'.'+j+'">Hapus</button>'+
         '</div>'+qaHTML(im)+
         (im.dari?'<div class="hint">revisi dari #'+esc(im.dari)+'</div>':'')+
@@ -1978,6 +2003,18 @@ function viewRender(){
     (!lock?'<div class="check err"><span class="sym">✕</span><div>IDENTITY LOCK masih kosong. Isi tahap 02 dulu, kalau tidak setiap foto akan menghasilkan orang yang berbeda.</div></div>':'')+
     (manual?'<div class="check warn"><span class="sym">!</span><div>Mesin gambar diset “Tanpa render”. Salin prompt di bawah ke tool gambar pilihanmu, atau pilih mesin gambar lewat ⚙ API.</div></div>'
            :'<div class="check ok"><span class="sym">✓</span><div>'+esc(info)+'</div></div>')+
+    '<div class="card"><h3>🎞 Pasca-proses realisme</h3>'+
+      '<p class="hint" style="margin:-6px 0 12px">Satu-satunya bagian yang hasilnya tidak bergantung model. Menambahkan empat jejak yang selalu ada di foto kamera sungguhan dan tidak pernah ada di keluaran AI: noise sensor yang lebih kuat di bayangan, aberasi kromatik yang menguat ke tepi, vignette lensa, dan artefak kompresi JPEG. Hasilnya jadi <b>varian baru</b> — gambar aslinya tidak ditimpa.</p>'+
+      '<div class="kvgrid">'+
+        '<div class="kv"><label>Noise sensor (0–30)</label><input type="number" min="0" max="30" step="1" data-path="post.grain" value="'+esc(state.post.grain)+'"></div>'+
+        '<div class="kv"><label>Aberasi kromatik (0–3 px)</label><input type="number" min="0" max="3" step="0.1" data-path="post.chroma" value="'+esc(state.post.chroma)+'"></div>'+
+        '<div class="kv"><label>Vignette (0–0.6)</label><input type="number" min="0" max="0.6" step="0.02" data-path="post.vignette" value="'+esc(state.post.vignette)+'"></div>'+
+        '<div class="kv"><label>Kualitas JPEG (0.5–0.98)</label><input type="number" min="0.5" max="0.98" step="0.01" data-path="post.jpeg" value="'+esc(state.post.jpeg)+'"></div>'+
+      '</div>'+
+      '<div class="toolbar" style="margin-top:12px"><button class="btn primary needidle" data-postall="1">🎞 Proses semua foto</button>'+
+        '<div class="spacer"></div><span class="stamp">gratis · tanpa panggilan API</span></div>'+
+      '<div class="check ok" style="margin-top:10px"><span class="sym">✓</span><div>Kualitas JPEG di bawah <b>0.92</b> adalah pengubah terbesar di sini. Foto asli dari HP tidak pernah PNG bersih sempurna, dan justru kebersihan itu yang paling gampang terbaca sebagai hasil AI.</div></div>'+
+    '</div>'+
     '<div class="card"><h3>🛡 Gerbang mutu otomatis</h3>'+
       '<p class="hint" style="margin:-6px 0 12px">Berlaku untuk render sesi foto di tahap ini — <b>bukan</b> untuk grid 144 sel, karena di sana biayanya akan berlipat. Tiap hasil render langsung diperiksa mesin vision; kalau skornya di bawah ambang, foto itu dirender ulang dengan saran perbaikan dari QA ditempelkan ke prompt, dan hanya percobaan dengan skor tertinggi yang disimpan. Penyortiran manual jadi otomatis, tapi setiap percobaan tetap satu panggilan API berbayar.</p>'+
       '<div class="kvgrid">'+
@@ -2317,6 +2354,105 @@ function exportKalender(){
   download(slug(state.persona.nama)+'-kalender.csv', csv, 'text/csv');
 }
 
+/* =====================================================================
+   PASCA-PROSES REALISME
+
+   Ini satu-satunya bagian yang hasilnya tidak bergantung pada model gambar.
+   Empat jejak yang selalu ada di foto kamera sungguhan dan tidak pernah ada
+   di keluaran model:
+     1. noise sensor  — lebih kuat di area gelap, seperti sensor asli
+     2. aberasi kromatik — kanal merah/biru sedikit bergeser, menguat ke tepi
+     3. vignette      — sudut sedikit lebih gelap karena lensa
+     4. artefak JPEG  — foto asli tidak pernah PNG bersih sempurna
+   Hasilnya jadi varian baru, gambar aslinya tidak ditimpa.
+===================================================================== */
+async function realismPass(img, o){
+  const el=await loadImg(imgSrc(img));
+  const w=el.naturalWidth, h=el.naturalHeight;
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const x=c.getContext('2d');
+  x.drawImage(el,0,0);
+
+  const grain=Math.max(0,+o.grain||0), chroma=Math.max(0,+o.chroma||0);
+  if(grain>0||chroma>0){
+    const d=x.getImageData(0,0,w,h), p=d.data;
+    const src=chroma>0?new Uint8ClampedArray(p):null;
+    const half=w/2;
+    for(let y=0;y<h;y++){
+      const row=y*w;
+      for(let xx=0;xx<w;xx++){
+        const i=(row+xx)*4;
+        if(chroma>0){
+          /* Geser makin besar ke arah tepi frame — persis perilaku lensa. */
+          const off=Math.round(((xx-half)/half)*chroma);
+          const rx=Math.min(w-1,Math.max(0,xx-off));
+          const bx=Math.min(w-1,Math.max(0,xx+off));
+          p[i]=src[(row+rx)*4];
+          p[i+2]=src[(row+bx)*4+2];
+        }
+        if(grain>0){
+          /* Bayangan lebih berisik daripada highlight, seperti sensor asli. */
+          const luma=(p[i]*0.299+p[i+1]*0.587+p[i+2]*0.114)/255;
+          const amp=grain*(1.15-luma*0.75);
+          const n=(Math.random()+Math.random()-1)*amp;
+          p[i]+=n; p[i+1]+=n; p[i+2]+=n;
+        }
+      }
+    }
+    x.putImageData(d,0,0);
+  }
+
+  const vig=Math.max(0,Math.min(0.6,+o.vignette||0));
+  if(vig>0){
+    const g=x.createRadialGradient(w/2,h/2,Math.min(w,h)*0.32,w/2,h/2,Math.max(w,h)*0.72);
+    g.addColorStop(0,'rgba(0,0,0,0)');
+    g.addColorStop(1,'rgba(0,0,0,'+vig.toFixed(3)+')');
+    x.fillStyle=g; x.fillRect(0,0,w,h);
+  }
+
+  const q=Math.max(0.5,Math.min(0.98,+o.jpeg||0.9));
+  const url=c.toDataURL('image/jpeg', q);
+  if(!/^data:image\/jpeg/.test(url)) throw new Error('Browser menolak mengekspor JPEG.');
+  return {mimeType:'image/jpeg', data:url.split(',')[1]};
+}
+async function runPost(i,j){
+  if(busy) return;
+  const src=state.shots[i].imgs[j];
+  if(!src||!src.data){ toast('Gambar ini hanya URL dari provider — unduh dulu, lalu proses di luar.','err'); return; }
+  try{
+    setBusy(true,'Memproses realisme…');
+    const out=await realismPass(src, state.post);
+    out.dari=(j+1)+' · pasca-proses';
+    state.shots[i].imgs.push(out);
+    toast('Varian pasca-proses ditambahkan.','ok');
+    autosaveSoon(1500); render();
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function runPostAll(){
+  if(busy) return;
+  const jobs=[];
+  state.shots.forEach((sh,i)=>{
+    const last=sh.imgs.map((im,j)=>({im,j})).filter(o=>o.im.data&&o.im.mimeType!=='image/jpeg').pop();
+    if(last) jobs.push([i,last.j]);
+  });
+  if(!jobs.length){ toast('Tidak ada gambar baru untuk diproses.','err'); return; }
+  let ok=0;
+  try{
+    for(let n=0;n<jobs.length;n++){
+      setBusy(true,'Memproses '+(n+1)+'/'+jobs.length+'…');
+      try{
+        const [i,j]=jobs[n];
+        const out=await realismPass(state.shots[i].imgs[j], state.post);
+        out.dari=(j+1)+' · pasca-proses';
+        state.shots[i].imgs.push(out); ok++;
+      }catch(e){}
+    }
+  }finally{ setBusy(false); }
+  render();
+  toast(ok+' gambar diproses.','ok');
+}
+
 /* Cap label AI di pojok kanan bawah. Gambar remote (hanya URL) mencemari canvas
    sehingga tidak bisa diekspor — untuk itu unduhannya jatuh ke file asli. */
 function stampedURL(img, text){
@@ -2358,7 +2494,7 @@ async function saveOneImage(img, name){
 async function downloadAllImages(){
   const jobs=[];
   state.shots.forEach((sh,i)=>sh.imgs.forEach((im,j)=>
-    jobs.push([im, slug(state.persona.nama)+'-foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png'])));
+    jobs.push([im, slug(state.persona.nama)+'-foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.'+imgExt(im)])));
   SHEET_PANELS.forEach(def=>{
     const slot=state.sheet.panels.find(x=>x.id===def.id);
     (slot&&slot.imgs||[]).forEach((im,j)=>jobs.push([im, slug(state.persona.nama)+'-sheet-'+def.id+'-'+(j+1)+'.png']));
@@ -2379,7 +2515,7 @@ function qaCSV(){
   const add=(file,q)=>{ if(q) rows.push([file,q.skor,q.identitas,q.realisme,q.teknis,q.cocok,
     (q.slop||[]).join(' | '),(q.masalah||[]).join(' | '),q.saran].map(csvCell).join(',')); };
   state.shots.forEach((sh,i)=>sh.imgs.forEach((im,j)=>
-    add('03-foto/foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png', im.qa)));
+    add('03-foto/foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.'+imgExt(im), im.qa)));
   return rows.length>1 ? '\uFEFF'+rows.join('\r\n') : '';
 }
 function zipReadme(nImg){
@@ -2447,7 +2583,7 @@ async function exportZip(){
     if(g.sheetImg){ addImg('02-character-sheet/grid-'+g.cols+'x'+g.rows+'.png',g.sheetImg); }
     g.cells.forEach((c,i)=>{ if(c.img){ addImg('02-character-sheet/sel/sel-'+String(i+1).padStart(3,'0')+'.png',c.img); nImg++; } });
     state.shots.forEach((sh,i)=>sh.imgs.forEach((im,j)=>{
-      addImg('03-foto/foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png',im); nImg++;
+      addImg('03-foto/foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.'+imgExt(im),im); nImg++;
     }));
 
     addText('README.txt', zipReadme(nImg));
@@ -2497,7 +2633,7 @@ function saveProject(){
   toast('Project diunduh'+(withImages?' (dengan gambar).':' — gambar tidak disertakan.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','shots','anchor','stampAI','qaGate','usage','dirty'];
+const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','shots','anchor','stampAI','qaGate','usage','post','dirty'];
 /* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
    dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
 function normalizeState(){
@@ -2519,6 +2655,7 @@ function normalizeState(){
   if(!Array.isArray(state.kalender.rows)) state.kalender.rows=[];
   state.qaGate=Object.assign({on:false,min:75,retry:1}, state.qaGate||{});
   state.usage=Object.assign({img:0,txt:0,harga:0.04}, state.usage||{});
+  state.post=Object.assign({grain:10,chroma:0.9,vignette:0.16,jpeg:0.9}, state.post||{});
   /* Setelah round-trip JSON, anchor jadi objek terpisah dari gambar di shots.
      Tautkan ulang ke objek aslinya supaya badge & hapus tetap akurat. */
   if(state.anchor&&state.anchor.data){
@@ -2831,7 +2968,7 @@ document.addEventListener('click', async e=>{
   }
   if(t.dataset.dl){
     const [i,j]=t.dataset.dl.split('.').map(Number);
-    saveOneImage(state.shots[i].imgs[j], slug(state.persona.nama)+'-foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png');
+    saveOneImage(state.shots[i].imgs[j], slug(state.persona.nama)+'-foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.'+imgExt(state.shots[i].imgs[j]));
     return;
   }
   if(t.dataset.anchor){
@@ -2919,6 +3056,8 @@ document.addEventListener('click', async e=>{
   /* ---- QA & revisi gambar ---- */
   if(t.dataset.qa){ const [i,j]=t.dataset.qa.split('.').map(Number); runQA(i,j); return; }
   if(t.dataset.qaall){ runQAAll(); return; }
+  if(t.dataset.post){ const [i,j]=t.dataset.post.split('.').map(Number); runPost(i,j); return; }
+  if(t.dataset.postall){ runPostAll(); return; }
   if(t.dataset.refine!=null){
     const i=+t.dataset.refine, ins=($('#ref-'+i)?.value||'').trim();
     if(!ins){ toast('Tulis dulu perubahan yang kamu mau.','err'); return; }
