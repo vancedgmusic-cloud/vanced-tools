@@ -103,15 +103,16 @@ persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis ca
   KoboiLLM `https://lite.koboillm.com/v1` (instalasi LiteLLM) — tapi tetap
   **bisa diedit**, jangan dikunci.
 
+- `api.img` — gambar (`gemini_image`, `openai_image`, `compat_image`, `manual`).
+  `gemini_image` menerima foto referensi langsung; `openai_image` pakai
+  `/images/edits` multipart kalau ada referensi **dan** model cocok `/gpt-image/i`,
+  selain itu `/images/generations`.
+
 `fetchModels(base,key)` menarik `GET {base}/models` supaya user tidak perlu
 mengetik nama model; hasilnya masuk `MODEL_CACHE` (dikunci per base URL, sengaja
 di luar `state` supaya tidak ikut file project) lalu dirender sebagai `<datalist>`.
 **Jangan me-render ulang modal API saat kolom Base URL `change`** — node tombol
 "Tarik daftar" ikut terganti tepat saat diklik dan klik pertamanya hilang.
-- `api.img` — gambar (`gemini_image`, `openai_image`, `compat_image`, `manual`).
-  `gemini_image` menerima foto referensi langsung; `openai_image` pakai
-  `/images/edits` multipart kalau ada referensi **dan** model cocok `/gpt-image/i`,
-  selain itu `/images/generations`.
 
 ### Aturan domain (jangan dilanggar)
 
