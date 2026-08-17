@@ -446,7 +446,9 @@ const state={
     compatBase:'', compatKey:'', compatModel:'',
     img:'gemini_image',
     imgGeminiKey:'', imgGeminiModel:'gemini-2.5-flash-image',
-    imgOaBase:'https://api.openai.com/v1', imgOaKey:'', imgOaModel:'gpt-image-1'
+    imgOaBase:'https://api.openai.com/v1', imgOaKey:'', imgOaModel:'gpt-image-1',
+    imgXaiBase:'https://api.x.ai/v1', imgXaiKey:'', imgXaiModel:'grok-imagine-image-2.0',
+    imgFreeModel:'flux'
   },
   talent:{ mode:'inspired', consent:false, catatan:'', bahasa:'Indonesia (santai, ala creator)' },
   uploads:{ refs:[] },
@@ -889,6 +891,10 @@ const MODEL_HINTS={
       {m:'grok-4',      n:'vision', v:1},
       {m:'grok-3',      n:'seimbang'},
       {m:'grok-3-mini', n:'murah'}
+    ],
+    img:[
+      {m:'grok-imagine-image-2.0', n:'sanggup image→image'},
+      {m:'grok-2-image',           n:'lebih murah'}
     ]
   },
   openrouter:{
@@ -1000,9 +1006,90 @@ const IMG_PROVIDERS=[
   {id:'gemini_image', name:'Gemini langsung', desc:'Key AI Studio, model gemini-*-image. Foto referensi terkirim.'},
   {id:'chat_image',   name:'Gateway · chat',  desc:'Model gambar Gemini/Nano Banana lewat /chat/completions gateway. Foto referensi TERKIRIM — pilihan terbaik untuk KoboiLLM.'},
   {id:'openai_image', name:'OpenAI Images',   desc:'gpt-image-* lewat /images/generations & /images/edits. Foto referensi terkirim (Dinoiki).'},
+  {id:'xai_image',    name:'xAI Imagine',    desc:'api.x.ai — key Grok yang sama dengan mesin teks. Foto acuan TERKIRIM lewat /images/edits.'},
   {id:'compat_image', name:'Gateway · images',desc:'Endpoint /images/generations polos. Tanpa foto referensi — konsistensi wajah lebih lemah.'},
+  {id:'free',         name:'Pollinations · gratis', desc:'Tanpa key, tanpa daftar. Teks→gambar saja: wajah TIDAK konsisten. Untuk uji coba prompt.'},
   {id:'manual',       name:'Tanpa render',    desc:'Aplikasi hanya menyusun prompt; kamu render sendiri di tool lain.'}
 ];
+/* Seluruh sistem konsistensi wajah (foto referensi + anchor) hanya bekerja kalau
+   endpoint-nya sanggup menerima gambar. Yang tidak bisa jangan diberi janji
+   palsu di UI — user berhak tahu sebelum membakar 144 panggilan API. */
+function imgSendsRefs(){ return !/^(compat_image|free|manual)$/.test(state.api.img); }
+function imgProvName(){ const p=IMG_PROVIDERS.find(x=>x.id===state.api.img); return p?p.name:state.api.img; }
+function noRefWarn(){
+  if(imgSendsRefs()||state.api.img==='manual') return '';
+  return '<div class="check warn"><span class="sym">!</span><div>Mesin gambar <b>'+esc(imgProvName())+
+    '</b> tidak bisa menerima foto acuan — foto referensi dan anchor <b>tidak ikut terkirim</b>. '+
+    'Wajahnya akan berbeda-beda tiap render; konsistensi hanya sejauh yang sanggup dibawa teks identity lock. '+
+    'Untuk character sheet dan grid, pilih mesin yang mengirim acuan di ⚙ API.</div></div>';
+}
+
+/* xAI Imagine. Berbeda dari OpenAI: /images/edits di sini menerima JSON biasa
+   dengan foto acuan sebagai data URI, bukan multipart. Itu yang membuat sistem
+   anchor tetap bekerja — dan key-nya sama dengan yang dipakai mesin teks Grok. */
+async function xaiImage(prompt, refs){
+  const a=state.api;
+  const base=String(a.imgXaiBase||'').replace(/\/+$/,'');
+  if(!base) throw new Error('Base URL xAI belum diisi (⚙ API).');
+  if(!a.imgXaiKey) throw new Error('API key xAI untuk mesin gambar belum diisi (⚙ API).');
+  const model=a.imgXaiModel||'grok-imagine-image-2.0';
+  const headers={'Content-Type':'application/json','Authorization':'Bearer '+a.imgXaiKey};
+  const pick=d=>{
+    const it=d&&d.data&&d.data[0];
+    if(it&&it.b64_json) return {mimeType:'image/jpeg', data:it.b64_json};
+    if(it&&it.url) return {mimeType:'image/jpeg', data:'', remoteUrl:it.url};
+    return null;
+  };
+  const usable=(refs||[]).filter(r=>r&&r.data);
+  if(usable.length){
+    const uri=r=>'data:'+r.mimeType+';base64,'+r.data;
+    /* Bentuk multi-gambar belum seragam antar versi; bentuk satu-gambar yang
+       terdokumentasi dipakai sebagai jaring pengaman. */
+    const variants=[];
+    if(usable.length>1) variants.push({model, prompt, images:usable.slice(0,3).map(r=>({url:uri(r), type:'image_url'}))});
+    variants.push({model, prompt, image:{url:uri(usable[0]), type:'image_url'}});
+    let last=null;
+    for(const body of variants){
+      try{
+        const d=await postJSON(base+'/images/edits',{method:'POST',headers,body:JSON.stringify(body)},'xAI Imagine (edit)');
+        const got=pick(d); if(got) return got;
+        last=new Error('xAI Imagine tidak mengembalikan gambar. Cek nama modelnya.');
+      }catch(e){ last=e; }
+    }
+    throw last;
+  }
+  const d=await postJSON(base+'/images/generations',
+    {method:'POST',headers,body:JSON.stringify({model,prompt,n:1})},'xAI Imagine');
+  const got=pick(d);
+  if(got) return got;
+  throw new Error('xAI Imagine: balasan tidak berisi gambar.');
+}
+
+/* Pollinations — benar-benar gratis dan tanpa key, tapi hanya teks→gambar.
+   Foto acuan tidak bisa dikirim, jadi wajahnya TIDAK akan konsisten. Berguna
+   untuk menguji pose dan komposisi sebelum membakar kredit di mesin berbayar. */
+function blobToB64(blob){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=()=>res(String(r.result).split(',')[1]);
+    r.onerror=rej;
+    r.readAsDataURL(blob);
+  });
+}
+async function freeImage(prompt, aspek){
+  const [w,h]=aspectOf(aspek||state.shoot.aspek).oa.split('x');
+  const url='https://image.pollinations.ai/prompt/'+encodeURIComponent(prompt)+
+    '?width='+w+'&height='+h+'&nologo=true&model='+encodeURIComponent(state.api.imgFreeModel||'flux')+
+    '&seed='+Math.floor(Math.random()*1e9);
+  if(url.length>7500) throw new Error('Prompt terlalu panjang untuk endpoint gratis ('+url.length+' karakter URL). Kosongkan sebagian blok realisme di tahap Rencana Foto, atau pakai mesin gambar ber-key.');
+  let r;
+  try{ r=await fetch(url); }
+  catch(e){ throw new Error('Pollinations tidak bisa dihubungi dari browser: '+(e.message||'gagal terhubung')); }
+  if(!r.ok) throw new Error('Pollinations: HTTP '+r.status+(r.status===429?' — sedang dibatasi, tunggu sebentar.':''));
+  const blob=await r.blob();
+  if(!/^image\//.test(blob.type||'')) throw new Error('Pollinations tidak mengembalikan gambar.');
+  return {mimeType:blob.type, data:await blobToB64(blob)};
+}
 /* Gateway seperti LiteLLM menyajikan model gambar Gemini lewat /chat/completions
    dan mengembalikan gambarnya di dalam pesan. Bentuk balasannya belum seragam
    antar-versi, jadi diambil dari beberapa kemungkinan sekaligus. */
@@ -1136,6 +1223,8 @@ async function generateImage(prompt, aspek, explicitRefs){
   if(a.img==='manual') throw new Error('Mesin gambar diset "Tanpa render". Pilih mesin gambar di ⚙ API, atau salin prompt-nya ke tool lain.');
   if(a.img==='gemini_image') return geminiImage(prompt, refs, aspek);
   if(a.img==='chat_image') return chatImage(prompt, refs);
+  if(a.img==='xai_image') return xaiImage(prompt, refs);
+  if(a.img==='free') return freeImage(prompt, aspek);
   if(a.img==='openai_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'OpenAI Images', true, aspek);
   if(a.img==='compat_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'Gateway gambar', false, aspek);
   throw new Error('Mesin gambar tidak dikenal.');
@@ -1898,6 +1987,7 @@ function viewSheet(){
     '</div>'+reviseHTML('sheet','mis. palet lebih earthy, tambah niche kuliner')+'</div>'+
     (nicheTable?'<div class="card"><h3>📚 Panduan per niche</h3>'+nicheTable+'</div>':'')+
     (platTable?'<div class="card"><h3>📱 Panduan per platform</h3>'+platTable+'</div>':'')+
+    noRefWarn()+
     gridCard()+
     '<div class="card"><h3>🖼 Panel referensi visual</h3>'+
       '<div class="rulebanner"><span class="sym">▲</span><div>Panel <b>Turnaround</b> adalah acuan wajah terbaik yang bisa dibuat aplikasi ini — begitu jadi, ia otomatis dipakai sebagai anchor untuk semua render berikutnya. Render panel ini duluan.</div></div>'+
@@ -1987,7 +2077,8 @@ function viewRender(){
   const lock=String(state.identity.identity_lock||'').trim();
   const refs=refsForImage();
   let info='';
-  if(state.anchor) info='Anchor aktif: foto hasil render dipakai sebagai acuan wajah untuk render berikutnya.';
+  if(!imgSendsRefs()&&!manual) info='Mesin gambar '+imgProvName()+' tidak menerima gambar: foto referensi dan anchor TIDAK dikirim. Wajah akan berbeda-beda tiap render.';
+  else if(state.anchor) info='Anchor aktif: foto hasil render dipakai sebagai acuan wajah untuk render berikutnya.';
   else if(state.talent.mode==='locked') info='Foto referensi asli dikirim ke mesin gambar sebagai acuan wajah ('+refs.length+' foto).';
   else info='Mode wajah baru: tidak ada foto orang asli yang dikirim. Konsistensi datang dari identity lock, lalu dari anchor setelah foto pertama jadi.';
 
@@ -2885,6 +2976,17 @@ function recChips(path, val, which, base){
     rec.map(r=>'<button class="chip'+(val===r.m?' sel':'')+'" data-setmodel="'+esc(path)+'|'+esc(r.m)+'">'+
       esc(r.m)+'<span class="rs">'+esc(r.n)+'</span></button>').join('')+'</div>';
 }
+/* Mesin gambar yang berbentuk gateway punya pasangan base/key/model sendiri.
+   Dikumpulkan di satu tempat supaya tombol "Tarik daftar" dan chip rekomendasi
+   ikut berpindah sendiri saat mode gambar diganti. null = mode ini tidak punya
+   GET /models (Gemini langsung, Pollinations, manual). */
+function imgGateway(){
+  const a=state.api;
+  if(a.img==='xai_image') return {base:a.imgXaiBase, key:a.imgXaiKey, path:'api.imgXaiModel', model:a.imgXaiModel};
+  if(a.img==='openai_image'||a.img==='compat_image'||a.img==='chat_image')
+    return {base:a.imgOaBase, key:a.imgOaKey, path:'api.imgOaModel', model:a.imgOaModel};
+  return null;
+}
 function refreshRecs(){
   const a=state.api;
   const box=(which,path,val,base)=>{
@@ -2895,7 +2997,9 @@ function refreshRecs(){
     const path='api.'+({dinoiki:'dinoikiModel',koboillm:'koboiModel',grok:'grokModel',openrouter:'orModel',compat:'compatModel'}[a.txt]);
     box('txt', path, P.model(a), P.base(a));
   }
-  box('img','api.imgOaModel',a.imgOaModel,a.imgOaBase);
+  const G=imgGateway();
+  if(G) box('img', G.path, G.model, G.base);
+  else{ const el=$('#rec-img'); if(el) el.innerHTML=''; }
 }
 function renderApiModal(){
   const a=state.api;
@@ -2948,12 +3052,20 @@ function renderApiModal(){
     g=F_('Base URL','api.imgOaBase',a.imgOaBase,'https://api.openai.com/v1 · https://ai.dinoiki.com/v1 · https://lite.koboillm.com/v1 · https://openrouter.ai/api/v1')+
       F_('API Key','api.imgOaKey',a.imgOaKey,'',1)+
       F_MODEL('api.imgOaModel',a.imgOaModel,a.img==='chat_image'?'gemini-2.5-flash-image':'gpt-image-1.5','img',a.imgOaBase);
+  if(a.img==='xai_image')
+    g=F_('Base URL','api.imgXaiBase',a.imgXaiBase,'https://api.x.ai/v1')+
+      F_('API Key xAI (sama dengan key mesin teks Grok)','api.imgXaiKey',a.imgXaiKey,'xai-…',1)+
+      F_MODEL('api.imgXaiModel',a.imgXaiModel,'grok-imagine-image-2.0','img',a.imgXaiBase);
+  if(a.img==='free')
+    g=F_('Model','api.imgFreeModel',a.imgFreeModel,'flux · turbo');
   $('#imgFields').innerHTML=g;
   const inotes={
     gemini_image:'Langsung ke Google AI Studio dengan key AIza… Menerima foto referensi di dalam permintaan, jadi wajahnya paling stabil. Rasio diatur lewat parameter resmi.',
     chat_image:'Untuk gateway seperti KoboiLLM/LiteLLM yang menyajikan model gambar Gemini lewat /chat/completions. Foto referensi ikut terkirim sebagai lampiran pesan — inilah yang membuat anchor wajah tetap bekerja lewat gateway. Rasio dititipkan di teks prompt, bukan parameter, jadi kadang model menafsirkannya longgar.',
     openai_image:'Dengan foto referensi, aplikasi memakai /images/edits (khusus model gpt-image-*). Tanpa referensi, memakai /images/generations. Cocok untuk gpt-image-1.5 di Dinoiki.',
+    xai_image:'Memakai key xAI yang sama dengan mesin teks Grok (xai-…) — cukup disalin ke sini, tidak perlu key baru. Kalau ada foto acuan, aplikasi memanggil /images/edits; di xAI endpoint itu menerima JSON biasa dengan gambar sebagai data URI (bukan multipart seperti OpenAI), jadi anchor wajah tetap bekerja. Tanpa acuan, memakai /images/generations. Ini layanan berbayar, bukan gratis.',
     compat_image:'Hanya /images/generations polos. Foto referensi TIDAK bisa dikirim — konsistensi wajah cuma bergantung teks identity lock. Pakai ini kalau dua mode di atas ditolak gateway-mu.',
+    free:'Tanpa key dan tanpa daftar akun — untuk mencoba prompt sebelum membakar kuota berbayar. Batasnya nyata: endpoint ini teks→gambar saja, foto acuan dan anchor TIDAK ikut terkirim, jadi wajahnya akan berbeda-beda tiap render. Jangan dipakai untuk Character Sheet atau grid, yang justru bergantung pada konsistensi wajah. Layanan publik gratis: bisa lambat, kena antrean, atau membalas 429 saat ramai, dan parameter nologo umumnya diabaikan pada akses anonim sehingga muncul watermark kecil. Prompt dikirim ke image.pollinations.ai — jangan menulis apa pun yang rahasia di dalamnya.',
     manual:'Tidak ada panggilan API gambar. Aplikasi tetap menyusun prompt final yang bisa kamu salin ke Midjourney, ComfyUI, atau tool lain.'
   };
   $('#imgNote').textContent=inotes[a.img]||'';
@@ -3176,7 +3288,11 @@ document.addEventListener('click', async e=>{
     if(busy) return;
     const a=state.api, which=t.dataset.fetchmodels;
     let base='', key='', label='';
-    if(which==='img'){ base=a.imgOaBase; key=a.imgOaKey; label='Mesin gambar'; }
+    if(which==='img'){
+      const G=imgGateway();
+      if(!G){ toast('Mode gambar ini tidak menyediakan daftar model gateway.','err'); return; }
+      base=G.base; key=G.key; label='Mesin gambar';
+    }
     else{
       const P=OA[a.txt];
       if(!P){ toast('Provider ini tidak memakai daftar model gateway.','err'); return; }

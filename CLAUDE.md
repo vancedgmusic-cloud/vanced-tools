@@ -114,16 +114,19 @@ persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis ca
   di `OA` + satu di `TXT_PROVIDERS` + field `*Base`/`*Key`/`*Model` di `state.api`;
   penarikan daftar model dan chip rekomendasi ikut otomatis.
 
-- `api.img` — gambar (`gemini_image`, `chat_image`, `openai_image`, `compat_image`,
-  `manual`). Yang menentukan bukan cuma modelnya, tapi **apakah foto acuan bisa
-  ikut terkirim** — tanpa itu anchor tidak bekerja dan wajah melenceng:
+- `api.img` — gambar (`gemini_image`, `chat_image`, `xai_image`, `openai_image`,
+  `compat_image`, `free`, `manual`). Yang menentukan bukan cuma modelnya, tapi
+  **apakah foto acuan bisa ikut terkirim** — tanpa itu anchor tidak bekerja dan
+  wajah melenceng:
 
   | mode | endpoint | foto acuan |
   |---|---|---|
   | `gemini_image` | `models/*:generateContent` | ya, `inlineData` |
   | `chat_image` | `{base}/chat/completions` | ya, `image_url` data URI |
+  | `xai_image` | `/images/edits` bila ada acuan, selain itu `/images/generations` | ya, data URI di **JSON** |
   | `openai_image` | `/images/edits` bila ada acuan **dan** model cocok `/gpt-image/i`, selain itu `/images/generations` | ya, multipart |
   | `compat_image` | `/images/generations` | **tidak** |
+  | `free` | `GET image.pollinations.ai/prompt/…` | **tidak** |
 
   `chat_image` ada karena gateway LiteLLM (KoboiLLM) menyajikan model gambar
   Gemini lewat `/chat/completions`. Bentuk balasannya belum seragam antar-versi,
@@ -131,6 +134,34 @@ persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis ca
   `message.content[]` bertipe `image_url`, data URI di dalam string, dan
   `data[0].b64_json`. Parameter `modalities` juga diturun-tanggakan karena
   sebagian gateway menolaknya.
+
+  `xai_image` **tidak** boleh dilebur ke `openai_image` meski namanya sama-sama
+  `/images/edits`: di xAI endpoint itu menerima JSON biasa (`image:{url,type}` atau
+  `images:[…]` untuk maksimal 3 acuan), bukan `multipart/form-data` seperti OpenAI.
+  Key-nya sama dengan `api.grokKey` di mesin teks, tapi disimpan terpisah di
+  `imgXaiKey` supaya user bisa memakai gateway lain untuk teks.
+
+  `free` (Pollinations) ada supaya user bisa menguji prompt tanpa membakar kuota
+  berbayar. Ia **tidak** bisa menerima gambar, jadi mode ini melanggar dasar sistem
+  konsistensi wajah — itu bukan bug yang bisa ditambal, dan UI **wajib**
+  mengatakannya. `imgSendsRefs()` adalah sumber kebenarannya; `noRefWarn()` memasang
+  banner di tahap Character Sheet dan `viewRender()` mengganti kalimat "anchor aktif"
+  supaya app tidak menjanjikan hal yang tidak dikerjakannya. Kalau menambah mesin
+  gambar tanpa dukungan acuan, daftarkan juga di `imgSendsRefs()`.
+
+  Prompt lengkap masuk ke path URL, jadi `freeImage()` menolak prompt yang membuat
+  URL lewat ~7500 karakter dengan pesan yang bisa dibaca user — kalau tidak, yang
+  muncul adalah HTTP 414 yang tak berarti apa-apa.
+
+  **Groq tidak bisa dipakai sebagai mesin gambar** — layanannya inferensi LLM dan
+  vision *input*, tanpa endpoint pembuatan gambar. Key Groq tetap berguna di mesin
+  teks lewat `compat` (`https://api.groq.com/openai/v1`). Cloudflare Workers AI
+  gratis tapi REST API-nya tidak mengirim header CORS, jadi tidak bisa dipanggil
+  langsung dari app `file://` ini tanpa Worker proxy sendiri.
+
+  Mesin gambar berbentuk gateway (punya `GET /models`) didaftarkan di
+  `imgGateway()` — satu tempat yang dipakai bersama oleh tombol "Tarik daftar" dan
+  chip rekomendasi. Mode tanpa gateway mengembalikan `null` dan chip-nya dikosongkan.
 
 `fetchModels(base,key)` menarik `GET {base}/models` supaya user tidak perlu
 mengetik nama model; hasilnya masuk `MODEL_CACHE` (dikunci per base URL, sengaja
@@ -160,8 +191,9 @@ pertamanya hilang.
 - **Mode `inspired` tidak pernah mengirim foto orang asli ke mesin gambar.**
   Konsistensi datang dari identity lock, lalu dari `state.anchor` — hasil render
   pertama yang otomatis jadi acuan wajah untuk render berikutnya.
-- Field kredensial: `geminiKey`, `claudeKey`, `dinoikiKey`, `koboiKey`, `compatKey`,
-  `imgGeminiKey`, `imgOaKey`. Semua berakhiran `Key` supaya kena filter ekspor.
+- Field kredensial: `geminiKey`, `claudeKey`, `dinoikiKey`, `koboiKey`, `grokKey`,
+  `orKey`, `compatKey`, `imgGeminiKey`, `imgOaKey`, `imgXaiKey`. Semua berakhiran
+  `Key` supaya kena filter ekspor.
 
 Whitelist restore ada di konstanta `KEEP`. Gambar hasil render ikut file project
 selama `state.withImages` menyala — **default-nya sengaja menyala**, karena gambar
