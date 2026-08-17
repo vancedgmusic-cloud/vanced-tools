@@ -542,6 +542,13 @@ const F = {
    bisa di-paste tanpa diedit lagi. */
 const IMG_ENGINES={
   flux:{name:'Flux.2 / Flux Dev', syntax:'Kalimat natural deskriptif dalam bahasa Inggris, mengalir, tanpa tag koma dan tanpa parameter CLI. Satu paragraf padat.', ref:'Dukung reference image + stacking sampai 4 LoRA dengan bobot terpisah.'},
+  /* Kontext BUKAN varian Flux biasa dengan nama berbeda — modelnya dilatih
+     khusus untuk EDIT bertarget dari sebuah gambar acuan, bukan generate
+     dari nol. Instruksinya karena itu ditulis dengan bentuk yang berbeda:
+     "ubah X, biarkan sisanya" bukan deskripsi ulang seluruh adegan. Tanpa
+     gambar acuan, hasilnya turun ke mutu Flux Dev biasa — jadi entri ini
+     sengaja ditandai butuh reference image, bukan opsional. */
+  fluxkontext:{name:'Flux.1 Kontext / Flux.2 Kontext', syntax:'Instruksi EDIT bertarget dalam bahasa Inggris, gaya "ubah X, biarkan sisanya sama persis" — bukan deskripsi ulang seluruh adegan dari nol. Satu perintah jelas per elemen yang berubah (pose, wardrobe, latar, ekspresi); jangan menumpuk banyak perubahan sekaligus dalam satu instruksi karena kepatuhannya menurun. Tanpa tag koma, tanpa parameter CLI.', ref:'WAJIB disertai reference image — tanpa itu keunggulannya hilang dan mutunya turun ke Flux Dev biasa. Kunci identitas paling kuat di kelas open-weight untuk edit bertahap: ganti pose sambil wajah, kulit, dan busana tetap sama persis. Cocok untuk shot turnaround di tahap 08 dan untuk Repair Kit di tahap 10 (perbaikan tangan/mata terarah tanpa render ulang seluruh frame); kurang cocok untuk generate dari nol tanpa acuan.'},
   midjourney:{name:'Midjourney v7', syntax:'Frasa padat bahasa Inggris dipisah koma, diakhiri parameter. Selalu akhiri dengan: --ar {RASIO} --style raw --v 7', ref:'Kunci wajah pakai --cref <url> --cw 100, kunci gaya pakai --sref <url>.'},
   sdxl:{name:'SDXL / Pony / Illustrious', syntax:'Gaya tag bahasa Inggris dipisah koma, dari umum ke detail. Sertakan juga negative prompt terpisah.', ref:'Pakai LoRA karakter + IP-Adapter FaceID / InstantID / PuLID untuk kunci wajah.'},
   nanobanana:{name:'Nano Banana Pro / Gemini Image', syntax:'Instruksi natural bahasa Inggris, boleh menyebut aksi edit eksplisit. Deskriptif dan spesifik.', ref:'Tekstur kulit dan akurasi wajah paling kuat untuk pemula; sangat menjaga identitas lewat reference image — sebut eksplisit "keep the same face".'},
@@ -1717,6 +1724,10 @@ const PETA_ENGINE=[
   [/gpt-image/i,                         'gptimage'],
   [/imagen/i,                            'imagen'],
   [/gemini|nano-?banana/i,               'nanobanana'],
+  /* Kontext dicek SEBELUM /flux/ generik — urutan array menentukan siapa
+     menang, dan kalau dibalik "flux-1-kontext-pro" akan tertangkap oleh
+     baris flux biasa duluan lalu menulis prompt dengan gaya yang salah. */
+  [/flux.*kontext|kontext.*flux/i,       'fluxkontext'],
   [/flux/i,                              'flux'],
   [/midjourney/i,                        'midjourney'],
   [/sdxl|pony|illustrious|stable-?diffusion/i,'sdxl'],
