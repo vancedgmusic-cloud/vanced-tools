@@ -182,6 +182,55 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
   background:var(--teal);color:#0a1a17;border-radius:99px;padding:2px 7px;font-weight:700;
 }
 
+/* ---------- chips (niche / platform) ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{
+  border:1px solid var(--line);background:var(--panel2);color:var(--muted);
+  border-radius:99px;padding:5px 12px;font-size:12px;font-weight:600;transition:.15s;
+}
+.chip:hover{border-color:var(--line2);color:var(--text)}
+.chip.sel{border-color:var(--violet);background:var(--violet-soft);color:var(--text)}
+.chip .rs{font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-left:5px}
+
+/* ---------- tabel sheet / kalender ---------- */
+.scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+table.tl{border-collapse:collapse;width:100%;min-width:720px;font-size:12.5px}
+table.tl th{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);text-align:left;padding:9px 10px;background:var(--panel2);
+  border-bottom:1px solid var(--line);white-space:nowrap;
+}
+table.tl td{border-bottom:1px solid var(--line);padding:9px 10px;vertical-align:top;line-height:1.45}
+table.tl tr:last-child td{border-bottom:none}
+table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-space:nowrap}
+.pill{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;border-radius:99px;padding:2px 8px;border:1px solid var(--line2);color:var(--muted);white-space:nowrap}
+.pill.edukasi{color:var(--teal);border-color:#2b4f4a}
+.pill.hiburan{color:var(--violet);border-color:#463a6b}
+.pill.personal{color:var(--green);border-color:#2c4a3a}
+.pill.promosi{color:var(--amber);border-color:#54401f}
+
+/* ---------- panel character sheet ---------- */
+.panels{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.panelcard{border:1px solid var(--line);border-radius:var(--r);background:var(--panel2);overflow:hidden;display:flex;flex-direction:column}
+.panelcard .ph{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.panelcard .ph b{font-size:12.5px;flex:1}
+.panelcard .pb{padding:12px;flex:1}
+.panelcard img{width:100%;border-radius:8px;border:1px solid var(--line);display:block;margin-bottom:8px;background:var(--panel3)}
+.panelcard .none{border:1px dashed var(--line2);border-radius:8px;padding:22px 12px;text-align:center;color:var(--faint);font-size:12px}
+
+/* ---------- feed preview ---------- */
+.feed{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;max-width:420px;border:1px solid var(--line);border-radius:var(--r-sm);padding:3px;background:var(--panel2)}
+.feed div{aspect-ratio:4/5;background:var(--panel3);border-radius:2px;overflow:hidden}
+.feed img{width:100%;height:100%;object-fit:cover;display:block}
+
+/* ---------- QA badge ---------- */
+.qa{margin-top:6px;font-size:11px;line-height:1.45;border-radius:6px;padding:6px 8px;border:1px solid var(--line)}
+.qa b{font-family:var(--mono);font-size:11px}
+.qa.good{border-color:#2c4a3a;background:var(--green-soft)}.qa.good b{color:var(--green)}
+.qa.mid{border-color:#54401f;background:var(--amber-soft)}.qa.mid b{color:var(--amber)}
+.qa.bad{border-color:#5a3a38;background:var(--red-soft)}.qa.bad b{color:var(--red)}
+.qa ul{margin:4px 0 0 14px;padding:0}
+
 /* ---------- validation / banners ---------- */
 .check{display:flex;gap:10px;padding:10px 12px;border-radius:var(--r-sm);margin-bottom:8px;font-size:13px;border:1px solid var(--line);background:var(--panel2)}
 .check .sym{font-family:var(--mono);flex:none}
@@ -241,7 +290,7 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
   <header class="top">
     <div class="brand">
       <div class="mark">AI</div>
-      <h1>AI Influencer Studio<small>TALENT REF → IDENTITAS → PERSONA → FOTO → KONTEN</small></h1>
+      <h1>AI Influencer Studio<small>REFERENSI → IDENTITAS → PERSONA → SHEET → FOTO → KONTEN</small></h1>
     </div>
     <div class="grow"></div>
     <div class="statusline" id="statusline"><span class="recdot"></span><span id="statustext">Siaga</span></div>
@@ -365,8 +414,11 @@ const state={
     kamera:'shot on 85mm lens at f/1.8, natural available light, photorealistic, sharp focus on the face, realistic skin texture with visible pores and fine flyaway hairs, subtle film grain',
     negatif:'plastic skin, over-smoothed skin, waxy face, extra fingers, deformed hands, distorted face, watermark, text artifacts, logo, lowres, cartoon, 3d render'
   },
+  sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[] },
+  kalender:{ hari:14, mulai:'', rows:[] },
   shots:[],
   anchor:null,
+  stampAI:false,
   dirty:{}
 };
 
@@ -375,13 +427,14 @@ const STEPS=[
   {id:'talent',   no:'01', label:'Foto Referensi'},
   {id:'identity', no:'02', label:'Identitas Visual', ai:true},
   {id:'persona',  no:'03', label:'Persona & Brand',  ai:true},
-  {id:'shoot',    no:'04', label:'Rencana Foto',     ai:true},
-  {id:'render',   no:'05', label:'Render Foto'},
-  {id:'content',  no:'06', label:'Caption & Script', ai:true},
-  {id:'export',   no:'07', label:'Ekspor'}
+  {id:'sheet',    no:'04', label:'Character Sheet',  ai:true},
+  {id:'shoot',    no:'05', label:'Rencana Foto',     ai:true},
+  {id:'render',   no:'06', label:'Render Foto'},
+  {id:'content',  no:'07', label:'Caption & Script', ai:true},
+  {id:'export',   no:'08', label:'Ekspor'}
 ];
 /* Tahap yang jadi kotor ketika tahap di kirinya di-regenerate. */
-const REGEN_ORDER=['identity','persona','shoot','content'];
+const REGEN_ORDER=['identity','persona','sheet','shoot','content'];
 let current='talent';
 
 /* ---------------- definisi field ---------------- */
@@ -416,6 +469,16 @@ const F={
     {k:'pilar_konten',   l:'Pilar konten (3–5 pilar)',           t:1, full:1},
     {k:'brand_cocok',    l:'Kategori brand yang cocok',          t:1, full:1},
     {k:'pantangan',      l:'Pantangan / yang tidak pernah dilakukan', t:1, full:1}
+  ],
+  /* Brand kit — bagian teks dari character sheet. */
+  sheet:[
+    {k:'palet',        l:'Palet warna feed (nama + hex)',            t:1, full:1},
+    {k:'wardrobe',     l:'Lemari pakaian khas (siluet, bahan, warna)', t:1, full:1},
+    {k:'props',        l:'Props & aksesori tanda tangan',            t:1, full:1},
+    {k:'lokasi_favorit', l:'Lokasi yang sering muncul',              t:1, full:1},
+    {k:'signature',    l:'Ciri khas visual yang bikin feed-nya dikenali', t:1, full:1},
+    {k:'do',           l:'DO — yang harus selalu ada di setiap konten', t:1, full:1},
+    {k:'dont',         l:'DON\'T — yang tidak boleh muncul',          t:1, full:1}
   ]
 };
 const schemaOf=f=>'{'+f.map(x=>'"'+x.k+'":"string"').join(',')+'}';
@@ -425,12 +488,44 @@ const filled=(fields,obj)=>fields.some(f=>obj&&String(obj[f.k]||'').trim());
 const ASPECTS=[
   {id:'2:3',  label:'Potret 2:3 · feed',      gem:'2:3',  oa:'1024x1536'},
   {id:'3:4',  label:'Potret 3:4',             gem:'3:4',  oa:'1024x1536'},
-  {id:'4:5',  label:'Potret 4:5 · IG feed',   gem:'3:4',  oa:'1024x1536'},
+  {id:'4:5',  label:'Potret 4:5 · IG feed',   gem:'4:5',  oa:'1024x1536'},
   {id:'1:1',  label:'Kotak 1:1',              gem:'1:1',  oa:'1024x1024'},
   {id:'9:16', label:'Story / Reels 9:16',     gem:'9:16', oa:'1024x1536'},
-  {id:'4:3',  label:'Lanskap 4:3',            gem:'4:3',  oa:'1536x1024'}
+  {id:'4:3',  label:'Lanskap 4:3',            gem:'4:3',  oa:'1536x1024'},
+  {id:'16:9', label:'Lanskap 16:9 · YouTube', gem:'16:9', oa:'1536x1024'}
 ];
 const aspectOf=id=>ASPECTS.find(a=>a.id===id)||ASPECTS[0];
+
+/* ---------------- niche, platform, panel character sheet ---------------- */
+const NICHES=['Skincare & beauty','Fashion / OOTD','Kuliner & food review','Travel & staycation',
+  'Fitness & wellness','Parenting & keluarga','Finance & investasi','Teknologi & gadget',
+  'Otomotif','Home decor & interior','Edukasi & karier','Gaming & hiburan'];
+const PLATFORMS=[
+  {id:'ig_feed',  label:'Instagram Feed',   rasio:'4:5'},
+  {id:'ig_story', label:'Instagram Story',  rasio:'9:16'},
+  {id:'reels',    label:'Reels / Shorts',   rasio:'9:16'},
+  {id:'tiktok',   label:'TikTok',           rasio:'9:16'},
+  {id:'youtube',  label:'YouTube',          rasio:'16:9'},
+  {id:'x',        label:'X / Twitter',      rasio:'16:9'},
+  {id:'pinterest',label:'Pinterest',        rasio:'2:3'},
+  {id:'linkedin', label:'LinkedIn',         rasio:'1:1'},
+  {id:'facebook', label:'Facebook',         rasio:'4:5'}
+];
+/* Panel referensi. Prompt sengaja dikunci di kode (bukan dikarang AI) supaya
+   lembar acuannya selalu punya komposisi yang sama dan bisa dibandingkan. */
+const SHEET_PANELS=[
+  {id:'turnaround', label:'Turnaround 4 sudut', aspek:'16:9',
+   prompt:'character reference sheet: the same person shown four times in one image, in a single evenly spaced row against a plain seamless light gray studio background — front view, three-quarter view, left profile view, and back view. Full body, standing in a relaxed neutral A-pose, wearing simple well-fitted neutral clothing, flat even studio lighting, no cast shadows on the background, exactly the same face, hairstyle and body proportions in every view.'},
+  {id:'expression', label:'Lembar ekspresi', aspek:'1:1',
+   prompt:'character expression sheet: the same person shown as six head-and-shoulders portraits in a clean 3x2 grid against a plain seamless light gray background — neutral resting face, warm genuine smile, laughing with eyes crinkled, thoughtful looking away, pleasantly surprised, and calm confident. Exactly the same face and hairstyle in every portrait, soft even studio lighting.'},
+  {id:'wardrobe', label:'Lembar wardrobe', aspek:'16:9',
+   prompt:'wardrobe reference sheet: the same person shown four times in one image, in a single evenly spaced row against a plain seamless light gray background, each wearing a different complete head-to-toe outfit that fits their personal style — everyday casual, smart casual for work, sporty activewear, and dressed up for an evening event. Full body front view, exactly the same face in every version, flat even studio lighting.'},
+  {id:'detail', label:'Detail wajah & rambut', aspek:'16:9',
+   prompt:'detail reference sheet against a plain seamless light gray background, three panels side by side: a large sharp close-up of the face from the front, a close-up of the same face in strict profile, and a close-up of the hair seen from behind showing its true length and texture. Exactly the same person in all three panels, soft even lighting, high detail on skin texture, individual hair strands and eye color.'},
+  {id:'palette', label:'Papan warna & mood', aspek:'1:1',
+   prompt:'a flat lay mood board photographed from directly above on a neutral surface: fabric swatches, accessories, and small everyday objects that represent this person\'s personal style and color palette. No people, no faces, no text, no lettering. Soft natural daylight, clean minimal styling.', noIdentity:1}
+];
+const panelDef=id=>SHEET_PANELS.find(p=>p.id===id);
 
 /* =====================================================================
    PROVIDER — mesin teks
@@ -623,14 +718,14 @@ function b64ToBlob(b64, mime){
 }
 /* Gemini image: kirim varian payload dari yang paling kaya ke yang paling polos.
    Versi API berbeda menerima opsi yang berbeda, jadi turun tangga saat ditolak. */
-async function geminiImage(prompt, refs){
+async function geminiImage(prompt, refs, aspek){
   const a=state.api;
   const key=a.imgGeminiKey||a.geminiKey;
   if(!key) throw new Error('API key Gemini untuk mesin gambar belum diisi (⚙ API).');
   const model=a.imgGeminiModel||'gemini-2.5-flash-image';
   const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(key);
   const parts=[{text:prompt}, ...(refs||[]).map(im=>({inlineData:{mimeType:im.mimeType,data:im.data}}))];
-  const ar=aspectOf(state.shoot.aspek).gem;
+  const ar=aspectOf(aspek||state.shoot.aspek).gem;
   const variants=[
     {responseModalities:['IMAGE'], imageConfig:{aspectRatio:ar}},
     {responseModalities:['IMAGE']},
@@ -650,12 +745,12 @@ async function geminiImage(prompt, refs){
   }
   throw lastErr||new Error('Gemini Image gagal.');
 }
-async function openaiImage(prompt, refs, cfgBase, cfgKey, cfgModel, label, allowRefs){
+async function openaiImage(prompt, refs, cfgBase, cfgKey, cfgModel, label, allowRefs, aspek){
   const base=String(cfgBase||'').replace(/\/+$/,'');
   if(!base) throw new Error('Base URL '+label+' belum diisi (⚙ API).');
   if(!cfgKey) throw new Error('API key '+label+' belum diisi (⚙ API).');
   const model=cfgModel||'gpt-image-1';
-  const size=aspectOf(state.shoot.aspek).oa;
+  const size=aspectOf(aspek||state.shoot.aspek).oa;
   const useEdit=allowRefs && refs && refs.length && /gpt-image/i.test(model);
   let d;
   if(useEdit){
@@ -684,12 +779,15 @@ function refsForImage(){
   if(state.talent.mode==='locked' && state.talent.consent) out.push(...state.uploads.refs.slice(0,3));
   return out.slice(0,4);
 }
-async function generateImage(prompt){
-  const a=state.api, refs=refsForImage();
+/* aspek: override rasio (dipakai panel character sheet yang punya rasionya sendiri).
+   explicitRefs: override foto acuan (dipakai refine image-to-image). Lewatkan []
+   untuk sengaja mengirim tanpa acuan sama sekali. */
+async function generateImage(prompt, aspek, explicitRefs){
+  const a=state.api, refs=explicitRefs||refsForImage();
   if(a.img==='manual') throw new Error('Mesin gambar diset "Tanpa render". Pilih mesin gambar di ⚙ API, atau salin prompt-nya ke tool lain.');
-  if(a.img==='gemini_image') return geminiImage(prompt, refs);
-  if(a.img==='openai_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'OpenAI Images', true);
-  if(a.img==='compat_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'Gateway gambar', false);
+  if(a.img==='gemini_image') return geminiImage(prompt, refs, aspek);
+  if(a.img==='openai_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'OpenAI Images', true, aspek);
+  if(a.img==='compat_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'Gateway gambar', false, aspek);
   throw new Error('Mesin gambar tidak dikenal.');
 }
 
@@ -716,6 +814,13 @@ function buildContext(){
   const sh=[s.tema&&('Tema/lokasi: '+s.tema), s.outfit&&('Arah outfit: '+s.outfit),
             s.mood&&('Mood: '+s.mood), s.platform&&('Platform: '+s.platform)].filter(Boolean).join('\n');
   if(sh) L.push('\n[Arahan Photoshoot]\n'+sh);
+  /* Character sheet ikut di setiap prompt berikutnya — itu gunanya lembar acuan:
+     rencana foto, caption, dan kalender semuanya menurunkan diri dari sini. */
+  const S=state.sheet;
+  if(S.niches.length) L.push('\nNiche yang digarap: '+S.niches.join(', '));
+  if(S.platforms.length) L.push('Platform: '+S.platforms.map(id=>(PLATFORMS.find(x=>x.id===id)||{}).label).filter(Boolean).join(', '));
+  const bk=kvText(F.sheet,S); if(bk) L.push('\n[Brand Kit — patuhi ini, jangan mengarang gaya baru]\n'+bk);
+  if(S.niche_rows.length) L.push('\n[Panduan Niche]\n'+S.niche_rows.map(r=>'- '+r.niche+': '+r.sudut_pandang+(r.format?' ('+r.format+')':'')).join('\n'));
   return L.join('\n');
 }
 function promptIdentity(fb){
@@ -746,6 +851,43 @@ function promptShoot(fb){
     fbLine(fb)+
     '\nBalas HANYA satu objek JSON valid: {"shots":[{"judul":"string","tujuan":"string","outfit":"string","lokasi":"string","pose":"string","pencahayaan":"string","prompt":"string","negative":"string"}]} dengan tepat '+n+' item.';
 }
+function promptSheet(fb){
+  const n=state.sheet.niches, p=state.sheet.platforms.map(id=>(PLATFORMS.find(x=>x.id===id)||{}).label).filter(Boolean);
+  return HEADER+'\n'+buildContext()+
+    '\n\nTAHAP: CHARACTER SHEET. Susun panduan visual dan panduan konten yang dipakai berulang untuk semua produksi konten influencer ini.'+
+    (n.length?'\nNiche yang digarap: '+n.join(', '):'\nNiche belum dipilih user — turunkan sendiri dari persona.')+
+    (p.length?'\nPlatform yang dipakai: '+p.join(', '):'')+
+    '\n\nBagian 1 — BRAND KIT. Isi setiap field dalam '+state.talent.bahasa+', ringkas dan konkret. Field palet berisi 4–5 warna dengan nama dan kode hex. Field do dan dont masing-masing 3–4 butir dipisah baris baru.'+
+    '\n\nBagian 2 — PANDUAN NICHE. Untuk SETIAP niche di atas, buat satu baris: sudut pandang khas dia di niche itu, format konten yang paling cocok, tiga contoh hook, props yang dipakai, dan satu kesalahan umum yang harus dihindari.'+
+    '\n\nBagian 3 — PANDUAN PLATFORM. Untuk SETIAP platform di atas, buat satu baris: jenis konten, gaya hook, panjang caption, frekuensi posting realistis, dan gaya CTA.'+
+    fbLine(fb)+'\n'+JSON_RULE+
+    '\nSkema: {"brand":'+schemaOf(F.sheet)+',"niche_rows":[{"niche":"string","sudut_pandang":"string","format":"string","hook":"string","props":"string","hindari":"string"}],"platform_rows":[{"platform":"string","jenis_konten":"string","gaya_hook":"string","panjang_caption":"string","frekuensi":"string","cta":"string"}]}';
+}
+function promptKalender(fb){
+  const hari=Math.max(3,Math.min(30,+state.kalender.hari||14));
+  const p=state.sheet.platforms.map(id=>(PLATFORMS.find(x=>x.id===id)||{}).label).filter(Boolean);
+  return HEADER+'\n'+buildContext()+
+    '\n\nTAHAP: KALENDER KONTEN '+hari+' HARI.'+
+    (p.length?' Sebar merata di platform: '+p.join(', ')+'.':'')+
+    '\nAturan: jangan jualan tiap hari — maksimal 1 dari 4 post bersifat promosi. Selingi konten edukasi, hiburan, dan personal. Variasikan format. Hook harus spesifik, bukan template.'+
+    '\nSemua dalam '+state.talent.bahasa+'.'+
+    fbLine(fb)+'\n'+JSON_RULE+
+    '\nSkema: {"rows":[{"hari":"string","platform":"string","pilar":"string","format":"string","ide":"string","hook":"string","tipe":"edukasi|hiburan|personal|promosi"}]} dengan tepat '+hari+' item.';
+}
+function promptQA(){
+  return 'Kamu adalah QA artist untuk produksi AI influencer. Foto terlampir adalah hasil generate. Bandingkan wajah di foto itu dengan deskripsi identitas yang seharusnya:\n\n"'+
+    String(state.identity.identity_lock||'').trim()+'"\n\n'+
+    'Nilai dua hal: (1) seberapa cocok wajah di foto dengan deskripsi identitas, (2) cacat teknis yang sering muncul di gambar AI — jumlah jari, bentuk tangan, mata asimetris, gigi, aksesori yang menyatu dengan kulit, teks/watermark aneh, anggota badan hilang.\n'+
+    'Field skor: angka 0–100, di mana 100 berarti identitas persis sama dan tidak ada cacat. Field masalah: daftar temuan konkret, kosongkan kalau bersih. Field saran: satu kalimat instruksi perbaikan yang bisa langsung dipakai untuk render ulang.\n'+
+    'Jawab dalam '+state.talent.bahasa+'. '+JSON_RULE+
+    '\nSkema: {"skor":0,"identitas_cocok":"ya|meleset sedikit|meleset jauh","masalah":["string"],"saran":"string"}';
+}
+function refinePrompt(instruksi){
+  return composePrompt({
+    scene:'Edit the attached photograph of this person. Keep the same person, the same face, the same identity and the same overall photographic style. Change only what is asked: '+String(instruksi||'').trim(),
+    negative:'different person, changed facial identity, altered face shape'
+  });
+}
 function promptContent(i, fb){
   const sh=state.shots[i];
   return HEADER+'\n'+buildContext()+
@@ -759,21 +901,35 @@ function promptContent(i, fb){
 
 /* IDENTITY LOCK bersifat FIXED: selalu diprepend ke setiap prompt gambar supaya
    wajah tidak melenceng. AI penyusun shot dilarang menulis ulang bagian ini. */
-function finalPrompt(sh){
-  const P=[];
+function lockLine(){
   const lock=String(state.identity.identity_lock||'').trim();
-  if(lock){
-    P.push((state.talent.mode==='locked'
-      ? 'SUBJECT — keep this exact same person in every image, identical facial identity: '
-      : 'SUBJECT — a single consistent fictional person, identical facial identity in every image: ')+lock);
-  }
-  const scene=String(sh.prompt||'').trim();
-  if(scene) P.push('SCENE: '+scene);
+  if(!lock) return '';
+  return (state.talent.mode==='locked'
+    ? 'SUBJECT — keep this exact same person in every image, identical facial identity: '
+    : 'SUBJECT — a single consistent fictional person, identical facial identity in every image: ')+lock;
+}
+function composePrompt({scene, negative, aspek, tail, noIdentity}){
+  const P=[];
+  if(!noIdentity){ const l=lockLine(); if(l) P.push(l); }
+  if(String(scene||'').trim()) P.push('SCENE: '+String(scene).trim());
   if(state.shoot.kamera) P.push('TECHNICAL: '+state.shoot.kamera+'.');
-  P.push('Aspect ratio '+state.shoot.aspek+'. Photorealistic candid photograph, not an illustration.');
-  const neg=[sh.negative, state.shoot.negatif].map(x=>String(x||'').trim()).filter(Boolean).join(', ');
+  P.push('Aspect ratio '+(aspek||state.shoot.aspek)+'. '+(tail||'Photorealistic candid photograph, not an illustration.'));
+  const neg=[negative, state.shoot.negatif].map(x=>String(x||'').trim()).filter(Boolean).join(', ');
   if(neg) P.push('AVOID: '+neg+'.');
   return P.join('\n\n');
+}
+function finalPrompt(sh){ return composePrompt({scene:sh.prompt, negative:sh.negative}); }
+/* Panel character sheet: komposisinya sudah diatur di template, jadi arahan
+   kamera candid diganti arahan lembar acuan studio. */
+function panelPrompt(def){
+  const brand=[state.sheet.wardrobe&&('wardrobe style: '+state.sheet.wardrobe),
+               state.sheet.palet&&('color palette: '+state.sheet.palet)].filter(Boolean).join('; ');
+  return composePrompt({
+    scene:def.prompt+(brand?' Style guidance — '+brand+'.':''),
+    negative:'collage borders, text labels, captions, watermark, numbers, uneven face between panels',
+    aspek:def.aspek, noIdentity:def.noIdentity,
+    tail:'Clean reference-sheet layout, photorealistic photography, no text or lettering anywhere in the image.'
+  });
 }
 
 /* =====================================================================
@@ -785,6 +941,7 @@ const HAS={
   talent:  ()=>!!(state.uploads.refs.length||state.talent.catatan),
   identity:()=>filled(F.identity,state.identity),
   persona: ()=>filled(F.persona,state.persona),
+  sheet:   ()=>filled(F.sheet,state.sheet)||state.sheet.niche_rows.length>0||state.sheet.panels.some(p=>p.imgs.length),
   shoot:   ()=>state.shots.length>0,
   render:  ()=>state.shots.some(s=>s.imgs.length),
   content: ()=>state.shots.length>0&&state.shots.every(s=>s.konten)
@@ -805,6 +962,12 @@ async function runStage(id, fb){
     }else if(id==='persona'){
       const d=await callJSON(promptPersona(fb), 1600);
       F.persona.forEach(f=>{ if(d[f.k]!=null) state.persona[f.k]=String(d[f.k]); });
+    }else if(id==='sheet'){
+      const d=await callJSON(promptSheet(fb), 3600);
+      const b=d.brand||d;
+      F.sheet.forEach(f=>{ if(b[f.k]!=null) state.sheet[f.k]=String(b[f.k]); });
+      if(Array.isArray(d.niche_rows)) state.sheet.niche_rows=d.niche_rows;
+      if(Array.isArray(d.platform_rows)) state.sheet.platform_rows=d.platform_rows;
     }else if(id==='shoot'){
       const d=await callJSON(promptShoot(fb), 3600);
       const arr=Array.isArray(d.shots)?d.shots:(Array.isArray(d)?d:[]);
@@ -846,6 +1009,118 @@ async function renderShot(i){
      supaya foto ke-2 dan seterusnya konsisten walau tanpa foto orang asli. */
   if(!state.anchor && img.data) state.anchor=img;
 }
+/* ---- panel character sheet ---- */
+function panelSlot(id){
+  let p=state.sheet.panels.find(x=>x.id===id);
+  if(!p){ p={id, imgs:[]}; state.sheet.panels.push(p); }
+  if(!p.imgs) p.imgs=[];
+  return p;
+}
+async function runPanel(id){
+  if(busy) return;
+  const def=panelDef(id); if(!def) return;
+  try{
+    setBusy(true,'Merender panel '+def.label+'…');
+    const img=await generateImage(panelPrompt(def), def.aspek);
+    panelSlot(id).imgs.push(img);
+    /* Turnaround adalah acuan wajah terbaik yang bisa dihasilkan aplikasi ini,
+       jadi ia mengambil alih anchor begitu jadi. */
+    if(id==='turnaround' && img.data) state.anchor=img;
+    else if(!state.anchor && img.data && !def.noIdentity) state.anchor=img;
+    toast('Panel '+def.label+' selesai.','ok'); render();
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function runPanelAll(){
+  if(busy) return;
+  let ok=0, fail=0, lastErr='';
+  /* Turnaround didahulukan supaya panel lain sudah punya anchor wajah. */
+  const order=['turnaround',...SHEET_PANELS.map(p=>p.id).filter(x=>x!=='turnaround')];
+  try{
+    for(let n=0;n<order.length;n++){
+      const def=panelDef(order[n]);
+      setBusy(true,'Merender panel '+(n+1)+'/'+order.length+' — '+def.label+'…');
+      try{
+        const img=await generateImage(panelPrompt(def), def.aspek);
+        panelSlot(def.id).imgs.push(img);
+        if(def.id==='turnaround' && img.data) state.anchor=img;
+        ok++; render();
+      }catch(e){ fail++; lastErr=e.message; }
+      if(n<order.length-1) await sleep(700);
+    }
+  }finally{ setBusy(false); }
+  render();
+  if(fail) toast(ok+' panel berhasil, '+fail+' gagal. '+lastErr,'err');
+  else toast('Semua '+ok+' panel character sheet selesai.','ok');
+}
+
+/* ---- QA konsistensi: kirim hasil render balik ke mesin vision ---- */
+async function qaImage(img){
+  if(!img.data) throw new Error('Gambar ini hanya berupa URL dari provider, tidak bisa diperiksa. Unduh lalu upload ulang kalau perlu.');
+  if(!String(state.identity.identity_lock||'').trim()) throw new Error('Identity lock kosong — tidak ada acuan untuk membandingkan.');
+  const d=await callJSON(promptQA(), 900, [img]);
+  img.qa={
+    skor:Math.max(0,Math.min(100,+d.skor||0)),
+    cocok:d.identitas_cocok||'',
+    masalah:Array.isArray(d.masalah)?d.masalah:(d.masalah?[String(d.masalah)]:[]),
+    saran:d.saran||''
+  };
+  return img.qa;
+}
+async function runQA(i,j){
+  if(busy) return;
+  try{ setBusy(true,'Memeriksa konsistensi…'); await qaImage(state.shots[i].imgs[j]); toast('Pemeriksaan selesai.','ok'); render(); }
+  catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function runQAAll(){
+  if(busy) return;
+  const jobs=[];
+  state.shots.forEach((sh,i)=>sh.imgs.forEach((im,j)=>{ if(im.data&&!im.qa) jobs.push([i,j]); }));
+  if(!jobs.length){ toast('Tidak ada gambar baru untuk diperiksa.','err'); return; }
+  let ok=0, fail=0, lastErr='';
+  try{
+    for(let n=0;n<jobs.length;n++){
+      setBusy(true,'Memeriksa gambar '+(n+1)+'/'+jobs.length+'…');
+      try{ await qaImage(state.shots[jobs[n][0]].imgs[jobs[n][1]]); ok++; }
+      catch(e){ fail++; lastErr=e.message; }
+    }
+  }finally{ setBusy(false); }
+  render();
+  if(fail) toast(ok+' diperiksa, '+fail+' gagal. '+lastErr,'err');
+  else toast(ok+' gambar diperiksa.','ok');
+}
+
+/* ---- refine: kirim gambar balik ke mesin gambar dengan instruksi perubahan ---- */
+async function runRefine(i,j,instruksi){
+  if(busy) return;
+  const src=state.shots[i].imgs[j];
+  if(!src.data){ toast('Gambar ini hanya URL dari provider, tidak bisa diedit ulang.','err'); return; }
+  try{
+    setBusy(true,'Merevisi gambar…');
+    const img=await generateImage(refinePrompt(instruksi), state.shoot.aspek, [src]);
+    img.dari=(j+1)+' · '+instruksi.slice(0,60);
+    state.shots[i].imgs.push(img);
+    toast('Revisi selesai — hasilnya ditambahkan sebagai varian baru.','ok');
+    render();
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+
+/* ---- kalender konten ---- */
+async function runKalender(fb){
+  if(busy) return;
+  try{
+    setBusy(true,'Menyusun kalender konten…');
+    const d=await callJSON(promptKalender(fb), 4000);
+    const rows=Array.isArray(d.rows)?d.rows:(Array.isArray(d)?d:[]);
+    if(!rows.length) throw new Error('AI tidak mengembalikan kalender. Coba lagi.');
+    state.kalender.rows=rows;
+    toast('Kalender '+rows.length+' hari selesai.','ok'); render();
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+
 async function runRenderOne(i){
   if(busy) return;
   try{ setBusy(true,'Merender foto '+(i+1)+'…'); await renderShot(i); toast('Foto '+(i+1)+' selesai.','ok'); render(); }
@@ -988,6 +1263,66 @@ function viewPersona(){
       '<input type="checkbox" id="disclosure"'+(state.persona.disclosure?' checked':'')+'>'+
       '<label for="disclosure">Sertakan penanda konten AI di caption dan hashtag. Beberapa platform mewajibkan pelabelan media sintetis — biarkan tercentang kecuali kamu punya alasan kuat.</label></div>'+
     reviseHTML('persona','mis. bikin gaya bicaranya lebih blak-blakan dan lucu')+'</div>'+
+    '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="sheet">Lanjut ke character sheet →</button></div>';
+}
+
+function viewSheet(){
+  const S=state.sheet;
+  const chips=(items,selected,attr)=>'<div class="chips">'+items.map(it=>{
+    const id=it.id||it, label=it.label||it;
+    return '<button class="chip'+(selected.includes(id)?' sel':'')+'" data-'+attr+'="'+esc(id)+'">'+esc(label)+
+      (it.rasio?'<span class="rs">'+esc(it.rasio)+'</span>':'')+'</button>';
+  }).join('')+'</div>';
+
+  const panels='<div class="panels">'+SHEET_PANELS.map(def=>{
+    const slot=S.panels.find(p=>p.id===def.id);
+    const imgs=(slot&&slot.imgs)||[];
+    const body=imgs.length
+      ? imgs.map((im,j)=>'<img src="'+esc(imgSrc(im))+'" alt="">'+
+          '<div class="row" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px">'+
+            '<button class="btn small" data-pdl="'+esc(def.id)+'.'+j+'">Unduh</button>'+
+            (im.data?'<button class="btn small" data-panchor="'+esc(def.id)+'.'+j+'">Jadikan anchor</button>':'')+
+            '<button class="btn small danger" data-prm="'+esc(def.id)+'.'+j+'">Hapus</button>'+
+          '</div>').join('')
+      : '<div class="none">Belum dirender</div>';
+    return '<div class="panelcard"><div class="ph"><b>'+esc(def.label)+'</b>'+
+      '<span class="pill">'+esc(def.aspek)+'</span>'+
+      '<button class="btn small primary needidle" data-panel="'+esc(def.id)+'">▶</button></div>'+
+      '<div class="pb">'+body+'</div></div>';
+  }).join('')+'</div>';
+
+  const nicheTable=S.niche_rows.length
+    ? '<div class="scroll-x"><table class="tl"><thead><tr><th>Niche</th><th>Sudut pandang</th><th>Format</th><th>Contoh hook</th><th>Props</th><th>Hindari</th></tr></thead><tbody>'+
+      S.niche_rows.map(r=>'<tr><td class="k">'+esc(r.niche)+'</td><td>'+esc(r.sudut_pandang)+'</td><td>'+esc(r.format)+
+        '</td><td>'+esc(r.hook)+'</td><td>'+esc(r.props)+'</td><td>'+esc(r.hindari)+'</td></tr>').join('')+
+      '</tbody></table></div>' : '';
+  const platTable=S.platform_rows.length
+    ? '<div class="scroll-x"><table class="tl"><thead><tr><th>Platform</th><th>Jenis konten</th><th>Gaya hook</th><th>Caption</th><th>Frekuensi</th><th>CTA</th></tr></thead><tbody>'+
+      S.platform_rows.map(r=>'<tr><td class="k">'+esc(r.platform)+'</td><td>'+esc(r.jenis_konten)+'</td><td>'+esc(r.gaya_hook)+
+        '</td><td>'+esc(r.panjang_caption)+'</td><td>'+esc(r.frekuensi)+'</td><td>'+esc(r.cta)+'</td></tr>').join('')+
+      '</tbody></table></div>' : '';
+
+  return head('Tahap 04','Character Sheet',
+      'Lembar acuan tetap untuk karakter ini: panel visual multi-sudut, brand kit, dan panduan konten per niche & per platform. Dipakai berulang di semua produksi berikutnya.')+
+    '<div class="card"><h3>🎯 Niche &amp; platform</h3>'+
+      '<label>Niche yang digarap</label>'+chips(NICHES,S.niches,'niche')+
+      '<div class="hint">Pilih 2–4 niche. Terlalu banyak membuat panduannya jadi dangkal.</div>'+
+      '<div class="mini">Platform</div>'+chips(PLATFORMS,S.platforms,'plat')+
+      '<div class="hint">Angka kecil di chip adalah rasio native platform itu — dipakai tombol cepat di tahap Rencana Foto.</div>'+
+    '</div>'+
+    '<div class="toolbar">'+stampHTML('sheet')+'<div class="spacer"></div>'+
+      '<button class="btn primary needidle" data-gen="sheet">✦ '+(HAS.sheet()?'Susun ulang':'Susun character sheet')+'</button></div>'+
+    '<div class="card"><h3>🎨 Brand kit</h3><div class="kvgrid">'+
+      F.sheet.map(f=>fieldHTML(f,'sheet',S)).join('')+
+    '</div>'+reviseHTML('sheet','mis. palet lebih earthy, tambah niche kuliner')+'</div>'+
+    (nicheTable?'<div class="card"><h3>📚 Panduan per niche</h3>'+nicheTable+'</div>':'')+
+    (platTable?'<div class="card"><h3>📱 Panduan per platform</h3>'+platTable+'</div>':'')+
+    '<div class="card"><h3>🖼 Panel referensi visual</h3>'+
+      '<div class="rulebanner"><span class="sym">▲</span><div>Panel <b>Turnaround</b> adalah acuan wajah terbaik yang bisa dibuat aplikasi ini — begitu jadi, ia otomatis dipakai sebagai anchor untuk semua render berikutnya. Render panel ini duluan.</div></div>'+
+      '<div class="toolbar"><button class="btn primary needidle" data-panelall="1"'+(state.api.img==='manual'?' disabled':'')+'>⚡ Render semua panel</button>'+
+        '<div class="spacer"></div><button class="btn needidle" data-export="sheet">📄 Ekspor character sheet (.html)</button></div>'+
+      panels+
+    '</div>'+
     '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="shoot">Lanjut ke rencana foto →</button></div>';
 }
 
@@ -1009,7 +1344,18 @@ function viewShoot(){
         '<div class="kv full"><label>Negative khusus foto ini</label>'+
           '<input data-path="shots.'+i+'.negative" value="'+esc(sh.negative)+'"></div>'+
       '</div></div></div>').join('');
-  return head('Tahap 04','Rencana Photoshoot','Satu sesi, beberapa foto berbeda. Prompt adegan sengaja tidak memuat deskripsi wajah — identity lock ditambahkan otomatis saat render.')+
+  const quickRasio=state.sheet.platforms.length
+    ? '<div class="mini">Rasio cepat dari platform yang kamu pilih</div><div class="chips">'+
+      state.sheet.platforms.map(id=>{
+        const pl=PLATFORMS.find(x=>x.id===id); if(!pl) return '';
+        return '<button class="chip'+(s.aspek===pl.rasio?' sel':'')+'" data-setaspek="'+esc(pl.rasio)+'">'+esc(pl.label)+'<span class="rs">'+esc(pl.rasio)+'</span></button>';
+      }).join('')+'</div>' : '';
+  const quickNiche=state.sheet.niches.length
+    ? '<div class="mini">Isi cepat dari niche di character sheet</div><div class="chips">'+
+      state.sheet.niches.map(n=>'<button class="chip" data-preset="'+esc(n)+'">'+esc(n)+'</button>').join('')+'</div>'+
+      '<div class="hint">Menyalin sudut pandang & props niche itu ke kolom tema/outfit/mood di bawah.</div>' : '';
+  return head('Tahap 05','Rencana Photoshoot','Satu sesi, beberapa foto berbeda. Prompt adegan sengaja tidak memuat deskripsi wajah — identity lock ditambahkan otomatis saat render.')+
+    (quickNiche||quickRasio?'<div class="card"><h3>⚡ Isi cepat</h3>'+quickNiche+quickRasio+'</div>':'')+
     '<div class="card"><h3>🎬 Arahan sesi</h3><div class="kvgrid">'+
       '<div class="kv"><label>Jumlah foto</label><input type="number" min="1" max="12" data-path="shoot.jumlah" value="'+esc(s.jumlah)+'"></div>'+
       '<div class="kv"><label>Rasio</label><select data-path="shoot.aspek">'+
@@ -1028,6 +1374,13 @@ function viewShoot(){
     (state.shots.length?'<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="render">Lanjut ke render →</button></div>':'');
 }
 
+function qaHTML(im){
+  const q=im.qa; if(!q) return '';
+  const cls=q.skor>=85?'good':(q.skor>=70?'mid':'bad');
+  return '<div class="qa '+cls+'"><b>'+q.skor+'/100</b>'+(q.cocok?' · '+esc(q.cocok):'')+
+    (q.masalah&&q.masalah.length?'<ul>'+q.masalah.map(m=>'<li>'+esc(m)+'</li>').join('')+'</ul>':'')+
+    (q.saran?'<div style="margin-top:4px;color:var(--muted)">'+esc(q.saran)+'</div>':'')+'</div>';
+}
 function viewRender(){
   const a=state.api;
   const manual=a.img==='manual';
@@ -1043,12 +1396,15 @@ function viewRender(){
       const isAnchor=state.anchor===im;
       return '<div class="gitem'+(isAnchor?' anchor':'')+'">'+
         (isAnchor?'<span class="anchorbadge">ANCHOR</span>':'')+
-        '<img src="'+imgSrc(im)+'" alt="">'+
+        '<img src="'+esc(imgSrc(im))+'" alt="">'+
         '<div class="row">'+
           '<button class="btn small" data-dl="'+i+'.'+j+'">Unduh</button>'+
           (im.data?'<button class="btn small" data-anchor="'+i+'.'+j+'">Anchor</button>':'')+
+          (im.data?'<button class="btn small needidle" data-qa="'+i+'.'+j+'">Periksa</button>':'')+
           '<button class="btn small danger" data-rmimg="'+i+'.'+j+'">Hapus</button>'+
-        '</div></div>';
+        '</div>'+qaHTML(im)+
+        (im.dari?'<div class="hint">revisi dari #'+esc(im.dari)+'</div>':'')+
+        '</div>';
     }).join('');
     return '<div class="shot"><div class="shothead"><span class="no">FOTO '+String(i+1).padStart(2,'0')+'</span>'+
       '<span class="ttl">'+esc(sh.judul||'(tanpa judul)')+'</span><span class="spacer"></span>'+
@@ -1059,10 +1415,21 @@ function viewRender(){
         '<textarea class="promptbox" readonly>'+esc(finalPrompt(sh))+'</textarea>'+
         '<div class="toolbar" style="margin:8px 0 0"><button class="btn small" data-copy="'+i+'">⧉ Salin prompt</button></div>'+
         (gal?'<div class="gallery">'+gal+'</div>':'')+
+        (sh.imgs.some(im=>im.data)?'<div class="revise"><textarea id="ref-'+i+'" placeholder="Ubah sesuatu tanpa mengubah wajahnya — mis. ganti outfit jadi hijab warna cream, pindah ke latar pantai sore"></textarea>'+
+          '<button class="btn needidle" data-refine="'+i+'"'+(manual?' disabled':'')+'>✎ Revisi gambar</button></div>':'')+
       '</div></div>';
   }).join('');
 
-  return head('Tahap 05','Render Foto','Identity lock + prompt adegan + setelan teknis digabung otomatis. Foto pertama yang jadi otomatis dipakai sebagai anchor wajah untuk foto-foto berikutnya.')+
+  /* Preview feed: satu gambar terbaik per shot, disusun seperti grid Instagram
+     supaya ketidakcocokan warna antar foto langsung kelihatan. */
+  const feedItems=state.shots.map(sh=>sh.imgs[sh.imgs.length-1]).filter(Boolean);
+  const feed=feedItems.length>=2
+    ? '<div class="card"><h3>📱 Preview feed</h3><div class="feed">'+
+      feedItems.map(im=>'<div><img src="'+esc(imgSrc(im))+'" alt=""></div>').join('')+'</div>'+
+      '<div class="hint">Varian terakhir dari tiap foto. Kalau ada satu yang warnanya lompat sendiri, revisi foto itu supaya feed-nya nyambung.</div></div>'
+    : '';
+
+  return head('Tahap 06','Render Foto','Identity lock + prompt adegan + setelan teknis digabung otomatis. Foto pertama yang jadi otomatis dipakai sebagai anchor wajah untuk foto-foto berikutnya.')+
     (!lock?'<div class="check err"><span class="sym">✕</span><div>IDENTITY LOCK masih kosong. Isi tahap 02 dulu, kalau tidak setiap foto akan menghasilkan orang yang berbeda.</div></div>':'')+
     (manual?'<div class="check warn"><span class="sym">!</span><div>Mesin gambar diset “Tanpa render”. Salin prompt di bawah ke tool gambar pilihanmu, atau pilih mesin gambar lewat ⚙ API.</div></div>'
            :'<div class="check ok"><span class="sym">✓</span><div>'+esc(info)+'</div></div>')+
@@ -1071,9 +1438,10 @@ function viewRender(){
       : '<div class="toolbar">'+
           '<button class="btn primary needidle" data-renderall="1"'+(manual?' disabled':'')+'>⚡ Render semua ('+state.shots.length+')</button>'+
           (state.anchor?'<button class="btn ghost needidle" data-clearanchor="1">Lepas anchor</button>':'')+
+          '<button class="btn needidle" data-qaall="1">🔍 Periksa semua</button>'+
           '<div class="spacer"></div>'+
           '<button class="btn needidle" data-dlall="1">⬇ Unduh semua foto</button>'+
-        '</div>'+shots+
+        '</div>'+feed+shots+
         '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="content">Lanjut ke caption →</button></div>');
 }
 
@@ -1094,9 +1462,27 @@ function viewContent(){
       :'<div style="color:var(--muted);font-size:13px">Belum ada caption untuk foto ini.</div>')+
       '<div style="clear:both"></div></div></div>';
   }).join('');
-  return head('Tahap 06','Caption & Script','Ditulis dengan suara persona, per foto, siap tempel.')+
+  const K=state.kalender;
+  const kal=K.rows.length
+    ? '<div class="scroll-x"><table class="tl"><thead><tr><th>Hari</th><th>Platform</th><th>Tipe</th><th>Pilar</th><th>Format</th><th>Ide</th><th>Hook</th></tr></thead><tbody>'+
+      K.rows.map(r=>'<tr><td class="k">'+esc(r.hari)+'</td><td>'+esc(r.platform)+
+        '</td><td><span class="pill '+esc(String(r.tipe||'').toLowerCase())+'">'+esc(r.tipe)+'</span></td>'+
+        '<td>'+esc(r.pilar)+'</td><td>'+esc(r.format)+'</td><td>'+esc(r.ide)+'</td><td>'+esc(r.hook)+'</td></tr>').join('')+
+      '</tbody></table></div>' : '';
+  const kalCard='<div class="card"><h3>🗓 Kalender konten</h3>'+
+    '<div class="kvgrid"><div class="kv"><label>Jumlah hari</label>'+
+      '<input type="number" min="3" max="30" data-path="kalender.hari" value="'+esc(K.hari)+'"></div></div>'+
+    '<div class="toolbar" style="margin-top:12px">'+
+      '<button class="btn primary needidle" data-kalender="1">✦ '+(K.rows.length?'Susun ulang kalender':'Susun kalender')+'</button>'+
+      (K.rows.length?'<button class="btn needidle" data-export="kalender">📄 Ekspor CSV</button>':'')+
+      '<div class="spacer"></div></div>'+
+    (kal||'<div class="hint">Rencana posting harian lintas platform, memakai pilar konten dan panduan niche dari character sheet. Maksimal 1 dari 4 post bersifat promosi.</div>')+
+    (K.rows.length?reviseHTML('kalender','mis. lebih banyak konten edukasi, kurangi promosi'):'')+'</div>';
+
+  return head('Tahap 07','Caption & Script','Ditulis dengan suara persona, per foto, siap tempel — plus kalender posting lintas platform.')+
+    kalCard+
     (!state.shots.length
-      ? '<div class="empty"><div class="big">Belum ada foto</div><p>Susun rencana photoshoot dulu di tahap 04.</p><button class="btn primary" data-go="shoot">← Ke rencana foto</button></div>'
+      ? '<div class="empty"><div class="big">Belum ada foto</div><p>Susun rencana photoshoot dulu di tahap 05.</p><button class="btn primary" data-go="shoot">← Ke rencana foto</button></div>'
       : '<div class="toolbar">'+stampHTML('content')+
         '<button class="btn primary needidle" data-contentall="1">⚡ Tulis konten semua foto</button>'+
         '<div class="spacer"></div></div>'+shots);
@@ -1111,25 +1497,33 @@ function viewExport(){
   state.shots.length ? push('ok','✓',state.shots.length+' foto direncanakan.') : push('err','✕','Belum ada rencana foto.');
   nImg ? push('ok','✓',nImg+' file gambar sudah dirender.') : push('warn','!','Belum ada gambar yang dirender.');
   state.shots.length&&state.shots.every(s=>s.konten) ? push('ok','✓','Caption lengkap untuk semua foto.') : push('warn','!','Sebagian foto belum punya caption.');
+  HAS.sheet() ? push('ok','✓','Character sheet tersusun.') : push('warn','!','Character sheet belum disusun — panduan niche & platform kosong.');
+  const qaBad=[]; state.shots.forEach((sh,i)=>sh.imgs.forEach(im=>{ if(im.qa&&im.qa.skor<70) qaBad.push(i+1); }));
+  if(qaBad.length) push('warn','!','Foto '+[...new Set(qaBad)].join(', ')+' punya hasil dengan skor konsistensi di bawah 70. Revisi atau render ulang sebelum dipakai.');
   if(state.talent.mode==='locked') push('warn','!','Mode wajah persis aktif. Pastikan izin talent masih berlaku sebelum kontennya dipublikasikan.');
   if(!state.persona.disclosure) push('warn','!','Penanda konten AI dimatikan. Cek dulu aturan pelabelan media sintetis di platform tujuanmu.');
 
-  return head('Tahap 07','Ekspor','Semua hasil bisa dibawa keluar. File project menyimpan semuanya kecuali API key.')+
+  return head('Tahap 08','Ekspor','Semua hasil bisa dibawa keluar. File project menyimpan semuanya kecuali API key.')+
     '<div class="card"><h3>✅ Pemeriksaan</h3>'+checks.join('')+'</div>'+
     '<div class="card"><h3>📦 Unduhan</h3><div class="toolbar">'+
       '<button class="btn primary" id="btnSave2">💾 Project (.json)</button>'+
       '<button class="btn" data-export="prompts">📄 Semua prompt (.txt)</button>'+
       '<button class="btn" data-export="content">📄 Caption & script (.txt)</button>'+
       '<button class="btn" data-export="mediakit">📄 Media kit persona (.md)</button>'+
+      '<button class="btn" data-export="sheet">📄 Character sheet (.html)</button>'+
+      (state.kalender.rows.length?'<button class="btn" data-export="kalender">📄 Kalender (.csv)</button>':'')+
       '<button class="btn" data-dlall="1">⬇ Semua foto ('+nImg+')</button>'+
     '</div>'+
+    '<div class="consent" style="border-color:var(--line);background:var(--panel2)">'+
+      '<input type="checkbox" id="stampAI"'+(state.stampAI?' checked':'')+'>'+
+      '<label for="stampAI">Cap label “Dibuat dengan AI” di pojok foto saat diunduh. Beberapa platform mewajibkan pelabelan media sintetis, dan label yang menempel di gambar tidak ikut hilang saat foto di-repost.</label></div>'+
     '<div class="consent" style="border-color:var(--line);background:var(--panel2)">'+
       '<input type="checkbox" id="withImages">'+
       '<label for="withImages">Sertakan gambar hasil render di dalam file project. File jadi jauh lebih besar (bisa puluhan MB); biarkan mati kalau kamu hanya ingin menyimpan teks dan rencananya.</label></div>'+
     '<div class="hint">API key selalu dibuang dari file project. Foto referensi ikut tersimpan supaya project bisa dilanjutkan di lain waktu.</div></div>';
 }
 
-const VIEWS={talent:viewTalent, identity:viewIdentity, persona:viewPersona, shoot:viewShoot, render:viewRender, content:viewContent, export:viewExport};
+const VIEWS={talent:viewTalent, identity:viewIdentity, persona:viewPersona, sheet:viewSheet, shoot:viewShoot, render:viewRender, content:viewContent, export:viewExport};
 let withImages=false;
 function render(){
   renderRail();
@@ -1178,12 +1572,118 @@ function exportMediaKit(){
     'Mode identitas: '+(state.talent.mode==='locked'?'wajah konsisten dari foto talent berizin':'wajah orisinal, hanya terinspirasi referensi')+'.'];
   download(slug(p.nama)+'-mediakit.md', L.join('\n'));
 }
+/* Character sheet sebagai satu halaman HTML mandiri: gambar ditanam sebagai
+   data URI supaya file-nya bisa dikirim ke siapa pun tanpa aset terpisah. */
+function exportSheetHTML(){
+  const S=state.sheet, p=state.persona, id=state.identity;
+  const row=(cols)=>'<tr>'+cols.map(c=>'<td>'+esc(c==null?'':c)+'</td>').join('')+'</tr>';
+  const tbl=(heads,rows)=>rows.length?'<table><thead><tr>'+heads.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table>':'<p class="muted">(belum diisi)</p>';
+  const panelImgs=SHEET_PANELS.map(def=>{
+    const slot=S.panels.find(x=>x.id===def.id);
+    const im=slot&&slot.imgs&&slot.imgs[slot.imgs.length-1];
+    if(!im) return '';
+    return '<figure><img src="'+esc(imgSrc(im))+'" alt="'+esc(def.label)+'"><figcaption>'+esc(def.label)+'</figcaption></figure>';
+  }).filter(Boolean).join('');
+  const defList=(fields,obj)=>fields.filter(f=>obj[f.k]).map(f=>'<dt>'+esc(f.l)+'</dt><dd>'+esc(obj[f.k]).replace(/\n/g,'<br>')+'</dd>').join('');
+  const html='<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8">'+
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0">'+
+    '<title>Character Sheet — '+esc(p.nama||'AI Influencer')+'</title><style>'+
+    '*{box-sizing:border-box;margin:0;padding:0}'+
+    'body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;line-height:1.55;color:#1a1c22;background:#f6f7f9;padding:32px 20px}'+
+    '.wrap{max-width:1000px;margin:0 auto;background:#fff;border:1px solid #e3e6ec;border-radius:14px;padding:36px}'+
+    'h1{font-size:30px;letter-spacing:-.02em;margin-bottom:4px}'+
+    'h2{font-size:15px;text-transform:uppercase;letter-spacing:.1em;color:#6b7280;margin:34px 0 12px;padding-bottom:7px;border-bottom:2px solid #ececf1}'+
+    '.tag{color:#6b7280;font-size:15px;margin-bottom:6px}'+
+    '.ai{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.08em;background:#efe9ff;color:#5b3fc4;border-radius:99px;padding:4px 11px;margin-top:10px}'+
+    'dl{display:grid;grid-template-columns:210px 1fr;gap:8px 18px}'+
+    'dt{font-weight:600;color:#4b5563;font-size:13.5px}dd{font-size:14px}'+
+    'table{border-collapse:collapse;width:100%;font-size:13px;margin-top:6px}'+
+    'th{text-align:left;background:#f3f4f7;padding:9px 11px;border-bottom:2px solid #e3e6ec;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#6b7280}'+
+    'td{padding:9px 11px;border-bottom:1px solid #edeff3;vertical-align:top}'+
+    '.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}'+
+    'figure{margin:0}figure img{width:100%;max-height:62vh;object-fit:contain;background:#f3f4f7;border-radius:10px;border:1px solid #e3e6ec;display:block}'+
+    'figcaption{font-size:12px;color:#6b7280;margin-top:6px;text-align:center}'+
+    'pre{background:#f3f4f7;border:1px solid #e3e6ec;border-radius:8px;padding:13px;font-size:12.5px;white-space:pre-wrap;word-break:break-word}'+
+    '.muted{color:#9ca3af;font-size:13px}'+
+    'footer{margin-top:34px;padding-top:16px;border-top:1px solid #ececf1;font-size:12px;color:#9ca3af}'+
+    '@media print{body{background:#fff;padding:0}.wrap{border:none;padding:0}}'+
+    '</style></head><body><div class="wrap">'+
+    '<h1>'+esc(p.nama||'AI Influencer')+'</h1>'+
+    (p.tagline?'<div class="tag">'+esc(p.tagline)+'</div>':'')+
+    '<div class="ai">VIRTUAL INFLUENCER · DIBUAT DENGAN AI</div>'+
+    (panelImgs?'<h2>Panel referensi</h2><div class="grid">'+panelImgs+'</div>':'')+
+    '<h2>Persona</h2><dl>'+defList(F.persona,p)+'</dl>'+
+    '<h2>Identitas visual</h2><dl>'+defList(F.identity.filter(f=>f.k!=='identity_lock'),id)+'</dl>'+
+    (id.identity_lock?'<h2>Identity lock</h2><pre>'+esc(id.identity_lock)+'</pre>':'')+
+    '<h2>Brand kit</h2><dl>'+defList(F.sheet,S)+'</dl>'+
+    '<h2>Panduan per niche</h2>'+tbl(['Niche','Sudut pandang','Format','Contoh hook','Props','Hindari'],
+      S.niche_rows.map(r=>row([r.niche,r.sudut_pandang,r.format,r.hook,r.props,r.hindari])))+
+    '<h2>Panduan per platform</h2>'+tbl(['Platform','Jenis konten','Gaya hook','Caption','Frekuensi','CTA'],
+      S.platform_rows.map(r=>row([r.platform,r.jenis_konten,r.gaya_hook,r.panjang_caption,r.frekuensi,r.cta])))+
+    '<footer>Character sheet dihasilkan oleh AI Influencer Studio. Mode identitas: '+
+      esc(state.talent.mode==='locked'?'wajah konsisten dari foto talent berizin':'wajah orisinal, hanya terinspirasi referensi')+
+      '. Semua gambar dihasilkan AI.</footer>'+
+    '</div></body></html>';
+  download(slug(p.nama)+'-character-sheet.html', html, 'text/html');
+}
+const csvCell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+function exportKalender(){
+  if(!state.kalender.rows.length){ toast('Kalender masih kosong.','err'); return; }
+  const heads=['hari','platform','tipe','pilar','format','ide','hook'];
+  const lines=[heads.map(csvCell).join(',')]
+    .concat(state.kalender.rows.map(r=>heads.map(h=>csvCell(r[h])).join(',')));
+  /* BOM supaya Excel/Sheets versi Indonesia tidak mengacak karakter beraksen. */
+  download(slug(state.persona.nama)+'-kalender.csv', '\uFEFF'+lines.join('\r\n'), 'text/csv');
+}
+
+/* Cap label AI di pojok kanan bawah. Gambar remote (hanya URL) mencemari canvas
+   sehingga tidak bisa diekspor — untuk itu unduhannya jatuh ke file asli. */
+function stampedURL(img, text){
+  return new Promise(resolve=>{
+    if(!img.data) return resolve(null);
+    const el=new Image();
+    el.onload=()=>{
+      try{
+        if(el.naturalWidth<240) return resolve(null);
+        const c=document.createElement('canvas');
+        c.width=el.naturalWidth; c.height=el.naturalHeight;
+        const x=c.getContext('2d');
+        x.drawImage(el,0,0);
+        const pad=Math.round(c.width*0.022);
+        const fs=Math.max(13, Math.round(c.width*0.026));
+        x.font='600 '+fs+'px system-ui, sans-serif';
+        x.textBaseline='middle';
+        const w=x.measureText(text).width, bw=w+pad*1.6, bh=fs*2;
+        x.fillStyle='rgba(0,0,0,.45)';
+        if(x.roundRect){ x.beginPath(); x.roundRect(c.width-bw-pad, c.height-bh-pad, bw, bh, bh/2); x.fill(); }
+        else x.fillRect(c.width-bw-pad, c.height-bh-pad, bw, bh);
+        x.fillStyle='rgba(255,255,255,.95)';
+        x.fillText(text, c.width-bw-pad+pad*0.8, c.height-bh-pad+bh/2);
+        resolve(c.toDataURL('image/png'));
+      }catch(e){ resolve(null); }
+    };
+    el.onerror=()=>resolve(null);
+    el.src=imgSrc(img);
+  });
+}
+async function saveOneImage(img, name){
+  if(state.stampAI){
+    const url=await stampedURL(img,'Dibuat dengan AI');
+    if(url){ const a=document.createElement('a'); a.href=url; a.download=name; a.click(); return; }
+    toast('Gambar ini tidak bisa dicap (hanya URL dari provider) — diunduh apa adanya.','err');
+  }
+  downloadImage(img,name);
+}
 async function downloadAllImages(){
   const jobs=[];
   state.shots.forEach((sh,i)=>sh.imgs.forEach((im,j)=>
     jobs.push([im, slug(state.persona.nama)+'-foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png'])));
+  SHEET_PANELS.forEach(def=>{
+    const slot=state.sheet.panels.find(x=>x.id===def.id);
+    (slot&&slot.imgs||[]).forEach((im,j)=>jobs.push([im, slug(state.persona.nama)+'-sheet-'+def.id+'-'+(j+1)+'.png']));
+  });
   if(!jobs.length){ toast('Belum ada gambar untuk diunduh.','err'); return; }
-  for(const [im,name] of jobs){ downloadImage(im,name); await sleep(350); }
+  for(const [im,name] of jobs){ await saveOneImage(im,name); await sleep(350); }
   toast(jobs.length+' file diunduh.','ok');
 }
 
@@ -1197,6 +1697,7 @@ function saveProject(){
   snap.api=Object.fromEntries(Object.entries(snap.api).map(([k,v])=>[k, /key$/i.test(k)?'':v]));
   if(!withImages){
     (snap.shots||[]).forEach(s=>{ s.imgs=[]; });
+    ((snap.sheet||{}).panels||[]).forEach(p=>{ p.imgs=[]; });
     snap.anchor=null;
   }
   snap._app='ai-influencer-studio'; snap._v=1;
@@ -1204,7 +1705,7 @@ function saveProject(){
   toast('Project diunduh'+(withImages?' (dengan gambar).':' — gambar tidak disertakan.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['talent','uploads','identity','persona','shoot','shots','anchor','dirty'];
+const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','shots','anchor','stampAI','dirty'];
 function loadProject(file){
   const rd=new FileReader();
   rd.onload=()=>{
@@ -1225,6 +1726,13 @@ function loadProject(file){
         }
       }
       if(state.talent.mode==='locked'&&!state.talent.consent) state.talent.mode='inspired';
+      state.sheet=Object.assign({niches:[],platforms:[],panels:[],niche_rows:[],platform_rows:[]}, state.sheet||{});
+      ['niches','platforms','panels','niche_rows','platform_rows'].forEach(k=>{
+        if(!Array.isArray(state.sheet[k])) state.sheet[k]=[];
+      });
+      state.sheet.panels.forEach(pn=>{ if(!Array.isArray(pn.imgs)) pn.imgs=[]; });
+      state.kalender=Object.assign({hari:14,mulai:'',rows:[]}, state.kalender||{});
+      if(!Array.isArray(state.kalender.rows)) state.kalender.rows=[];
       toast('Project dimuat.','ok'); go('talent');
     }catch(e){ toast('File project tidak valid.','err'); }
   };
@@ -1310,6 +1818,7 @@ document.addEventListener('change', e=>{
   }
   if(e.target.id==='disclosure'){ state.persona.disclosure=e.target.checked; return; }
   if(e.target.id==='withImages'){ withImages=e.target.checked; return; }
+  if(e.target.id==='stampAI'){ state.stampAI=e.target.checked; return; }
   if(e.target.id==='fileInput'){ const f=e.target.files[0]; if(f) loadProject(f); e.target.value=''; return; }
   if(e.target.id==='refInput'){ addRefs(e.target.files); e.target.value=''; return; }
   if(e.target.dataset.path&&e.target.tagName==='SELECT'){ setPath(state,e.target.dataset.path,e.target.value); render(); }
@@ -1325,7 +1834,8 @@ document.addEventListener('click', async e=>{
   if(t.dataset.rev){
     const id=t.dataset.rev, fb=($('#rev-'+id)?.value||'').trim();
     if(!fb){ toast('Tulis dulu feedback revisinya.','err'); return; }
-    runStage(id, fb); return;
+    if(id==='kalender') runKalender(fb); else runStage(id, fb);
+    return;
   }
   if(t.dataset.mode){
     if(t.dataset.mode==='locked'&&!state.talent.consent){ toast('Centang dulu pernyataan izin untuk memakai mode wajah persis.','err'); return; }
@@ -1350,7 +1860,7 @@ document.addEventListener('click', async e=>{
   }
   if(t.dataset.dl){
     const [i,j]=t.dataset.dl.split('.').map(Number);
-    downloadImage(state.shots[i].imgs[j], slug(state.persona.nama)+'-foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png');
+    saveOneImage(state.shots[i].imgs[j], slug(state.persona.nama)+'-foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.png');
     return;
   }
   if(t.dataset.anchor){
@@ -1365,9 +1875,68 @@ document.addEventListener('click', async e=>{
     render(); return;
   }
   if(t.dataset.dlall){ downloadAllImages(); return; }
+
+  /* ---- character sheet ---- */
+  if(t.dataset.niche){
+    const n=t.dataset.niche, arr=state.sheet.niches, k=arr.indexOf(n);
+    if(k<0){ if(arr.length>=4){ toast('Maksimal 4 niche — panduannya jadi dangkal kalau terlalu banyak.','err'); return; } arr.push(n); }
+    else arr.splice(k,1);
+    render(); return;
+  }
+  if(t.dataset.plat){
+    const id=t.dataset.plat, arr=state.sheet.platforms, k=arr.indexOf(id);
+    if(k<0) arr.push(id); else arr.splice(k,1);
+    render(); return;
+  }
+  if(t.dataset.panel){ runPanel(t.dataset.panel); return; }
+  if(t.dataset.panelall){ runPanelAll(); return; }
+  if(t.dataset.pdl){
+    const [id,j]=t.dataset.pdl.split('.');
+    const slot=state.sheet.panels.find(x=>x.id===id);
+    saveOneImage(slot.imgs[+j], slug(state.persona.nama)+'-sheet-'+id+'-'+(+j+1)+'.png');
+    return;
+  }
+  if(t.dataset.panchor){
+    const [id,j]=t.dataset.panchor.split('.');
+    const slot=state.sheet.panels.find(x=>x.id===id);
+    state.anchor=slot.imgs[+j]; toast('Anchor wajah diambil dari panel character sheet.','ok'); render(); return;
+  }
+  if(t.dataset.prm){
+    const [id,j]=t.dataset.prm.split('.');
+    const slot=state.sheet.panels.find(x=>x.id===id);
+    const removed=slot.imgs.splice(+j,1)[0];
+    if(state.anchor===removed) state.anchor=null;
+    render(); return;
+  }
+
+  /* ---- QA & revisi gambar ---- */
+  if(t.dataset.qa){ const [i,j]=t.dataset.qa.split('.').map(Number); runQA(i,j); return; }
+  if(t.dataset.qaall){ runQAAll(); return; }
+  if(t.dataset.refine!=null){
+    const i=+t.dataset.refine, ins=($('#ref-'+i)?.value||'').trim();
+    if(!ins){ toast('Tulis dulu perubahan yang kamu mau.','err'); return; }
+    const src=state.shots[i].imgs.filter(im=>im.data).pop();
+    if(!src){ toast('Belum ada gambar yang bisa direvisi di foto ini.','err'); return; }
+    runRefine(i, state.shots[i].imgs.indexOf(src), ins); return;
+  }
+
+  /* ---- kalender & isi cepat ---- */
+  if(t.dataset.kalender){ runKalender(''); return; }
+  if(t.dataset.setaspek){ state.shoot.aspek=t.dataset.setaspek; render(); return; }
+  if(t.dataset.preset){
+    const r=state.sheet.niche_rows.find(x=>x.niche===t.dataset.preset);
+    if(!r){ toast('Susun character sheet dulu supaya panduan niche ini terisi.','err'); return; }
+    state.shoot.tema=r.sudut_pandang||state.shoot.tema;
+    state.shoot.outfit=r.props||state.shoot.outfit;
+    state.shoot.mood=r.format||state.shoot.mood;
+    toast('Arahan sesi diisi dari niche "'+t.dataset.preset+'".','ok'); render(); return;
+  }
+
   if(t.dataset.export==='prompts'){ exportPrompts(); return; }
   if(t.dataset.export==='content'){ exportContent(); return; }
   if(t.dataset.export==='mediakit'){ exportMediaKit(); return; }
+  if(t.dataset.export==='sheet'){ exportSheetHTML(); return; }
+  if(t.dataset.export==='kalender'){ exportKalender(); return; }
   if(t.dataset.txtprov){ state.api.txt=t.dataset.txtprov; renderApiModal(); return; }
   if(t.dataset.imgprov){ state.api.img=t.dataset.imgprov; renderApiModal(); return; }
 

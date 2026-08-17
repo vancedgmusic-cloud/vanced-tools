@@ -91,9 +91,9 @@ telemetry, atau logging yang menyentuh key.
 
 ## `influencer.html` — AI Influencer Studio
 
-Pipeline: `talent → identity → persona → shoot → render → content → export`.
+Pipeline: `talent → identity → persona → sheet → shoot → render → content → export`.
 Bikin virtual influencer dari foto talent: baca fotonya, kunci identitas, susun
-persona, rencanakan sesi foto, render gambarnya, tulis caption.
+persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis caption.
 
 **Dua mesin AI terpisah** di `state.api`, dipilih sendiri-sendiri:
 
@@ -121,7 +121,42 @@ persona, rencanakan sesi foto, render gambarnya, tulis caption.
   `imgGeminiKey`, `imgOaKey`. Semua berakhiran `Key` supaya kena filter ekspor.
 
 Whitelist restore ada di konstanta `KEEP`. Gambar hasil render **tidak** ikut file
-project kecuali user mencentang toggle-nya (`withImages`).
+project kecuali user mencentang toggle-nya (`withImages`) — ini berlaku untuk
+`shots[].imgs` **dan** `sheet.panels[].imgs`; kalau menambah tempat penyimpanan
+gambar baru, tambahkan juga di `saveProject`.
+
+### Tahap `sheet` — character sheet
+
+Lembar acuan tetap yang dipakai ulang oleh semua tahap sesudahnya. `buildContext()`
+menyuntikkan brand kit + panduan niche ke setiap prompt berikutnya, jadi rencana
+foto, caption, dan kalender semuanya menurunkan diri dari sini.
+
+- `SHEET_PANELS` = template panel referensi (turnaround, ekspresi, wardrobe, detail,
+  mood board). Prompt-nya **dikunci di kode, bukan dikarang AI**, supaya komposisi
+  tiap lembar selalu sama dan bisa dibandingkan antar-generate.
+- Panel bertanda `noIdentity` (mood board) sengaja **tidak** memakai identity lock —
+  isinya benda, bukan orang.
+- Panel `turnaround` mengambil alih `state.anchor` begitu jadi: empat sudut wajah
+  adalah acuan terbaik yang bisa dihasilkan aplikasi ini. `runPanelAll()` merender
+  turnaround duluan supaya panel lain sudah punya anchor.
+- Tiap panel punya rasionya sendiri (`def.aspek`) — karena itu `generateImage()`,
+  `geminiImage()`, dan `openaiImage()` menerima parameter `aspek` yang menimpa
+  `state.shoot.aspek`.
+
+### Fitur render lanjutan
+
+- **QA konsistensi** (`qaImage`) mengirim hasil render balik ke mesin *vision* dan
+  membandingkannya dengan identity lock → skor 0–100 + daftar cacat. Butuh
+  `img.data`; gambar yang hanya berupa `remoteUrl` tidak bisa diperiksa.
+- **Refine** (`runRefine`) adalah image-to-image: gambar sumber dikirim sebagai
+  satu-satunya referensi lewat parameter `explicitRefs`, hasilnya jadi varian baru,
+  bukan menimpa. Anchor tidak berubah.
+- **Stempel label AI** (`stampedURL`) menggambar ulang lewat canvas saat diunduh.
+  Gambar `remoteUrl` mencemari canvas → jatuh ke unduhan biasa; gambar di bawah
+  240 px dilewati supaya labelnya tidak menutupi frame.
+
+Ekspor tambahan: character sheet sebagai HTML mandiri (gambar ditanam sebagai data
+URI) dan kalender konten sebagai CSV ber-BOM.
 
 ## Verifikasi perubahan
 
