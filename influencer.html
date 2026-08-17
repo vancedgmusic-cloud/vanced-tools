@@ -412,6 +412,8 @@ const state={
     claudeKey:'', claudeModel:'claude-sonnet-4-6',
     dinoikiBase:'https://ai.dinoiki.com/v1', dinoikiKey:'', dinoikiModel:'gpt-4o',
     koboiBase:'https://lite.koboillm.com/v1', koboiKey:'', koboiModel:'',
+    grokBase:'https://api.x.ai/v1', grokKey:'', grokModel:'grok-4',
+    orBase:'https://openrouter.ai/api/v1', orKey:'', orModel:'google/gemini-2.5-flash',
     compatBase:'', compatKey:'', compatModel:'',
     img:'gemini_image',
     imgGeminiKey:'', imgGeminiModel:'gemini-2.5-flash-image',
@@ -678,15 +680,21 @@ const TXT_PROVIDERS=[
   {id:'claude',   name:'Claude API',     desc:'Key Anthropic (sk-ant-…).'},
   {id:'dinoiki',  name:'Dinoiki',        desc:'ai.dinoiki.com — OpenAI-compatible, key sk-…'},
   {id:'koboillm', name:'KoboiLLM',       desc:'lite.koboillm.com — gateway LiteLLM.'},
-  {id:'compat',   name:'OpenAI-compatible', desc:'OpenAI, OpenRouter, Groq, DeepSeek, endpoint lain.'}
+  {id:'grok',     name:'Grok · xAI',     desc:'api.x.ai — key xai-… langsung dari console.x.ai.'},
+  {id:'openrouter', name:'OpenRouter',   desc:'Satu key untuk ratusan model lintas vendor.'},
+  {id:'compat',   name:'OpenAI-compatible', desc:'OpenAI, Groq, DeepSeek, endpoint lain.'}
 ];
 /* Dinoiki & KoboiLLM adalah gateway/reseller: key-nya bisa berupa key upstream
    asli (OpenAI/Anthropic/Gemini) atau key gateway mereka sendiri. Karena itu
    base URL selalu bisa diedit, bukan dikunci. */
 const OA={
-  dinoiki:  {name:'Dinoiki',  base:a=>a.dinoikiBase, key:a=>a.dinoikiKey, model:a=>a.dinoikiModel},
-  koboillm: {name:'KoboiLLM', base:a=>a.koboiBase,   key:a=>a.koboiKey,   model:a=>a.koboiModel},
-  compat:   {name:'API custom', base:a=>a.compatBase, key:a=>a.compatKey, model:a=>a.compatModel}
+  dinoiki:   {name:'Dinoiki',    base:a=>a.dinoikiBase, key:a=>a.dinoikiKey, model:a=>a.dinoikiModel},
+  koboillm:  {name:'KoboiLLM',   base:a=>a.koboiBase,   key:a=>a.koboiKey,   model:a=>a.koboiModel},
+  grok:      {name:'Grok (xAI)', base:a=>a.grokBase,    key:a=>a.grokKey,    model:a=>a.grokModel},
+  /* OpenRouter memakai X-Title untuk menandai aplikasi pemanggil di dashboard. */
+  openrouter:{name:'OpenRouter', base:a=>a.orBase,      key:a=>a.orKey,      model:a=>a.orModel,
+              headers:{'X-Title':'AI Influencer Studio'}},
+  compat:    {name:'API custom', base:a=>a.compatBase,  key:a=>a.compatKey,  model:a=>a.compatModel}
 };
 
 const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|exhausted|too many|unavailable|failed to fetch|quota/i;
@@ -766,6 +774,7 @@ async function callAI(prompt, maxTokens=1600, images){
   const model=P.model(a);
   if(!model) throw new Error('Nama model '+P.name+' belum diisi (tombol ⚙ API).');
   const headers={'Content-Type':'application/json','Authorization':'Bearer '+key};
+  if(P.headers) Object.assign(headers, P.headers);
   const first=(images&&images.length)
     ? [{type:'text',text:prompt}, ...images.map(im=>({type:'image_url',image_url:{url:'data:'+im.mimeType+';base64,'+im.data}}))]
     : prompt;
@@ -807,6 +816,22 @@ const MODEL_HINTS={
     ],
     img:[{m:'gpt-image-1.5', n:'text→image & image→image'}]
   },
+  xai:{
+    txt:[
+      {m:'grok-4',      n:'vision', v:1},
+      {m:'grok-3',      n:'seimbang'},
+      {m:'grok-3-mini', n:'murah'}
+    ]
+  },
+  openrouter:{
+    txt:[
+      {m:'google/gemini-2.5-flash',    n:'murah + vision', v:1},
+      {m:'openai/gpt-4o-mini',         n:'murah + vision', v:1},
+      {m:'anthropic/claude-sonnet-4.5',n:'tulisan terbaik', v:1},
+      {m:'x-ai/grok-4',                n:'Grok tanpa key terpisah', v:1}
+    ],
+    img:[{m:'google/gemini-2.5-flash-image', n:'Nano Banana lewat OpenRouter'}]
+  },
   koboillm:{
     txt:[
       {m:'gemini-2.5-flash',  n:'termurah + vision', v:1},
@@ -825,8 +850,10 @@ const MODEL_HINTS={
 /* Gateway ditebak dari base URL supaya rekomendasinya ikut berpindah sendiri. */
 function hintsFor(base){
   const b=String(base||'');
-  if(/dinoiki/i.test(b)) return {key:'dinoiki', label:'Dinoiki'};
-  if(/koboi/i.test(b))   return {key:'koboillm', label:'KoboiLLM'};
+  if(/dinoiki/i.test(b))    return {key:'dinoiki',    label:'Dinoiki'};
+  if(/koboi/i.test(b))      return {key:'koboillm',   label:'KoboiLLM'};
+  if(/x\.ai/i.test(b))      return {key:'xai',        label:'Grok'};
+  if(/openrouter/i.test(b)) return {key:'openrouter', label:'OpenRouter'};
   return null;
 }
 const MODEL_CACHE={};
@@ -2212,6 +2239,30 @@ function loadProject(file){
 /* =====================================================================
    MODAL API
 ===================================================================== */
+/* Chip rekomendasi hidup di wadahnya sendiri (#rec-txt / #rec-img) supaya bisa
+   disegarkan saat Base URL berubah TANPA me-render ulang seluruh modal — node
+   tombol "Tarik daftar" harus tetap utuh, kalau tidak klik pertamanya hilang. */
+function recChips(path, val, which, base){
+  const h=hintsFor(base);
+  const rec=(h&&MODEL_HINTS[h.key]&&MODEL_HINTS[h.key][which==='img'?'img':'txt'])||[];
+  if(!rec.length) return '';
+  return '<div class="mini" style="margin:10px 0 6px">Rekomendasi '+esc(h.label)+
+    (which==='img'?'':' — semua sanggup membaca foto')+'</div><div class="chips">'+
+    rec.map(r=>'<button class="chip'+(val===r.m?' sel':'')+'" data-setmodel="'+esc(path)+'|'+esc(r.m)+'">'+
+      esc(r.m)+'<span class="rs">'+esc(r.n)+'</span></button>').join('')+'</div>';
+}
+function refreshRecs(){
+  const a=state.api;
+  const box=(which,path,val,base)=>{
+    const el=$('#rec-'+which); if(el) el.innerHTML=recChips(path,val,which,base);
+  };
+  const P=OA[a.txt];
+  if(P){
+    const path='api.'+({dinoiki:'dinoikiModel',koboillm:'koboiModel',grok:'grokModel',openrouter:'orModel',compat:'compatModel'}[a.txt]);
+    box('txt', path, P.model(a), P.base(a));
+  }
+  box('img','api.imgOaModel',a.imgOaModel,a.imgOaBase);
+}
 function renderApiModal(){
   const a=state.api;
   $('#txtGrid').innerHTML=TXT_PROVIDERS.map(p=>
@@ -2221,14 +2272,6 @@ function renderApiModal(){
   /* Kolom model + tombol tarik daftar dari GET /models milik gateway. */
   const F_MODEL=(path,val,ph,which,base)=>{
     const list=MODEL_CACHE[String(base||'').replace(/\/+$/,'')]||null;
-    const h=hintsFor(base);
-    const rec=h&&MODEL_HINTS[h.key]&&MODEL_HINTS[h.key][which==='img'?'img':'txt']||[];
-    const chips=rec.length
-      ? '<div class="mini" style="margin:10px 0 6px">Rekomendasi '+esc(h.label)+
-        (which==='img'?'':' — semua sanggup membaca foto')+'</div><div class="chips">'+
-        rec.map(r=>'<button class="chip'+(val===r.m?' sel':'')+'" data-setmodel="'+esc(path)+'|'+esc(r.m)+'">'+
-          esc(r.m)+'<span class="rs">'+esc(r.n)+'</span></button>').join('')+'</div>'
-      : '';
     return '<div class="field"><label>Model'+(list?' — '+list.length+' tersedia di gateway':'')+'</label>'+
       '<div style="display:flex;gap:8px;align-items:flex-start">'+
         '<input data-path="'+path+'" value="'+esc(val||'')+'" list="ml-'+which+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+'>'+
@@ -2237,7 +2280,7 @@ function renderApiModal(){
       (list?'<datalist id="ml-'+which+'">'+list.map(m=>'<option value="'+esc(m)+'">').join('')+'</datalist>':'')+
       (list?'<div class="hint">Ketik untuk menyaring, atau klik kolomnya untuk melihat semua.'+
         (which==='img'?' Yang bernama image/flux/imagen/dall-e biasanya model gambar.':'')+'</div>':'')+
-      chips+
+      '<div id="rec-'+which+'">'+recChips(path,val,which,base)+'</div>'+
     '</div>';
   };
   let t='';
@@ -2245,7 +2288,9 @@ function renderApiModal(){
   if(a.txt==='claude') t=F_('Anthropic API Key','api.claudeKey',a.claudeKey,'sk-ant-…',1)+F_('Model','api.claudeModel',a.claudeModel,'claude-sonnet-4-6');
   if(a.txt==='dinoiki') t=F_('Base URL','api.dinoikiBase',a.dinoikiBase,'https://ai.dinoiki.com/v1')+F_('API Key Dinoiki','api.dinoikiKey',a.dinoikiKey,'sk-…',1)+F_MODEL('api.dinoikiModel',a.dinoikiModel,'gpt-4o','txt',a.dinoikiBase);
   if(a.txt==='koboillm') t=F_('Base URL','api.koboiBase',a.koboiBase,'https://lite.koboillm.com/v1')+F_('API Key KoboiLLM','api.koboiKey',a.koboiKey,'sk-…',1)+F_MODEL('api.koboiModel',a.koboiModel,'tarik daftar untuk melihat pilihan','txt',a.koboiBase);
-  if(a.txt==='compat') t=F_('Base URL','api.compatBase',a.compatBase,'https://api.openai.com/v1 · https://openrouter.ai/api/v1')+F_('API Key','api.compatKey',a.compatKey,'',1)+F_MODEL('api.compatModel',a.compatModel,'','txt',a.compatBase);
+  if(a.txt==='grok') t=F_('Base URL','api.grokBase',a.grokBase,'https://api.x.ai/v1')+F_('API Key Grok (xAI)','api.grokKey',a.grokKey,'xai-…',1)+F_MODEL('api.grokModel',a.grokModel,'grok-4','txt',a.grokBase);
+  if(a.txt==='openrouter') t=F_('Base URL','api.orBase',a.orBase,'https://openrouter.ai/api/v1')+F_('API Key OpenRouter','api.orKey',a.orKey,'sk-or-…',1)+F_MODEL('api.orModel',a.orModel,'google/gemini-2.5-flash','txt',a.orBase);
+  if(a.txt==='compat') t=F_('Base URL','api.compatBase',a.compatBase,'https://api.openai.com/v1 · https://api.groq.com/openai/v1')+F_('API Key','api.compatKey',a.compatKey,'',1)+F_MODEL('api.compatModel',a.compatModel,'','txt',a.compatBase);
   $('#txtFields').innerHTML=t;
 
   const gatewayNote='Base URL sudah diisi dari dashboard masing-masing. Klik "↻ Tarik daftar" untuk menarik model yang aktif di akunmu lewat GET /models — tidak perlu hafal nama modelnya. Kalau key yang kamu beli ternyata key upstream asli (mis. Gemini diawali AIza…), pakai provider Google Gemini di atas, bukan gateway ini.';
@@ -2255,6 +2300,8 @@ function renderApiModal(){
     claude:'Key dari console.anthropic.com.'+common,
     dinoiki:'Dinoiki: POST '+String(a.dinoikiBase||'').replace(/\/+$/,'')+'/chat/completions dengan header Authorization: Bearer sk-…  '+gatewayNote+common,
     koboillm:'KoboiLLM berjalan di atas LiteLLM, jadi endpoint-nya standar OpenAI. Kalau base URL ini ditolak, coba tanpa akhiran /v1 — sebagian instalasi LiteLLM melayani /chat/completions di root. '+gatewayNote+common,
+    grok:'Key dibuat di console.x.ai (diawali xai-…). Endpoint-nya OpenAI-compatible, jadi tombol "Tarik daftar" juga bekerja. Untuk tahap Identitas Visual dan QA pilih model Grok yang sanggup membaca gambar.'+common,
+    openrouter:'Key dibuat di openrouter.ai/keys (diawali sk-or-…). Satu key untuk ratusan model lintas vendor — nama modelnya berbentuk vendor/model, mis. google/gemini-2.5-flash. OpenRouter juga menyediakan model gambar Nano Banana, jadi base URL ini bisa dipakai ulang di mesin gambar mode "Gateway · chat".'+common,
     compat:'Endpoint apa pun yang menyediakan POST /chat/completions ala OpenAI.'+common
   };
   $('#txtNote').textContent=(notes[a.txt]||common)+' Kalau muncul error "Failed to fetch", biasanya endpoint itu memblokir panggilan langsung dari browser (CORS) — coba Gemini atau gateway yang mengizinkannya.';
@@ -2264,7 +2311,7 @@ function renderApiModal(){
   let g='';
   if(a.img==='gemini_image') g=F_('Gemini API Key (kosongkan = pakai key mesin teks)','api.imgGeminiKey',a.imgGeminiKey,'AIza…',1)+F_('Model gambar','api.imgGeminiModel',a.imgGeminiModel,'gemini-2.5-flash-image');
   if(a.img==='openai_image'||a.img==='compat_image'||a.img==='chat_image')
-    g=F_('Base URL','api.imgOaBase',a.imgOaBase,'https://api.openai.com/v1 · https://ai.dinoiki.com/v1 · https://lite.koboillm.com/v1')+
+    g=F_('Base URL','api.imgOaBase',a.imgOaBase,'https://api.openai.com/v1 · https://ai.dinoiki.com/v1 · https://lite.koboillm.com/v1 · https://openrouter.ai/api/v1')+
       F_('API Key','api.imgOaKey',a.imgOaKey,'',1)+
       F_MODEL('api.imgOaModel',a.imgOaModel,a.img==='chat_image'?'gemini-2.5-flash-image':'gpt-image-1.5','img',a.imgOaBase);
   $('#imgFields').innerHTML=g;
@@ -2305,6 +2352,12 @@ document.addEventListener('input', e=>{
   if(e.target.type==='number') v=+v;
   setPath(state,p,v);
   if(p==='shoot.jumlah'||p.startsWith('persona.nama')) renderRail();
+  /* Base URL diketik: segarkan chip rekomendasi saja. Ini sengaja di 'input',
+     bukan 'change' — 'change' baru menyala saat fokus berpindah, yaitu tepat
+     ketika user mengklik tombol "Tarik daftar", dan me-render ulang di saat itu
+     mengganti node tombolnya sehingga klik pertamanya hilang. refreshRecs hanya
+     menyentuh wadah chip, tidak pernah kolom yang sedang diketik. */
+  if(/^api\..*Base$/.test(p)) refreshRecs();
 });
 document.addEventListener('change', e=>{
   if(e.target.id==='consent'){
@@ -2317,10 +2370,7 @@ document.addEventListener('change', e=>{
   if(e.target.id==='stampAI'){ state.stampAI=e.target.checked; return; }
   if(e.target.id==='fileInput'){ const f=e.target.files[0]; if(f) loadProject(f); e.target.value=''; return; }
   if(e.target.id==='refInput'){ addRefs(e.target.files); e.target.value=''; return; }
-  if(e.target.dataset.path&&e.target.tagName==='SELECT'){ setPath(state,e.target.dataset.path,e.target.value); render(); }
-  /* Jangan me-render ulang modal saat kolom Base URL blur: node tombol
-     "Tarik daftar" ikut terganti tepat saat user mengkliknya, dan klik itu
-     hilang. Datalist disegarkan setelah penarikan berhasil saja. */
+  if(e.target.dataset.path&&e.target.tagName==='SELECT'){ setPath(state,e.target.dataset.path,e.target.value); render(); return; }
 });
 
 document.addEventListener('click', async e=>{
@@ -2479,9 +2529,11 @@ document.addEventListener('click', async e=>{
     const a=state.api, which=t.dataset.fetchmodels;
     let base='', key='', label='';
     if(which==='img'){ base=a.imgOaBase; key=a.imgOaKey; label='Mesin gambar'; }
-    else if(a.txt==='dinoiki'){ base=a.dinoikiBase; key=a.dinoikiKey; label='Dinoiki'; }
-    else if(a.txt==='koboillm'){ base=a.koboiBase; key=a.koboiKey; label='KoboiLLM'; }
-    else { base=a.compatBase; key=a.compatKey; label='Gateway'; }
+    else{
+      const P=OA[a.txt];
+      if(!P){ toast('Provider ini tidak memakai daftar model gateway.','err'); return; }
+      base=P.base(a); key=P.key(a); label=P.name;
+    }
     try{
       setBusy(true,'Menarik daftar model…');
       const list=await fetchModels(base, key, label);

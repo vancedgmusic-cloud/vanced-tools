@@ -97,11 +97,22 @@ persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis ca
 
 **Dua mesin AI terpisah** di `state.api`, dipilih sendiri-sendiri:
 
-- `api.txt` — teks & vision (`gemini`, `claude`, `dinoiki`, `koboillm`, `compat`).
-  Dinoiki & KoboiLLM adalah gateway OpenAI-compatible asal Indonesia. Base URL
-  bawaan sudah dari dashboard user — Dinoiki `https://ai.dinoiki.com/v1`,
-  KoboiLLM `https://lite.koboillm.com/v1` (instalasi LiteLLM) — tapi tetap
-  **bisa diedit**, jangan dikunci.
+- `api.txt` — teks & vision. Dua jalur native (`gemini`, `claude`) dan lima jalur
+  OpenAI-compatible yang semuanya lewat peta `OA`: `dinoiki`, `koboillm`, `grok`,
+  `openrouter`, `compat`. Base URL bawaan sudah terisi tapi tetap **bisa diedit**,
+  jangan dikunci:
+
+  | id | base bawaan |
+  |---|---|
+  | `dinoiki` | `https://ai.dinoiki.com/v1` |
+  | `koboillm` | `https://lite.koboillm.com/v1` (LiteLLM) |
+  | `grok` | `https://api.x.ai/v1` |
+  | `openrouter` | `https://openrouter.ai/api/v1` |
+
+  Entri `OA` boleh punya `headers` untuk header tambahan per provider —
+  OpenRouter memakainya untuk `X-Title`. Menambah gateway baru cukup satu baris
+  di `OA` + satu di `TXT_PROVIDERS` + field `*Base`/`*Key`/`*Model` di `state.api`;
+  penarikan daftar model dan chip rekomendasi ikut otomatis.
 
 - `api.img` — gambar (`gemini_image`, `chat_image`, `openai_image`, `compat_image`,
   `manual`). Yang menentukan bukan cuma modelnya, tapi **apakah foto acuan bisa
@@ -131,6 +142,12 @@ di luar `state` supaya tidak ikut file project) lalu dirender sebagai `<datalist
 Bukan daftar lengkap dan tidak dipakai untuk validasi — `hintsFor(base)` cuma
 menebak gateway dari base URL lalu menampilkan chip. Sumber kebenaran tetap
 `GET /models`.
+
+Chip itu hidup di wadah terpisah (`#rec-txt` / `#rec-img`) dan disegarkan lewat
+`refreshRecs()` pada event **`input`** kolom Base URL. Jangan pindahkan ke
+`change`: `change` baru menyala saat fokus berpindah — yaitu persis ketika user
+mengklik tombol "Tarik daftar" — sehingga node tombolnya ikut terganti dan klik
+pertamanya hilang.
 
 ### Aturan domain (jangan dilanggar)
 
