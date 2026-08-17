@@ -163,11 +163,21 @@ pertamanya hilang.
 - Field kredensial: `geminiKey`, `claudeKey`, `dinoikiKey`, `koboiKey`, `compatKey`,
   `imgGeminiKey`, `imgOaKey`. Semua berakhiran `Key` supaya kena filter ekspor.
 
-Whitelist restore ada di konstanta `KEEP`. Gambar hasil render **tidak** ikut file
-project kecuali user mencentang toggle-nya (`withImages`) — ini berlaku untuk
+Whitelist restore ada di konstanta `KEEP`. Gambar hasil render ikut file project
+selama `state.withImages` menyala — **default-nya sengaja menyala**, karena gambar
+adalah artefak termahal di app ini (satu render = satu panggilan API berbayar) dan
+kehilangannya diam-diam jauh lebih buruk daripada file yang besar. Tombol 💾 Simpan
+ada di header dan bisa diklik dari tahap mana pun, jadi user bisa sama sekali tidak
+pernah melihat toggle di tahap Ekspor; karena itu `saveProject()` menahan dengan
+`confirm()` kalau toggle mati **dan** ada gambar yang akan hilang. Jangan hapus
+gerbang itu. Saat toggle mati, yang dibuang adalah — ini berlaku untuk
 `shots[].imgs`, `sheet.panels[].imgs`, `sheet.grid.cells[].img`, **dan**
-`sheet.grid.sheetImg`; kalau menambah tempat penyimpanan gambar baru, tambahkan
-juga di `saveProject`.
+`sheet.grid.sheetImg` — kalau menambah tempat penyimpanan gambar baru, tambahkan
+juga di `projectJSON()` dan di `imageCount()`.
+
+Autosave IndexedDB bersifat **lokal per browser dan per mesin, tidak sinkron**.
+Satu-satunya cara memindahkan proyek antar komputer adalah file project (.json)
+atau arsip ZIP — tahap Ekspor memuat checklist langkahnya.
 
 ### Tahap `sheet` — character sheet
 

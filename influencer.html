@@ -468,6 +468,10 @@ const state={
      foto asli dari kamera tidak pernah begitu. Nilai default sengaja halus —
      tujuannya menghilangkan kesan steril, bukan bikin foto terlihat rusak. */
   post:{ grain:10, chroma:0.9, vignette:0.16, jpeg:0.9 },
+  /* Sertakan gambar di file project. Default MENYALA: gambar adalah artefak
+     termahal di app ini (satu render = satu panggilan API berbayar), jadi
+     kehilangannya diam-diam jauh lebih buruk daripada file yang besar. */
+  withImages:true,
   /* Penghitung pemakaian per proyek. harga = perkiraan biaya per gambar (USD),
      diisi user karena tiap gateway berbeda dan aplikasi tidak boleh menebak. */
   usage:{ img:0, txt:0, harga:0.04 },
@@ -2148,12 +2152,28 @@ function viewExport(){
       '<label for="stampAI">Cap label “Dibuat dengan AI” di pojok foto saat diunduh. Beberapa platform mewajibkan pelabelan media sintetis, dan label yang menempel di gambar tidak ikut hilang saat foto di-repost.</label></div>'+
     '<div class="consent" style="border-color:var(--line);background:var(--panel2)">'+
       '<input type="checkbox" id="withImages">'+
-      '<label for="withImages">Sertakan gambar hasil render di dalam file project. File jadi jauh lebih besar (bisa puluhan MB); biarkan mati kalau kamu hanya ingin menyimpan teks dan rencananya.</label></div>'+
-    '<div class="hint">API key selalu dibuang dari file project. Foto referensi ikut tersimpan supaya project bisa dilanjutkan di lain waktu.</div></div>';
+      '<label for="withImages"><b>Sertakan gambar hasil render di dalam file project.</b><br>'+
+      (nImg
+        ? 'Perkiraan ukuran file: <b>'+esc(state.withImages?mb(imageWeight()+20000):'&lt; 1 MB')+'</b> untuk '+nImg+' gambar. '
+        : '')+
+      'Biarkan <b>menyala</b> kalau file ini akan dipakai melanjutkan proyek di komputer lain — mematikannya membuang semua gambar <i>dan</i> acuan wajah, sehingga semua render harus dibuat ulang dari nol.</label></div>'+
+    '<div class="hint">API key selalu dibuang dari file project dan dari autosave. Foto referensi ikut tersimpan supaya project bisa dilanjutkan di lain waktu.</div></div>'+
+    '<div class="card"><h3>💻 Lanjutkan di komputer lain</h3>'+
+      '<p class="hint" style="margin:-6px 0 12px">Autosave tersimpan di browser komputer ini saja — sifatnya lokal, tidak sinkron ke mana pun. Untuk pindah mesin, bawa filenya sendiri.</p>'+
+      '<div class="check '+(state.withImages?'ok':'warn')+'"><span class="sym">'+(state.withImages?'✓':'!')+'</span><div>'+
+        (state.withImages
+          ? 'Toggle "Sertakan gambar" <b>menyala</b> — file project akan bisa memulihkan proyek ini secara utuh.'
+          : 'Toggle "Sertakan gambar" <b>mati</b>. Nyalakan dulu, kalau tidak file project hanya berisi teks.')+
+      '</div></div>'+
+      '<div class="check ok"><span class="sym">1</span><div>Centang <b>Sertakan gambar</b>, lalu unduh <b>Project (.json)</b> — ini file yang dimuat lewat tombol 📂 Buka di mesin lain.</div></div>'+
+      '<div class="check ok"><span class="sym">2</span><div>Unduh juga <b>Arsip (.zip)</b> sebagai cadangan. Di dalamnya foto tersimpan sebagai file terpisah, jadi tetap terselamatkan kalau .json-nya bermasalah.</div></div>'+
+      '<div class="check ok"><span class="sym">3</span><div>Aplikasinya sendiri cukup file <code>influencer.html</code> ini — salin, atau unduh ulang dari repo. Tidak butuh install maupun server.</div></div>'+
+      '<div class="check warn"><span class="sym">4</span><div>API key <b>harus diisi ulang</b> di mesin baru lewat ⚙ API. Itu memang disengaja: key tidak pernah ikut ke file maupun ke disk. Setelan lain (base URL, model, preset realisme, gerbang mutu) ikut tersimpan.</div></div>'+
+    '</div>';
 }
 
 const VIEWS={talent:viewTalent, identity:viewIdentity, persona:viewPersona, sheet:viewSheet, shoot:viewShoot, render:viewRender, content:viewContent, export:viewExport};
-let withImages=false;
+const mb=n=>(n/1048576).toFixed(n<10485760?2:1)+' MB';
 function restoreBanner(){
   if(!pendingRestore) return '';
   const t=new Date(pendingRestore.t).toLocaleString('id-ID');
@@ -2174,7 +2194,7 @@ function render(){
   renderRail();
   $('#main').innerHTML=restoreBanner()+(VIEWS[current]||viewTalent)();
   const uEl=$('#usage'); if(uEl) uEl.textContent=usageText();
-  const wi=$('#withImages'); if(wi) wi.checked=withImages;
+  const wi=$('#withImages'); if(wi) wi.checked=state.withImages;
   if(busy) $$('.needidle').forEach(el=>el.disabled=true);
 }
 function go(id){ current=id; render(); $('#main').scrollTop=0; }
@@ -2583,7 +2603,7 @@ function zipReadme(nImg){
   if(state.talent.mode==='locked') L.push(
     '- Mode wajah persis dipakai. Simpan bukti izin talent bersama arsip ini,',
     '  dan pastikan izinnya masih berlaku sebelum konten dipublikasikan.');
-  if(!withImages) L.push(
+  if(!state.withImages) L.push(
     '',
     '- project.json di arsip ini TIDAK memuat gambar (toggle "sertakan gambar" mati),',
     '  jadi memuatnya kembali akan memulihkan teks dan rencana saja. Gambarnya ada',
@@ -2645,7 +2665,7 @@ async function exportZip(){
 function projectJSON(){
   const snap=JSON.parse(JSON.stringify(state));
   snap.api=Object.fromEntries(Object.entries(snap.api).map(([k,v])=>[k, /key$/i.test(k)?'':v]));
-  if(!withImages){
+  if(!state.withImages){
     (snap.shots||[]).forEach(s=>{ s.imgs=[]; });
     ((snap.sheet||{}).panels||[]).forEach(p=>{ p.imgs=[]; });
     const sg=(snap.sheet||{}).grid;
@@ -2655,12 +2675,42 @@ function projectJSON(){
   snap._app='ai-influencer-studio'; snap._v=1;
   return JSON.stringify(snap,null,2);
 }
+/* Menghitung gambar yang akan HILANG kalau file disimpan tanpa gambar. */
+function imageCount(){
+  let n=0;
+  state.shots.forEach(sh=>{ n+=sh.imgs.length; });
+  state.sheet.panels.forEach(pn=>{ n+=(pn.imgs||[]).length; });
+  n+=state.sheet.grid.cells.filter(c=>c.img).length;
+  if(state.sheet.grid.sheetImg) n++;
+  return n;
+}
 function saveProject(){
+  const n=imageCount();
+  /* Tombol 💾 Simpan ada di header dan bisa diklik dari tahap mana pun, jadi
+     user bisa sama sekali tidak pernah melihat toggle di tahap Ekspor. Kalau
+     ada gambar yang akan hilang, jangan biarkan itu terjadi tanpa disadari. */
+  if(!state.withImages && n>0){
+    const lanjut=confirm(
+      'PERINGATAN\n\n'+
+      n+' gambar hasil render TIDAK akan disertakan di file ini, dan acuan wajah (anchor) juga ikut hilang.\n\n'+
+      'Kalau file ini dipakai untuk melanjutkan proyek di komputer lain, semua render itu harus dibuat ulang dari nol — dan tiap render adalah panggilan API berbayar.\n\n'+
+      'OK  = simpan tanpa gambar (hanya teks & rencana)\n'+
+      'Cancel = batal, biar saya centang dulu "Sertakan gambar"'
+    );
+    if(!lanjut){
+      state.withImages=true;
+      go('export');
+      toast('Toggle "Sertakan gambar" sudah dinyalakan. Klik Simpan sekali lagi.','ok');
+      return;
+    }
+  }
   download(slug(state.persona.nama)+'-influencer.json', projectJSON(), 'application/json');
-  toast('Project diunduh'+(withImages?' (dengan gambar).':' — gambar tidak disertakan.'),'ok');
+  toast('Project diunduh'+(state.withImages
+    ? ' — '+n+' gambar disertakan.'
+    : ' — TANPA gambar, hanya teks & rencana.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','shots','anchor','stampAI','qaGate','usage','post','dirty'];
+const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','shots','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
 /* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
    dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
 function normalizeState(){
@@ -2683,6 +2733,7 @@ function normalizeState(){
   state.qaGate=Object.assign({on:false,min:75,retry:1}, state.qaGate||{});
   state.usage=Object.assign({img:0,txt:0,harga:0.04}, state.usage||{});
   state.post=Object.assign({grain:10,chroma:0.9,vignette:0.16,jpeg:0.9}, state.post||{});
+  if(typeof state.withImages!=='boolean') state.withImages=true;
   /* Setelah round-trip JSON, anchor jadi objek terpisah dari gambar di shots.
      Tautkan ulang ke objek aslinya supaya badge & hapus tetap akurat. */
   if(state.anchor&&state.anchor.data){
@@ -2952,7 +3003,7 @@ document.addEventListener('change', e=>{
     render(); return;
   }
   if(e.target.id==='disclosure'){ state.persona.disclosure=e.target.checked; return; }
-  if(e.target.id==='withImages'){ withImages=e.target.checked; return; }
+  if(e.target.id==='withImages'){ state.withImages=e.target.checked; render(); return; }
   if(e.target.id==='stampAI'){ state.stampAI=e.target.checked; return; }
   if(e.target.id==='fileInput'){ const f=e.target.files[0]; if(f) loadProject(f); e.target.value=''; return; }
   if(e.target.id==='refInput'){ addRefs(e.target.files); e.target.value=''; return; }
