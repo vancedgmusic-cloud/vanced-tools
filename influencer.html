@@ -220,8 +220,15 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
 
 /* ---------- grid character sheet ---------- */
 .cellgrid{display:grid;gap:4px;margin-top:12px}
-.cell{position:relative;aspect-ratio:2/3;background:var(--panel3);border:1px solid var(--line);border-radius:4px;overflow:hidden;cursor:pointer;padding:0}
+.cell{position:relative;aspect-ratio:2/3;background:var(--panel3);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.cellhit{position:absolute;inset:0;width:100%;height:100%;background:none;border:none;padding:0;cursor:pointer}
 .cell img{width:100%;height:100%;object-fit:cover;display:block}
+.cell.isanchor{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal)}
+.cellanchor{
+  position:absolute;top:2px;right:2px;z-index:2;border:none;border-radius:4px;
+  background:#0d1016cc;color:var(--teal);font-size:10px;line-height:1;padding:2px 4px;cursor:pointer;
+}
+.cellanchor:hover{background:var(--teal);color:#0a1a17}
 .cell .idx{position:absolute;top:2px;left:3px;font-family:var(--mono);font-size:8.5px;color:var(--faint);background:#0d1016cc;border-radius:3px;padding:0 3px}
 .cell.done{border-color:#2c4a3a}
 .cell:hover{border-color:var(--violet)}
@@ -629,7 +636,7 @@ const POSE_LIB=[
   {k:'SO', l:'Mirror selfie',       p:'full body mirror selfie, phone held at chest height partially covering the frame, casual stance'},
   {k:'MD', l:'Menyesap minuman',    p:'waist-up, holding a cup with both hands and taking a sip, eyes lowered'},
   {k:'FB', l:'Bersandar dinding',   p:'full body, leaning back against a wall with one knee bent and the sole against the wall'},
-  {k:'HD', l:'Detail tangan',       p:'close-up of the hands only, fingers interlaced, resting on the lap, jewelry visible'},
+  {k:'HD', nf:1, l:'Detail tangan',       p:'close-up of the hands only, fingers interlaced, resting on the lap, jewelry visible'},
   {k:'34', l:'Tiga perempat',       p:'three-quarter body from the knees up, torso angled away, head turned back to camera'},
   {k:'AC', l:'Tertawa lepas',       p:'medium shot, head thrown slightly back caught mid-laugh, shoulders raised'},
   {k:'FB', l:'Berdiri menyamping',  p:'full body in profile, standing still and looking down the street, hands in pockets'},
@@ -646,7 +653,7 @@ const POSE_LIB=[
   {k:'FB', l:'Berdiri membelakangi',p:'full body seen from behind, standing and looking out at the view, weight on one hip'},
   {k:'SO', l:'GRWM di cermin',      p:'waist-up in front of a mirror, applying something to the face, elbow raised'},
   {k:'MD', l:'Melipat lengan',      p:'waist-up, arms folded loosely, shoulders relaxed, slight lean to one side'},
-  {k:'HD', l:'Memegang cangkir',    p:'close-up of hands wrapped around a warm mug on a table, steam rising'},
+  {k:'HD', nf:1, l:'Memegang cangkir',    p:'close-up of hands wrapped around a warm mug on a table, steam rising'},
   {k:'FB', l:'Jongkok',             p:'full body crouching down on the balls of the feet, forearms resting on the knees'},
   {k:'AC', l:'Menoleh dipanggil',   p:'medium shot, caught turning toward the camera as if someone just called their name'},
   {k:'34', l:'Tangan di saku',      p:'three-quarter body, both hands in jacket pockets, shoulders slightly hunched'},
@@ -655,7 +662,7 @@ const POSE_LIB=[
   {k:'SO', l:'Berjalan menjauh',    p:'full body seen from behind walking away down a path, glancing back over the shoulder'},
   {k:'MD', l:'Merentangkan tangan', p:'waist-up, arms opening outward in an expressive gesture mid-sentence'},
   {k:'FB', l:'Berdiri di pintu',    p:'full body framed in a doorway, one hand on the door frame, half stepping through'},
-  {k:'HD', l:'Menulis',             p:'close-up of hands writing in a notebook, pen mid-stroke, sleeve pushed up'},
+  {k:'HD', nf:1, l:'Menulis',             p:'close-up of hands writing in a notebook, pen mid-stroke, sleeve pushed up'},
   {k:'AC', l:'Mengecek ponsel',     p:'medium shot, looking down at a phone with a small reaction forming on the face'},
   {k:'34', l:'Menoleh ke bahu',     p:'three-quarter body, back to camera, head turned over the shoulder toward the lens'},
   {k:'CU', l:'Mata terpejam',       p:'close-up with eyes closed and face tilted toward the light, calm breath'},
@@ -663,7 +670,7 @@ const POSE_LIB=[
   {k:'SO', l:'Unboxing',            p:'waist-up at a table opening a plain box, both hands busy, leaning in with curiosity'},
   {k:'MD', l:'Menyandarkan kepala', p:'waist-up leaning the head against a window or a pole, gaze unfocused'},
   {k:'FB', l:'Berdiri di tepi jalan',p:'full body standing at a curb waiting to cross, bag on one shoulder, looking left'},
-  {k:'HD', l:'Detail sepatu',       p:'low close-up of the feet and shoes on the ground, one foot mid-step'},
+  {k:'HD', nf:1, l:'Detail sepatu',       p:'low close-up of the feet and shoes on the ground, one foot mid-step'},
   {k:'AC', l:'Merapikan rambut',    p:'medium shot, both hands gathering hair back, elbows raised, head tilted'},
   {k:'34', l:'Membawa belanjaan',   p:'three-quarter body carrying a tote bag, other hand holding a drink, walking'},
   {k:'CU', l:'Senyum lebar',        p:'close-up with a wide genuine smile, crinkles at the corners of the eyes'},
@@ -693,6 +700,7 @@ function buildGridCells(cols, rows){
     const mod=POSE_MODS[Math.floor(i/POSE_LIB.length)%POSE_MODS.length];
     out.push({
       kat:base.k,
+      nf:base.nf?1:0,
       label:base.l+(mod.l?' · '+mod.l:''),
       pose:base.p+(mod.p?', '+mod.p:''),
       img:null
@@ -701,8 +709,23 @@ function buildGridCells(cols, rows){
   return out;
 }
 function gridCellPrompt(cell){
+  const bg=GRID_BG[state.sheet.grid.latar]||GRID_BG.studio;
+  /* Pose detail (tangan, kaki) tidak boleh membawa identity lock: blok itu
+     mendeskripsikan wajah, dan model akan memaksa wajahnya masuk frame
+     sehingga hasilnya jadi potret, bukan detail. Identitas untuk frame ini
+     dijaga lewat warna kulit dan aksesori, bukan wajah. */
+  if(cell.nf){
+    return composePrompt({
+      noIdentity:1,
+      scene:'DETAIL SHOT, the face and head are completely outside the frame: '+cell.pose+', '+bg+
+        '. Same person as the rest of the set — same skin tone, same nail shape, same jewellery, same sleeve fabric.',
+      negative:'face, head, portrait, eyes, smile, looking at camera, grid, collage, multiple people, split frame, text labels, borders',
+      aspek:state.sheet.grid.aspek,
+      tail:'One single real photograph, cropped so that no face is visible anywhere in the frame.'
+    });
+  }
   return composePrompt({
-    scene:cell.pose+', '+(GRID_BG[state.sheet.grid.latar]||GRID_BG.studio),
+    scene:cell.pose+', '+bg,
     negative:'grid, collage, multiple people, split frame, text labels, borders',
     aspek:state.sheet.grid.aspek,
     tail:'One single person, one single frame. A real, unretouched photograph — not a render, not an illustration.'
@@ -1775,10 +1798,14 @@ function gridCard(){
   const presets=[[4,3],[6,6],[8,8],[12,12]];
   const cells=g.cells.length
     ? '<div class="cellgrid" style="grid-template-columns:repeat('+g.cols+',1fr)">'+
-      g.cells.map((c,i)=>'<button class="cell'+(c.img?' done':'')+'" data-cell="'+i+'" title="'+esc(c.label)+'">'+
-        (c.img?'<img src="'+esc(imgSrc(c.img))+'" alt="">':'')+
-        '<span class="idx">'+(i+1)+'</span><span class="kat">'+esc(c.kat)+'</span></button>').join('')+'</div>'+
-      '<div class="hint">Klik satu sel untuk merender ulang sel itu saja. Hijau = sudah terisi.</div>'
+      g.cells.map((c,i)=>'<div class="cell'+(c.img?' done':'')+(state.anchor===c.img&&c.img?' isanchor':'')+'" title="'+esc(c.label)+'">'+
+        '<button class="cellhit needidle" data-cell="'+i+'">'+
+          (c.img?'<img src="'+esc(imgSrc(c.img))+'" alt="">':'')+
+          '<span class="idx">'+(i+1)+'</span><span class="kat">'+esc(c.kat)+(c.nf?' ✋':'')+'</span>'+
+        '</button>'+
+        (c.img&&c.img.data?'<button class="cellanchor" data-cellanchor="'+i+'" title="Jadikan acuan wajah">⚓</button>':'')+
+      '</div>').join('')+'</div>'+
+      '<div class="hint">Klik sel untuk merender ulang sel itu saja. Hijau = sudah terisi. Tombol ⚓ mengunci sel itu sebagai acuan wajah untuk render berikutnya — pakai sel yang wajahnya paling pas. Tanda ✋ = pose detail tanpa wajah.</div>'
     : '<div class="empty" style="padding:22px"><div class="big">Daftar pose belum dibangun</div>'+
       '<p>Tentukan ukuran grid lalu klik “Bangun daftar pose”. Pustaka berisi 48 pose lintas framing — badan utuh, tiga perempat, medium, close-up, duduk, aksi, format sosial, dan detail tangan — dikali 6 variasi sudut &amp; ekspresi.</p></div>';
 
@@ -3030,6 +3057,11 @@ document.addEventListener('click', async e=>{
   }
   if(t.dataset.gridclear){
     state.sheet.grid.cells=[]; state.sheet.grid.sheetImg=null; render(); return;
+  }
+  if(t.dataset.cellanchor!=null){
+    const c=state.sheet.grid.cells[+t.dataset.cellanchor];
+    if(c&&c.img&&c.img.data){ state.anchor=c.img; toast('Acuan wajah diambil dari sel '+(+t.dataset.cellanchor+1)+'.','ok'); render(); }
+    return;
   }
   if(t.dataset.cell!=null){ runGridOne(+t.dataset.cell); return; }
   if(t.dataset.panel){ runPanel(t.dataset.panel); return; }

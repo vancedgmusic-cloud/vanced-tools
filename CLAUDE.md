@@ -259,6 +259,12 @@ satu kali generate, jadi **tiap sel dirender terpisah** pada resolusi penuh
   `CU`, `ST` duduk, `AC` aksi, `SO` format sosial, `HD` detail tangan), sengaja
   diselang-seling supaya sel bertetangga tidak mirip. Dikali `POSE_MODS`
   (6 variasi sudut/ekspresi) → cukup untuk 144 sel unik.
+- Pose `HD` (detail tangan/kaki) diberi flag `nf` dan **tidak** membawa identity
+  lock. Blok itu mendeskripsikan wajah, dan model akan memaksa wajah masuk frame
+  sehingga sel "Detail tangan" keluar sebagai potret. Identitas untuk frame itu
+  dijaga lewat warna kulit, bentuk kuku, dan aksesori — bukan wajah.
+- Tombol ⚓ per sel menyetel `state.anchor` tanpa merender ulang, supaya user bisa
+  memilih sel yang wajahnya paling pas sebagai acuan render berikutnya.
 - `gridCellSize()` menghitung mundur ukuran sel dari batas 36 juta piksel.
   Tanpa ini grid 12×12 menembus batas canvas browser.
 - `runGridAll()` hanya merender sel yang kosong dan bisa dihentikan
