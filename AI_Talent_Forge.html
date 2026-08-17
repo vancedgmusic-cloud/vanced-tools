@@ -559,13 +559,27 @@ const IMG_ENGINES={
   qwen:{name:'Qwen-Image', syntax:'Kalimat natural bahasa Inggris, deskriptif.', ref:'Bagus untuk dataset LoRA dan teks dalam gambar.'},
   ideogram:{name:'Ideogram v3', syntax:'Kalimat natural bahasa Inggris. Sebutkan teks dalam tanda kutip bila ada tulisan di gambar.', ref:'Terbaik untuk kemasan produk / teks di dalam frame.'}
 };
+/* id key TIDAK berubah walau nomor versi di "name" naik — project lama yang
+   menyimpan setup.vidEngine="seedance" tetap cocok tanpa migrasi apa pun,
+   dan hanya labelnya yang tampil beda. */
 const VID_ENGINES={
   veo:{name:'Veo 3.1', audio:true, syntax:'Paragraf natural bahasa Inggris. Struktur: subjek + aksi + setting + gerakan kamera + lighting + audio. Dialog ditulis dalam tanda kutip.', ref:'Ingredients-to-video sampai 3 reference image, audio + lipsync native, vertikal 9:16 native.'},
+  /* OpenAI, bukan bagian keluarga Veo/Kling/Seedance — disebutkan terpisah
+     karena sering disamakan dengan Sora 1 yang jauh lebih lemah di fisika
+     dan konsistensi objek. Cameo mengunci identitas dari sebuah video
+     acuan singkat, berbeda dari reference IMAGE yang dipakai engine lain. */
+  sora:{name:'Sora 2 (OpenAI)', audio:true, syntax:'Paragraf naratif bahasa Inggris gaya brief sutradara: subjek, setting, aksi, lalu gerakan kamera dan suasana suara di akhir. Dialog dan SFX ditulis dalam tanda kutip.', ref:'Fisika dan konsistensi objek antar-frame paling kuat di kelasnya, termasuk interaksi tangan-benda yang sering gagal di engine lain. Kunci identitas lewat fitur Cameo dari video singkat, bukan gambar diam — beda cara kerja dari reference image engine lain.'},
   kling:{name:'Kling 3.0', audio:true, syntax:'Kalimat natural bahasa Inggris, jelas dan berurutan. Pisahkan deskripsi gerakan kamera di akhir.', ref:'Lipsync multi-bahasa, multi-shot storyboard dengan audio sync antar cut.'},
-  seedance:{name:'Seedance 2.0', audio:true, syntax:'Kalimat natural bahasa Inggris, deskriptif sinematik dengan arahan gerak.', ref:'Audio dan lipsync native.'},
+  /* Versi dinaikkan dari 2.0 — id "seedance" dipertahankan sengaja, lihat
+     catatan di atas objek ini. */
+  seedance:{name:'Seedance 2.5', audio:true, syntax:'Kalimat natural bahasa Inggris, deskriptif sinematik dengan arahan gerak.', ref:'Audio dan lipsync native, multi-shot dalam satu generate dengan kontinuitas karakter antar cut.'},
   runway:{name:'Runway Gen-4', audio:false, syntax:'Kalimat natural bahasa Inggris, fokus pada gerakan dan kamera. Ringkas.', ref:'Tanpa audio native — voice over ditambah terpisah.'},
+  pika:{name:'Pika 3.0', audio:true, syntax:'Kalimat natural bahasa Inggris, ringkas, langsung ke aksi utama. Efek transformasi ditulis sebagai instruksi terpisah di akhir kalimat (mis. "Pikaffects").', ref:'Kuat untuk efek transformasi bergaya dan b-roll pendek; ingredients menggabungkan beberapa gambar jadi satu adegan.'},
+  luma:{name:'Luma Ray3', audio:false, syntax:'Kalimat natural bahasa Inggris, deskriptif sinematik, fokus pada pencahayaan HDR dan pergerakan kamera halus.', ref:'Start frame & end frame mengontrol pergerakan secara presisi antara dua titik. Tanpa audio native — voice over ditambah terpisah.'},
+  vidu:{name:'Vidu Q2', audio:false, syntax:'Kalimat natural bahasa Inggris, ringkas. Sebutkan tiap subjek secara eksplisit kalau adegannya multi-karakter.', ref:'Kuat untuk konsistensi multi-karakter dari sampai 7 reference image sekaligus dalam satu adegan. Tanpa audio native.'},
   wan:{name:'Wan 2.5 (open source)', audio:true, syntax:'Kalimat natural bahasa Inggris, deskriptif.', ref:'Open source, bisa jalan lokal / RunPod.'},
-  hailuo:{name:'Hailuo / MiniMax', audio:false, syntax:'Kalimat natural bahasa Inggris, ringkas dan fokus pada satu aksi utama.', ref:'Gerakan halus, bagus untuk b-roll.'}
+  hailuo:{name:'Hailuo / MiniMax', audio:false, syntax:'Kalimat natural bahasa Inggris, ringkas dan fokus pada satu aksi utama.', ref:'Gerakan halus, bagus untuk b-roll.'},
+  pixverse:{name:'Pixverse V5', audio:false, syntax:'Kalimat natural bahasa Inggris, deskriptif, boleh menambah gaya visual di akhir kalimat.', ref:'Cepat dan murah untuk iterasi banyak varian; lipsync ditambahkan lewat fitur terpisah, bukan di generate utama, jadi audio TIDAK native di sini.'}
 };
 
 /* ---------------- pustaka realisme (anti AI-slop) ----------------
