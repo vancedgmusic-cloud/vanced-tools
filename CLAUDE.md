@@ -103,16 +103,34 @@ persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis ca
   KoboiLLM `https://lite.koboillm.com/v1` (instalasi LiteLLM) — tapi tetap
   **bisa diedit**, jangan dikunci.
 
-- `api.img` — gambar (`gemini_image`, `openai_image`, `compat_image`, `manual`).
-  `gemini_image` menerima foto referensi langsung; `openai_image` pakai
-  `/images/edits` multipart kalau ada referensi **dan** model cocok `/gpt-image/i`,
-  selain itu `/images/generations`.
+- `api.img` — gambar (`gemini_image`, `chat_image`, `openai_image`, `compat_image`,
+  `manual`). Yang menentukan bukan cuma modelnya, tapi **apakah foto acuan bisa
+  ikut terkirim** — tanpa itu anchor tidak bekerja dan wajah melenceng:
+
+  | mode | endpoint | foto acuan |
+  |---|---|---|
+  | `gemini_image` | `models/*:generateContent` | ya, `inlineData` |
+  | `chat_image` | `{base}/chat/completions` | ya, `image_url` data URI |
+  | `openai_image` | `/images/edits` bila ada acuan **dan** model cocok `/gpt-image/i`, selain itu `/images/generations` | ya, multipart |
+  | `compat_image` | `/images/generations` | **tidak** |
+
+  `chat_image` ada karena gateway LiteLLM (KoboiLLM) menyajikan model gambar
+  Gemini lewat `/chat/completions`. Bentuk balasannya belum seragam antar-versi,
+  jadi `pickChatImage()` sengaja memeriksa empat kemungkinan: `message.images[]`,
+  `message.content[]` bertipe `image_url`, data URI di dalam string, dan
+  `data[0].b64_json`. Parameter `modalities` juga diturun-tanggakan karena
+  sebagian gateway menolaknya.
 
 `fetchModels(base,key)` menarik `GET {base}/models` supaya user tidak perlu
 mengetik nama model; hasilnya masuk `MODEL_CACHE` (dikunci per base URL, sengaja
 di luar `state` supaya tidak ikut file project) lalu dirender sebagai `<datalist>`.
 **Jangan me-render ulang modal API saat kolom Base URL `change`** — node tombol
 "Tarik daftar" ikut terganti tepat saat diklik dan klik pertamanya hilang.
+
+`MODEL_HINTS` = rekomendasi model per gateway, disusun dari katalog milik user.
+Bukan daftar lengkap dan tidak dipakai untuk validasi — `hintsFor(base)` cuma
+menebak gateway dari base URL lalu menampilkan chip. Sumber kebenaran tetap
+`GET /models`.
 
 ### Aturan domain (jangan dilanggar)
 

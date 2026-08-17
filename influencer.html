@@ -794,6 +794,41 @@ async function callAI(prompt, maxTokens=1600, images){
 /* Gateway OpenAI-compatible (Dinoiki, LiteLLM/KoboiLLM, OpenRouter, OpenAI)
    sama-sama menyediakan GET /models. Dipakai supaya user tidak perlu mengetik
    nama model manual — cukup tarik daftarnya lalu pilih. */
+/* Rekomendasi model, disusun dari katalog Dinoiki & KoboiLLM milik user.
+   Bukan daftar lengkap — tombol "Tarik daftar" tetap sumber kebenarannya.
+   `v` = sanggup membaca gambar (dibutuhkan tahap Identitas Visual & QA). */
+const MODEL_HINTS={
+  dinoiki:{
+    txt:[
+      {m:'gpt-5.1',                  n:'seimbang', v:1},
+      {m:'gpt-5-mini',               n:'murah', v:1},
+      {m:'google/gemini-2.5-flash',  n:'termurah + vision', v:1},
+      {m:'claude-sonnet-4-6',        n:'tulisan terbaik', v:1}
+    ],
+    img:[{m:'gpt-image-1.5', n:'text→image & image→image'}]
+  },
+  koboillm:{
+    txt:[
+      {m:'gemini-2.5-flash',  n:'termurah + vision', v:1},
+      {m:'gemini-3.6-flash',  n:'lebih pintar', v:1},
+      {m:'gpt-5.1',           n:'seimbang', v:1},
+      {m:'gpt-5-mini',        n:'murah', v:1}
+    ],
+    img:[
+      {m:'gemini-2.5-flash-image',      n:'Nano Banana — termurah'},
+      {m:'gemini-3.1-flash-image',      n:'lebih baru'},
+      {m:'gemini-3-pro-image',          n:'Nano Banana Pro — terbaik, termahal'},
+      {m:'gpt-image-2',                 n:'OpenAI'}
+    ]
+  }
+};
+/* Gateway ditebak dari base URL supaya rekomendasinya ikut berpindah sendiri. */
+function hintsFor(base){
+  const b=String(base||'');
+  if(/dinoiki/i.test(b)) return {key:'dinoiki', label:'Dinoiki'};
+  if(/koboi/i.test(b))   return {key:'koboillm', label:'KoboiLLM'};
+  return null;
+}
 const MODEL_CACHE={};
 async function fetchModels(base, key, label){
   const b=String(base||'').replace(/\/+$/,'');
@@ -867,11 +902,69 @@ async function callJSON(prompt, maxTokens, images){
    PROVIDER — mesin gambar
 ===================================================================== */
 const IMG_PROVIDERS=[
-  {id:'gemini_image', name:'Gemini Image',  desc:'gemini-2.5-flash-image (Nano Banana). Terbaik untuk konsistensi wajah dari foto referensi.'},
-  {id:'openai_image', name:'OpenAI Images', desc:'gpt-image-1 lewat /images/generations & /images/edits.'},
-  {id:'compat_image', name:'Gateway lain',  desc:'Endpoint /images/generations OpenAI-compatible (Dinoiki, KoboiLLM, dll). Tanpa foto referensi.'},
-  {id:'manual',       name:'Tanpa render',  desc:'Aplikasi hanya menyusun prompt; kamu render sendiri di tool lain.'}
+  {id:'gemini_image', name:'Gemini langsung', desc:'Key AI Studio, model gemini-*-image. Foto referensi terkirim.'},
+  {id:'chat_image',   name:'Gateway · chat',  desc:'Model gambar Gemini/Nano Banana lewat /chat/completions gateway. Foto referensi TERKIRIM — pilihan terbaik untuk KoboiLLM.'},
+  {id:'openai_image', name:'OpenAI Images',   desc:'gpt-image-* lewat /images/generations & /images/edits. Foto referensi terkirim (Dinoiki).'},
+  {id:'compat_image', name:'Gateway · images',desc:'Endpoint /images/generations polos. Tanpa foto referensi — konsistensi wajah lebih lemah.'},
+  {id:'manual',       name:'Tanpa render',    desc:'Aplikasi hanya menyusun prompt; kamu render sendiri di tool lain.'}
 ];
+/* Gateway seperti LiteLLM menyajikan model gambar Gemini lewat /chat/completions
+   dan mengembalikan gambarnya di dalam pesan. Bentuk balasannya belum seragam
+   antar-versi, jadi diambil dari beberapa kemungkinan sekaligus. */
+function pickChatImage(d){
+  const msg=d?.choices?.[0]?.message;
+  const fromURL=u=>{
+    const m=/^data:([^;]+);base64,(.+)$/.exec(String(u||''));
+    if(m) return {mimeType:m[1], data:m[2]};
+    if(/^https?:/.test(u||'')) return {mimeType:'image/png', data:'', remoteUrl:u};
+    return null;
+  };
+  for(const im of (msg?.images||[])){
+    const got=fromURL(im?.image_url?.url||im?.url||im);
+    if(got) return got;
+  }
+  const c=msg?.content;
+  if(Array.isArray(c)){
+    for(const part of c){
+      if(part?.type==='image_url'||part?.type==='output_image'||part?.image_url){
+        const got=fromURL(part?.image_url?.url||part?.url||part?.image_url);
+        if(got) return got;
+      }
+      if(part?.b64_json) return {mimeType:'image/png', data:part.b64_json};
+    }
+  }
+  if(typeof c==='string'){
+    const m=/data:image\/[a-z+]+;base64,[A-Za-z0-9+/=]+/.exec(c);
+    if(m) return fromURL(m[0]);
+  }
+  if(d?.data?.[0]?.b64_json) return {mimeType:'image/png', data:d.data[0].b64_json};
+  return null;
+}
+async function chatImage(prompt, refs){
+  const a=state.api;
+  const base=String(a.imgOaBase||'').replace(/\/+$/,'');
+  if(!base) throw new Error('Base URL mesin gambar belum diisi (⚙ API).');
+  if(!a.imgOaKey) throw new Error('API key mesin gambar belum diisi (⚙ API).');
+  if(!a.imgOaModel) throw new Error('Nama model gambar belum diisi (⚙ API).');
+  const content=[{type:'text',text:prompt}, ...(refs||[]).filter(r=>r.data).map(r=>
+    ({type:'image_url', image_url:{url:'data:'+r.mimeType+';base64,'+r.data}}))];
+  const headers={'Content-Type':'application/json','Authorization':'Bearer '+a.imgOaKey};
+  const messages=[{role:'user',content}];
+  /* Sebagian gateway menolak parameter modalities; turun tangga kalau ditolak. */
+  const variants=[{model:a.imgOaModel,messages,modalities:['image','text']},{model:a.imgOaModel,messages}];
+  let lastErr=null;
+  for(const body of variants){
+    try{
+      const d=await postJSON(base+'/chat/completions',
+        {method:'POST',headers,body:JSON.stringify(body)},'Gateway gambar (chat)');
+      const got=pickChatImage(d);
+      if(got) return got;
+      const txt=String(d?.choices?.[0]?.message?.content||'').slice(0,180);
+      lastErr=new Error('Model ini membalas teks, bukan gambar'+(txt?': "'+txt+'"':'. Pastikan nama modelnya model gambar, mis. gemini-2.5-flash-image.'));
+    }catch(e){ lastErr=e; }
+  }
+  throw lastErr||new Error('Gateway gambar gagal.');
+}
 function b64ToBlob(b64, mime){
   const bin=atob(b64); const len=bin.length; const arr=new Uint8Array(len);
   for(let i=0;i<len;i++) arr[i]=bin.charCodeAt(i);
@@ -947,6 +1040,7 @@ async function generateImage(prompt, aspek, explicitRefs){
   const a=state.api, refs=explicitRefs||refsForImage();
   if(a.img==='manual') throw new Error('Mesin gambar diset "Tanpa render". Pilih mesin gambar di ⚙ API, atau salin prompt-nya ke tool lain.');
   if(a.img==='gemini_image') return geminiImage(prompt, refs, aspek);
+  if(a.img==='chat_image') return chatImage(prompt, refs);
   if(a.img==='openai_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'OpenAI Images', true, aspek);
   if(a.img==='compat_image') return openaiImage(prompt, refs, a.imgOaBase, a.imgOaKey, a.imgOaModel, 'Gateway gambar', false, aspek);
   throw new Error('Mesin gambar tidak dikenal.');
@@ -2127,6 +2221,14 @@ function renderApiModal(){
   /* Kolom model + tombol tarik daftar dari GET /models milik gateway. */
   const F_MODEL=(path,val,ph,which,base)=>{
     const list=MODEL_CACHE[String(base||'').replace(/\/+$/,'')]||null;
+    const h=hintsFor(base);
+    const rec=h&&MODEL_HINTS[h.key]&&MODEL_HINTS[h.key][which==='img'?'img':'txt']||[];
+    const chips=rec.length
+      ? '<div class="mini" style="margin:10px 0 6px">Rekomendasi '+esc(h.label)+
+        (which==='img'?'':' — semua sanggup membaca foto')+'</div><div class="chips">'+
+        rec.map(r=>'<button class="chip'+(val===r.m?' sel':'')+'" data-setmodel="'+esc(path)+'|'+esc(r.m)+'">'+
+          esc(r.m)+'<span class="rs">'+esc(r.n)+'</span></button>').join('')+'</div>'
+      : '';
     return '<div class="field"><label>Model'+(list?' — '+list.length+' tersedia di gateway':'')+'</label>'+
       '<div style="display:flex;gap:8px;align-items:flex-start">'+
         '<input data-path="'+path+'" value="'+esc(val||'')+'" list="ml-'+which+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+'>'+
@@ -2135,6 +2237,7 @@ function renderApiModal(){
       (list?'<datalist id="ml-'+which+'">'+list.map(m=>'<option value="'+esc(m)+'">').join('')+'</datalist>':'')+
       (list?'<div class="hint">Ketik untuk menyaring, atau klik kolomnya untuk melihat semua.'+
         (which==='img'?' Yang bernama image/flux/imagen/dall-e biasanya model gambar.':'')+'</div>':'')+
+      chips+
     '</div>';
   };
   let t='';
@@ -2160,12 +2263,16 @@ function renderApiModal(){
     '<button class="prov'+(a.img===p.id?' sel':'')+'" data-imgprov="'+p.id+'"><b>'+esc(p.name)+'</b><span>'+esc(p.desc)+'</span></button>').join('');
   let g='';
   if(a.img==='gemini_image') g=F_('Gemini API Key (kosongkan = pakai key mesin teks)','api.imgGeminiKey',a.imgGeminiKey,'AIza…',1)+F_('Model gambar','api.imgGeminiModel',a.imgGeminiModel,'gemini-2.5-flash-image');
-  if(a.img==='openai_image'||a.img==='compat_image') g=F_('Base URL','api.imgOaBase',a.imgOaBase,'https://api.openai.com/v1 · https://ai.dinoiki.com/v1 · https://lite.koboillm.com/v1')+F_('API Key','api.imgOaKey',a.imgOaKey,'',1)+F_MODEL('api.imgOaModel',a.imgOaModel,'gpt-image-1','img',a.imgOaBase);
+  if(a.img==='openai_image'||a.img==='compat_image'||a.img==='chat_image')
+    g=F_('Base URL','api.imgOaBase',a.imgOaBase,'https://api.openai.com/v1 · https://ai.dinoiki.com/v1 · https://lite.koboillm.com/v1')+
+      F_('API Key','api.imgOaKey',a.imgOaKey,'',1)+
+      F_MODEL('api.imgOaModel',a.imgOaModel,a.img==='chat_image'?'gemini-2.5-flash-image':'gpt-image-1.5','img',a.imgOaBase);
   $('#imgFields').innerHTML=g;
   const inotes={
-    gemini_image:'gemini-2.5-flash-image (Nano Banana) menerima foto referensi langsung di dalam permintaan, jadi wajahnya paling stabil antar foto. Ini pilihan yang disarankan.',
-    openai_image:'Dengan foto referensi, aplikasi memakai /images/edits (khusus model gpt-image-*). Tanpa referensi, memakai /images/generations.',
-    compat_image:'Untuk gateway yang hanya menyediakan /images/generations. Foto referensi tidak bisa dikirim — konsistensi wajah hanya dari teks identity lock.',
+    gemini_image:'Langsung ke Google AI Studio dengan key AIza… Menerima foto referensi di dalam permintaan, jadi wajahnya paling stabil. Rasio diatur lewat parameter resmi.',
+    chat_image:'Untuk gateway seperti KoboiLLM/LiteLLM yang menyajikan model gambar Gemini lewat /chat/completions. Foto referensi ikut terkirim sebagai lampiran pesan — inilah yang membuat anchor wajah tetap bekerja lewat gateway. Rasio dititipkan di teks prompt, bukan parameter, jadi kadang model menafsirkannya longgar.',
+    openai_image:'Dengan foto referensi, aplikasi memakai /images/edits (khusus model gpt-image-*). Tanpa referensi, memakai /images/generations. Cocok untuk gpt-image-1.5 di Dinoiki.',
+    compat_image:'Hanya /images/generations polos. Foto referensi TIDAK bisa dikirim — konsistensi wajah cuma bergantung teks identity lock. Pakai ini kalau dua mode di atas ditolak gateway-mu.',
     manual:'Tidak ada panggilan API gambar. Aplikasi tetap menyusun prompt final yang bisa kamu salin ke Midjourney, ComfyUI, atau tool lain.'
   };
   $('#imgNote').textContent=inotes[a.img]||'';
@@ -2362,6 +2469,11 @@ document.addEventListener('click', async e=>{
   if(t.dataset.export==='mediakit'){ exportMediaKit(); return; }
   if(t.dataset.export==='sheet'){ exportSheetHTML(); return; }
   if(t.dataset.export==='kalender'){ exportKalender(); return; }
+  if(t.dataset.setmodel){
+    const i=t.dataset.setmodel.indexOf('|');
+    setPath(state, t.dataset.setmodel.slice(0,i), t.dataset.setmodel.slice(i+1));
+    renderApiModal(); return;
+  }
   if(t.dataset.fetchmodels){
     if(busy) return;
     const a=state.api, which=t.dataset.fetchmodels;
