@@ -77,6 +77,12 @@ Sekarang: menu tanda unik diperluas jadi empat kelompok (bentuk, pigmen, jejak h
 
 **Flux Kontext sebagai engine terpisah dari Flux biasa.** Kontext bukan varian Flux Dev dengan nama beda — modelnya dilatih khusus untuk **edit bertarget** dari sebuah gambar acuan ("ubah X, biarkan sisanya sama persis"), bukan generate dari nol. Instruksinya karena itu punya gaya sendiri, dan tool menandainya butuh reference image secara wajib — tanpa itu mutunya turun ke Flux Dev biasa. Deteksi otomatis dari nama model (`flux-1-kontext-pro`, `flux.2-kontext-max`, dst.) diperiksa SEBELUM aturan `/flux/` generik supaya tidak salah tertangkap. Paling cocok untuk shot turnaround di tahap 08 dan Repair Kit di tahap 10 — edit terarah tanpa render ulang seluruh frame.
 
+**Engine video diperluas jadi 11, mengikuti jajaran top-10 nyata.** Sebelumnya hanya Veo, Kling, Seedance, Runway, Wan, dan Hailuo. Ditambah **Sora 2 (OpenAI)**, **Pika 3.0**, **Luma Ray3**, **Vidu Q2**, dan **Pixverse V5** — dan **Seedance dinaikkan ke versi 2.5**.
+
+Sora 2 dicatat sebagai kasus khusus: kunci identitasnya lewat fitur *Cameo* dari sebuah video singkat, bukan reference image diam seperti engine lain, dan fisika/konsistensi objeknya paling kuat di kelasnya termasuk interaksi tangan-benda yang sering gagal di engine lain. Luma Ray3 dan Vidu Q2 tanpa audio native — voice over tetap ditambah terpisah seperti Runway.
+
+id key `seedance` sengaja dipertahankan sama persis walau versinya naik ke 2.5, supaya project lama yang menyimpan `setup.vidEngine="seedance"` tetap cocok tanpa migrasi — hanya labelnya yang berubah.
+
 **Brief otomatis dari produk.** Tahap 01 menerima sampai tiga screenshot halaman produk marketplace atau papan Pinterest, lalu mengisi sendiri Niche, Kategori Produk, Target Audiens, Referensi Gaya, dan Catatan. Link tidak dilayani dan itu disengaja: browser dilarang mengambil isi halaman situs lain, dan model di balik API teks tidak bisa membuka halaman web — memaksakan link hanya menghasilkan karangan yang terdengar meyakinkan. Usulan untuk tahap 00 ditampilkan terpisah dengan tombol terima/abaikan, tidak pernah menimpa diam-diam.
 
 **Referensi visual.** Unggah sampai 4 gambar acuan dengan peran masing-masing (wajah, tubuh, gaya, mood). AI membacanya jadi deskripsi fisik terstruktur, lalu Character DNA diturunkan dari bacaan itu — bukan dikarang dari nol. Gambar dikecilkan otomatis ke 768px sehingga ikut tersimpan di project.
