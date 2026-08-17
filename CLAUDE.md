@@ -211,6 +211,49 @@ Autosave IndexedDB bersifat **lokal per browser dan per mesin, tidak sinkron**.
 Satu-satunya cara memindahkan proyek antar komputer adalah file project (.json)
 atau arsip ZIP — tahap Ekspor memuat checklist langkahnya.
 
+### Reset — isi proyek vs setup
+
+`state` dibelah dua secara sengaja:
+
+- **Isi proyek** dibuat oleh `freshProject()` — `talent`, `uploads`, `identity`,
+  `persona`, `shoot`, `sheet`, `kalender`, `shots`, `anchor`, `dirty`. Semua ini
+  milik satu influencer.
+- **Setup** ada di objek `state` itu sendiri — `api`, `post`, `qaGate`, `stampAI`,
+  `withImages`, `usage`. Milik mesin/preferensi user, bukan milik influencer-nya.
+
+`state` dibangun sebagai `Object.assign(freshProject(), { …setup… })`. **Field isi
+proyek yang baru wajib ditaruh di `freshProject()`, bukan di literal setup** —
+kalau tidak, ia lolos dari reset dan bocor ke proyek berikutnya. Invariannya
+diuji: setiap key `freshProject()` harus ada di `KEEP`.
+
+`resetProject()` menimpa **per key**, bukan mengganti objek `state`, supaya
+referensi yang sudah dipegang closure lain tetap menunjuk ke state yang sama.
+`usage.harga` dipertahankan (properti gateway, bukan proyek) sementara
+penghitungnya dinolkan.
+
+Mengganti foto talent bukan cuma mengganti satu tahap: identity lock, persona,
+character sheet, rencana foto, dan semua render adalah turunan dari talent lama.
+**`state.anchor` adalah kebocoran paling berbahaya** — ia dikirim ke mesin gambar
+di setiap render tanpa pernah muncul di form, jadi wajah lama bisa ikut ke proyek
+baru tanpa user melihat apa pun.
+
+Dua hal yang jangan dilonggarkan:
+
+- **Slot autosave WAJIB ikut dihapus.** Tanpa itu, membuka app lagi menawarkan
+  memulihkan proyek yang baru dibuang — kebocoran lewat pintu belakang, persis
+  yang tombol ini seharusnya mencegah.
+- **`projectEpoch`.** Autosave yang sudah berjalan sebelum reset memegang snapshot
+  proyek lama; kalau tulisannya mendarat setelah slot dihapus, snapshot lama hidup
+  kembali. `resetProject()` menunggu `autoRunning` selesai, dan `autosaveNow()`
+  memeriksa `projectEpoch` sesudah put sebagai jaring kedua karena transaksi yang
+  sudah dikirim tidak bisa dibatalkan.
+
+Modal konfirmasinya merinci **dua kolom** — apa yang dihapus (dengan jumlah dan
+perkiraan biaya API untuk membuatnya ulang) dan apa yang dipertahankan. Itu bukan
+hiasan: tanpa kolom kedua, user akan menghindari tombolnya karena takut key-nya
+hilang. Tombol "💾 Simpan dulu" sengaja **tidak** menutup modal. Semua jalan keluar
+yang tidak sengaja — klik latar, Escape — berarti **batal**, bukan lanjut.
+
 ### Tahap `sheet` — character sheet
 
 Lembar acuan tetap yang dipakai ulang oleh semua tahap sesudahnya. `buildContext()`

@@ -194,6 +194,10 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
 
 /* ---------- tabel sheet / kalender ---------- */
 .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+/* Ringkasan isi proyek di modal Reset — sengaja tanpa min-width supaya muat. */
+table.sum{border-collapse:collapse;width:100%;font-size:12.5px}
+table.sum td{border-bottom:1px solid var(--line);padding:7px 2px}
+table.sum tr:last-child td{border-bottom:none}
 table.tl{border-collapse:collapse;width:100%;min-width:720px;font-size:12.5px}
 table.tl th{
   font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
@@ -328,6 +332,7 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
       <button class="btn small" id="btnLoad" title="Buka project .json">📂 Buka</button>
       <button class="btn small" id="btnSave" title="Simpan project sebagai .json">💾 Simpan</button>
       <button class="btn small" id="btnApi">⚙ API</button>
+      <button class="btn small danger needidle" id="btnReset" title="Kosongkan proyek untuk talent baru">🗑 Reset</button>
     </div>
   </header>
 
@@ -363,6 +368,20 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
       <button class="btn ghost" id="btnTestTxt">Tes mesin teks</button>
       <button class="btn ghost" id="btnTestImg">Tes mesin gambar</button>
       <button class="btn primary" id="btnCloseApi">Selesai</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset modal -->
+<div class="overlay" id="resetOverlay">
+  <div class="modal" style="max-width:560px">
+    <h2>Mulai proyek baru</h2>
+    <div class="sub">Mengosongkan seluruh isi proyek supaya talent baru benar-benar mulai dari nol — tidak ada sisa wajah, anchor, atau rencana dari proyek sebelumnya.</div>
+    <div id="resetBody"></div>
+    <div class="foot">
+      <button class="btn ghost" id="btnResetCancel">Batal</button>
+      <button class="btn" id="btnResetSave">💾 Simpan dulu</button>
+      <button class="btn danger" id="btnResetGo">🗑 Hapus &amp; mulai baru</button>
     </div>
   </div>
 </div>
@@ -434,7 +453,33 @@ function setBusy(b, text){
 /* ---------------- state ---------------- */
 /* Tidak ada localStorage: persistence lewat Simpan/Buka project (.json).
    Kalau menambah key top-level di sini, daftarkan juga di KEEP pada loadProject. */
-const state={
+
+/* ISI PROYEK — semua yang milik satu influencer. Dipisah dari setup (api,
+   setelan realisme, harga per gambar) supaya tombol Reset bisa mengosongkannya
+   tanpa menyentuh mesin AI. Dibuat lewat fungsi, bukan objek literal, supaya
+   reset selalu mendapat objek yang benar-benar baru dan tidak mungkin masih
+   memegang referensi array/objek dari proyek sebelumnya.
+   Menambah field isi proyek: taruh DI SINI, bukan di objek state di bawah —
+   kalau tidak, ia akan lolos dari Reset dan bocor ke proyek berikutnya. */
+function freshProject(){
+  return {
+    talent:{ mode:'inspired', consent:false, catatan:'', bahasa:'Indonesia (santai, ala creator)' },
+    uploads:{ refs:[] },
+    identity:{},
+    persona:{ disclosure:true },
+    shoot:{
+      jumlah:6, aspek:'2:3', tema:'', outfit:'', mood:'', platform:'Instagram feed + Reels cover',
+      realisme:'phone', kamera:'', jiwa:'', negatif:''
+    },
+    sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[],
+            grid:{ cols:4, rows:3, aspek:'2:3', latar:'studio', label:true, cells:[], sheetImg:null } },
+    kalender:{ hari:14, mulai:'', rows:[] },
+    shots:[],
+    anchor:null,
+    dirty:{}
+  };
+}
+const state=Object.assign(freshProject(),{
   api:{
     txt:'gemini',
     geminiKey:'', geminiModel:'gemini-2.5-flash',
@@ -450,19 +495,6 @@ const state={
     imgXaiBase:'https://api.x.ai/v1', imgXaiKey:'', imgXaiModel:'grok-imagine-image-2.0',
     imgFreeModel:'flux'
   },
-  talent:{ mode:'inspired', consent:false, catatan:'', bahasa:'Indonesia (santai, ala creator)' },
-  uploads:{ refs:[] },
-  identity:{},
-  persona:{ disclosure:true },
-  shoot:{
-    jumlah:6, aspek:'2:3', tema:'', outfit:'', mood:'', platform:'Instagram feed + Reels cover',
-    realisme:'phone', kamera:'', jiwa:'', negatif:''
-  },
-  sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[],
-          grid:{ cols:4, rows:3, aspek:'2:3', latar:'studio', label:true, cells:[], sheetImg:null } },
-  kalender:{ hari:14, mulai:'', rows:[] },
-  shots:[],
-  anchor:null,
   stampAI:false,
   /* Gerbang mutu otomatis: render → periksa → ulangi kalau di bawah ambang. */
   qaGate:{ on:false, min:75, retry:1 },
@@ -475,10 +507,11 @@ const state={
      kehilangannya diam-diam jauh lebih buruk daripada file yang besar. */
   withImages:true,
   /* Penghitung pemakaian per proyek. harga = perkiraan biaya per gambar (USD),
-     diisi user karena tiap gateway berbeda dan aplikasi tidak boleh menebak. */
-  usage:{ img:0, txt:0, harga:0.04 },
-  dirty:{}
-};
+     diisi user karena tiap gateway berbeda dan aplikasi tidak boleh menebak.
+     Reset mengosongkan penghitungnya tapi MEMPERTAHANKAN harga: itu properti
+     gateway yang dipakai user, bukan milik proyeknya. */
+  usage:{ img:0, txt:0, harga:0.04 }
+});
 
 /* ---------------- steps ---------------- */
 const STEPS=[
@@ -2260,6 +2293,11 @@ function viewExport(){
       '<div class="check ok"><span class="sym">2</span><div>Unduh juga <b>Arsip (.zip)</b> sebagai cadangan. Di dalamnya foto tersimpan sebagai file terpisah, jadi tetap terselamatkan kalau .json-nya bermasalah.</div></div>'+
       '<div class="check ok"><span class="sym">3</span><div>Aplikasinya sendiri cukup file <code>influencer.html</code> ini — salin, atau unduh ulang dari repo. Tidak butuh install maupun server.</div></div>'+
       '<div class="check warn"><span class="sym">4</span><div>API key <b>harus diisi ulang</b> di mesin baru lewat ⚙ API. Itu memang disengaja: key tidak pernah ikut ke file maupun ke disk. Setelan lain (base URL, model, preset realisme, gerbang mutu) ikut tersimpan.</div></div>'+
+    '</div>'+
+    '<div class="card"><h3>🗑 Ganti talent · mulai proyek baru</h3>'+
+      '<p class="hint" style="margin:-6px 0 12px">Untuk influencer berikutnya, kosongkan proyek ini dulu. Mengganti foto talent saja tidak cukup: identity lock, <b>anchor</b>, persona, character sheet, dan semua gambar hasil render adalah turunan dari talent yang lama, dan anchor ikut terkirim ke mesin gambar di setiap render tanpa pernah terlihat di form.</p>'+
+      '<div class="toolbar"><button class="btn danger needidle" id="btnReset2">🗑 Kosongkan proyek…</button>'+
+      '<div class="spacer"></div><span class="stamp">simpan atau unduh arsipnya dulu</span></div>'+
     '</div>';
 }
 
@@ -2905,10 +2943,15 @@ function imageWeight(){
   return n;
 }
 let autoTimer=null, autoLast=0, autoOn=true, autoNoImg=false, autoRunning=false;
+/* Dinaikkan tiap kali proyek di-reset. Autosave yang sudah berjalan sebelum
+   reset memegang snapshot proyek LAMA; kalau tulisannya mendarat setelah slot
+   dihapus, proyek yang baru dibuang akan ditawarkan lagi saat app dibuka. */
+let projectEpoch=0;
 function autoStamp(txt){ const el=$('#autoStamp'); if(el) el.textContent=txt; }
 async function autosaveNow(){
   if(!autoOn||dbFailed||autoRunning) return;
   autoRunning=true;
+  const epoch=projectEpoch;
   try{
     try{
       await idbTx('readwrite',st=>st.put({t:Date.now(), state:snapshotForDisk(!autoNoImg)}, DB_SLOT));
@@ -2919,6 +2962,12 @@ async function autosaveNow(){
       autoNoImg=true;
       await idbTx('readwrite',st=>st.put({t:Date.now(), state:snapshotForDisk(false)}, DB_SLOT));
       toast('Penyimpanan browser penuh — autosave lanjut tanpa gambar. Pakai 🗄 Arsip .zip untuk menyimpan gambarnya.','err');
+    }
+    if(epoch!==projectEpoch){
+      /* Reset terjadi saat tulisan ini sedang jalan — buang lagi hasilnya. */
+      try{ await idbTx('readwrite',st=>st.delete(DB_SLOT)); }catch(err){}
+      autoStamp('belum tersimpan');
+      return;
     }
     autoLast=Date.now();
     autoStamp((autoNoImg?'tersimpan tanpa gambar ':'tersimpan ')+new Date(autoLast).toLocaleTimeString('id-ID'));
@@ -2959,6 +3008,85 @@ async function discardAutosave(){
   pendingRestore=null;
   try{ await idbTx('readwrite',st=>st.delete(DB_SLOT)); }catch(e){}
   render();
+}
+
+/* =====================================================================
+   RESET — ganti talent, mulai proyek baru
+
+   Ganti foto talent bukan sekadar mengganti satu tahap: identity lock, anchor,
+   persona, character sheet, rencana foto, dan semua gambar hasil render adalah
+   turunan dari talent yang lama. Kalau salah satu tertinggal, wajah lama akan
+   ikut ke proyek baru — anchor lah yang paling berbahaya, karena ia dikirim
+   diam-diam ke mesin gambar di SETIAP render tanpa pernah muncul di form.
+
+   Yang dibuang: seluruh isi proyek (freshProject) + penghitung pemakaian.
+   Yang tetap: state.api, setelan realisme (post), gerbang mutu, stampAI,
+   withImages, dan usage.harga — itu semua milik mesin/preferensi user, bukan
+   milik influencer-nya, dan memaksa user mengisinya ulang tiap ganti talent
+   hanya akan membuat tombol ini dihindari.
+===================================================================== */
+function resetSummary(){
+  const s=state;
+  return [
+    ['Foto referensi talent',            s.uploads.refs.length],
+    ['Identitas visual (identity lock)', s.identity.identity_lock?1:0],
+    ['Persona & brand',                  s.persona.nama?1:0],
+    ['Panduan niche & platform',         s.sheet.niche_rows.length+s.sheet.platform_rows.length],
+    ['Panel character sheet ter-render', s.sheet.panels.reduce((a,p)=>a+(p.imgs||[]).length,0)],
+    ['Sel grid terisi',                  s.sheet.grid.cells.filter(c=>c.img).length],
+    ['Kanvas grid gabungan',             s.sheet.grid.sheetImg?1:0],
+    ['Rencana foto',                     s.shots.length],
+    ['Foto hasil render',                s.shots.reduce((a,x)=>a+x.imgs.length,0)],
+    ['Caption & script',                 s.shots.filter(x=>x.konten).length],
+    ['Baris kalender konten',            s.kalender.rows.length]
+  ].filter(([,n])=>n>0);
+}
+function renderResetModal(){
+  const rows=resetSummary(), n=imageCount();
+  const biaya=n*(+state.usage.harga||0);
+  const kosong=!rows.length;
+  $('#resetBody').innerHTML=
+    (kosong
+      ? '<div class="check ok"><span class="sym">✓</span><div>Proyek ini masih kosong — tidak ada apa pun yang akan hilang.</div></div>'
+      : '<div class="mini">Yang akan dihapus</div><table class="sum"><tbody>'+
+        rows.map(([label,jml])=>'<tr><td>'+esc(label)+'</td><td style="text-align:right;width:64px"><b>'+jml+'</b></td></tr>').join('')+
+        '</tbody></table>')+
+    (n>0
+      ? '<div class="check err" style="margin-top:12px"><span class="sym">✕</span><div><b>'+n+
+        ' gambar hasil render akan hilang permanen</b>'+(biaya>0?' (perkiraan biaya API untuk membuatnya ulang: ~$'+biaya.toFixed(2)+')':'')+
+        '. Autosave di browser juga dihapus, jadi tidak ada jalan kembali. Simpan dulu kalau kamu masih mungkin membutuhkannya.</div></div>'
+      : '')+
+    '<div class="mini">Yang tetap dipertahankan</div>'+
+    '<div class="check ok"><span class="sym">✓</span><div>Mesin AI, base URL, model, dan <b>API key</b> yang sedang aktif — kamu tidak perlu mengisinya ulang.</div></div>'+
+    '<div class="check ok"><span class="sym">✓</span><div>Setelan realisme (preset kamera &amp; pasca-proses), gerbang mutu QA, cap label AI, dan perkiraan harga per gambar.</div></div>'+
+    '<div class="keynote">Reset juga menghapus snapshot autosave di browser ini. Tanpa itu, membuka aplikasi lagi akan menawarkan memulihkan proyek yang baru saja kamu hapus — dan wajah lama masuk kembali lewat pintu belakang.</div>';
+  $('#btnResetSave').style.display = n>0 ? '' : 'none';
+  $('#btnResetGo').textContent = kosong ? '🗑 Mulai baru' : '🗑 Hapus & mulai baru';
+}
+function openReset(){ renderResetModal(); $('#resetOverlay').classList.add('open'); }
+function closeReset(){ $('#resetOverlay').classList.remove('open'); }
+async function resetProject(){
+  clearTimeout(autoTimer);
+  projectEpoch++;
+  const fresh=freshProject();
+  /* Ditimpa per key, bukan dengan mengganti objek state, supaya setiap referensi
+     yang sudah dipegang closure lain tetap menunjuk ke state yang sama. */
+  Object.keys(fresh).forEach(k=>{ state[k]=fresh[k]; });
+  state.usage.img=0; state.usage.txt=0;
+  gridAbort=false;
+  pendingRestore=null;
+  autoNoImg=false;
+  /* Layar dikosongkan lebih dulu supaya wajah lama tidak sempat terlihat lagi
+     selama menunggu IndexedDB. */
+  closeReset();
+  go('talent');
+  /* Tunggu autosave yang sedang berjalan, kalau tidak tulisannya bisa mendarat
+     setelah slot dihapus. autosaveNow juga memeriksa projectEpoch sebagai jaring
+     kedua, karena transaksi yang sudah dikirim tidak bisa dibatalkan. */
+  for(let i=0;i<40&&autoRunning;i++) await sleep(50);
+  try{ await idbTx('readwrite',st=>st.delete(DB_SLOT)); }catch(e){}
+  autoStamp('belum tersimpan');
+  toast('Proyek dikosongkan. Semua tahap kembali ke nol — key & setelan mesin tetap terpasang.','ok');
 }
 
 /* =====================================================================
@@ -3319,6 +3447,12 @@ document.addEventListener('click', async e=>{
     case 'btnTestImg': testImage(); break;
     case 'btnSave': case 'btnSave2': saveProject(); break;
     case 'btnLoad': $('#fileInput').click(); break;
+    case 'btnReset': case 'btnReset2': openReset(); break;
+    case 'btnResetCancel': closeReset(); break;
+    /* Simpan tanpa menutup modal: setelah unduhan selesai user masih di depan
+       daftar isi proyek dan bisa langsung menghapus dengan tenang. */
+    case 'btnResetSave': saveProject(); renderResetModal(); break;
+    case 'btnResetGo': resetProject(); break;
   }
 });
 
@@ -3336,6 +3470,15 @@ document.addEventListener('drop', e=>{
   addRefs(e.dataTransfer?.files);
 });
 $('#apiOverlay').addEventListener('click', e=>{ if(e.target.id==='apiOverlay') { e.currentTarget.classList.remove('open'); render(); } });
+/* Klik latar = batal, bukan lanjut. Aksinya menghapus, jadi jalan keluar yang
+   tidak sengaja harus selalu berarti "tidak". */
+$('#resetOverlay').addEventListener('click', e=>{ if(e.target.id==='resetOverlay') closeReset(); });
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    closeReset();
+    $('#apiOverlay').classList.remove('open');
+  }
+});
 window.addEventListener('beforeunload', e=>{
   /* Autosave sudah menahan sebagian besar risiko, tapi ekspor tetap satu-satunya
      salinan yang bisa dibawa keluar dari browser ini. */
