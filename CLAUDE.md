@@ -254,6 +254,61 @@ hiasan: tanpa kolom kedua, user akan menghindari tombolnya karena takut key-nya
 hilang. Tombol "💾 Simpan dulu" sengaja **tidak** menutup modal. Semua jalan keluar
 yang tidak sengaja — klik latar, Escape — berarti **batal**, bukan lanjut.
 
+### Sesi pemotretan — arsitektur prompt bertingkat
+
+Prompt gambar punya **tiga tingkat, semuanya dikunci di kode, bukan dikarang AI**:
+
+| tingkat | blok | ruang lingkup | sumber |
+|---|---|---|---|
+| 1 | `SUBJECT` | seumur proyek | `identity.identity_lock` |
+| 2 | `SETTING` | satu sesi | `settingLine(sesi)` |
+| 3 | `SCENE` | satu foto | `shots[].prompt` |
+
+Alasan tingkat 2 ada sama persis dengan alasan tingkat 1 ada: kalau outfit ditulis
+ulang oleh AI di tiap foto, ia berubah sedikit demi sedikit — kemeja linen krem jadi
+blus katun putih — dan feed-nya langsung terbaca palsu. Yang membuat feed AI ketahuan
+**bukan cacat di masing-masing gambar, melainkan hubungan antar gambar**: orang
+sungguhan tidak ganti baju dan pindah kota di setiap postingan.
+
+Karena itu `promptShoot()` **melarang** AI menyebut outfit, pakaian, lokasi, rambut,
+waktu, atau arah cahaya di `shots[].prompt` — sama seperti larangan menulis wajah.
+`shots[].prompt` hanya boleh berisi pose, mikro-aksi, ekspresi, framing, dan satu
+detail lingkungan. Jangan longgarkan; ini poros seluruh fitur.
+
+`state.sesi[]` = `{id, nama, outfit, lokasi, waktu, cahaya, rambut, catatan}`.
+`shots[].sesi` menyimpan id-nya; `''` berarti **foto lepas** — tetap bisa dirender,
+hanya tidak mendapat blok `SETTING`.
+
+**Peran foto (`PERAN`).** Feed asli bukan kumpulan foto juara semua — justru itu yang
+membuatnya terbaca sebagai katalog. Empat peran: `hero`, `filler`, `objek`, `cermin`,
+dengan porsi di `peranMix()`.
+
+Peran `objek` (frame tanpa orang) punya `noIdentity` dan diperlakukan berbeda di
+**empat** tempat. Keempatnya wajib — masing-masing pernah jadi sumber bug yang sama
+di grid character sheet (`nf`):
+
+1. `finalPrompt()` tidak memasang identity lock **maupun** blok REALISM (keduanya
+   bicara soal kulit dan wajah), dan memakai `OBJEK_TAIL`.
+2. `renderShot()` mengirim `explicitRefs=[]` — anchor adalah wajah; mengirimkannya
+   ke frame benda membuat model memaksa wajah masuk frame.
+3. `renderShot()` melewati gerbang QA — `qaImage()` membandingkan hasil dengan
+   identity lock, jadi foto meja selalu dinilai nol dan memicu render ulang berbayar.
+4. Hasilnya **tidak boleh** jadi `state.anchor`. Anchor harus selalu wajah.
+
+Frame `objek` juga yang paling murah dan paling meyakinkan sekaligus — itu bukan
+efek samping, itu alasan porsinya besar.
+
+**Kompatibilitas mundur** ditangani di dua tempat, keduanya sengaja memaafkan:
+
+- `normalizeState()` — project lama menyimpan `outfit`/`lokasi`/`pencahayaan` di
+  level foto. Nilainya **tidak dibuang**, ditempelkan ke `prompt` supaya foto lama
+  tetap merender adegan yang sama; fotonya jadi foto lepas.
+- `adoptShoot()` — balasan AI bentuk lama (`{"shots":[…]}` datar) dibungkus jadi satu
+  sesi supaya tidak ada foto yatim.
+
+Menghapus sesi **tidak** menghapus fotonya — foto berisi gambar hasil render yang
+mahal. Foto-fotonya dilepas jadi foto lepas; user yang memutuskan nasibnya.
+
 ### Tahap `sheet` — character sheet
 
 Lembar acuan tetap yang dipakai ulang oleh semua tahap sesudahnya. `buildContext()`

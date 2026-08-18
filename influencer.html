@@ -194,6 +194,14 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
 
 /* ---------- tabel sheet / kalender ---------- */
 .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+/* Badge peran foto di tahap Rencana Foto. Warna membedakan frame berisi orang
+   dari frame tanpa orang, karena keduanya berbeda biaya dan berbeda risiko. */
+.peran{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  padding:3px 7px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);flex:none}
+.peran.hero{border-color:#54401f;color:var(--amber)}
+.peran.objek{border-color:#2c4a3a;color:var(--green)}
+.peran.cermin{border-color:#3d3a5a;color:var(--violet)}
+.card.sesi{border-left:2px solid var(--violet)}
 /* Ringkasan isi proyek di modal Reset — sengaja tanpa min-width supaya muat. */
 table.sum{border-collapse:collapse;width:100%;font-size:12.5px}
 table.sum td{border-bottom:1px solid var(--line);padding:7px 2px}
@@ -468,12 +476,18 @@ function freshProject(){
     identity:{},
     persona:{ disclosure:true },
     shoot:{
-      jumlah:6, aspek:'2:3', tema:'', outfit:'', mood:'', platform:'Instagram feed + Reels cover',
+      jumlah:8, sesiJumlah:2, aspek:'2:3', tema:'', outfit:'', mood:'', platform:'Instagram feed + Reels cover',
       realisme:'phone', kamera:'', jiwa:'', negatif:''
     },
     sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[],
             grid:{ cols:4, rows:3, aspek:'2:3', latar:'studio', label:true, cells:[], sheetImg:null } },
     kalender:{ hari:14, mulai:'', rows:[] },
+    /* Sesi pemotretan. Foto asli tidak dibuat satu-satu: orang memotret dalam
+       sesi — satu hari, satu outfit, satu lokasi, satu kondisi cahaya, lalu
+       5-12 frame. Feed yang tiap fotonya ganti baju dan pindah kota adalah
+       penanda AI paling gampang dibaca, jauh lebih kuat daripada cacat di
+       masing-masing gambar. */
+    sesi:[],
     shots:[],
     anchor:null,
     dirty:{}
@@ -1313,22 +1327,136 @@ function promptPersona(fb){
     '\nSemua dalam '+state.talent.bahasa+'.'+
     fbLine(fb)+'\n'+JSON_RULE+'\nSkema: '+schemaOf(F.persona);
 }
+/* =====================================================================
+   SESI PEMOTRETAN
+
+   Arsitektur prompt aplikasi ini bertingkat, dan tiap tingkat DIKUNCI oleh
+   kode, bukan dikarang AI:
+
+     1. SUBJECT  — identity lock. Tetap seumur proyek. Yang menjaga wajah.
+     2. SETTING  — kunci sesi. Tetap sepanjang satu sesi. Outfit, lokasi,
+                   rambut, waktu, arah cahaya.
+     3. SCENE    — milik satu foto. HANYA pose, mikro-aksi, ekspresi, framing,
+                   dan satu detail lingkungan.
+
+   Alasannya sama persis dengan alasan identity lock ada: kalau outfit ditulis
+   ulang oleh AI di tiap foto, ia akan berubah sedikit demi sedikit — kemeja
+   linen krem jadi blus katun putih — dan feed-nya langsung terbaca palsu.
+   Karena itu promptShoot MELARANG AI menulis outfit/lokasi/cahaya di
+   shots[].prompt untuk foto yang berada di dalam sesi.
+===================================================================== */
+/* Peran foto dalam satu sesi. Feed asli bukan kumpulan foto juara semua —
+   justru itu yang membuatnya terbaca sebagai katalog, bukan hidup seseorang.
+   `noIdentity` pada peran objek bukan penghematan sampingan: frame tanpa orang
+   adalah yang paling meyakinkan DAN paling murah, sekaligus nol risiko wajah
+   melenceng. */
+const PERAN=[
+  {id:'hero',   label:'Hero',        rs:'foto utama, layak jadi feed',        porsi:2},
+  {id:'filler', label:'Candid',      rs:'biasa saja — ini yang bikin percaya', porsi:5},
+  {id:'objek',  label:'Tanpa wajah', rs:'benda/tempat miliknya, tanpa orang',  porsi:3, noIdentity:true},
+  {id:'cermin', label:'Cermin',      rs:'mirror selfie, penanda orang nyata',  porsi:1}
+];
+const peranDef=id=>PERAN.find(p=>p.id===id)||PERAN[1];
+/* Komposisi peran untuk n foto, mengikuti porsi di atas dan diselang-seling
+   supaya foto bertetangga tidak sejenis. */
+function peranMix(n){
+  const pool=[];
+  PERAN.forEach(p=>{ for(let i=0;i<p.porsi;i++) pool.push(p.id); });
+  const out=[];
+  for(let i=0;i<n;i++) out.push(pool[(i*3)%pool.length]);
+  return out;
+}
+let sesiSeq=0;
+function sesiBaru(init){
+  return Object.assign({
+    id:'s'+(++sesiSeq)+'-'+Math.random().toString(36).slice(2,6),
+    nama:'', outfit:'', lokasi:'', waktu:'', cahaya:'', rambut:'', catatan:''
+  }, init||{});
+}
+const sesiOf=sh=>state.sesi.find(x=>x.id===(sh&&sh.sesi))||null;
+/* Blok SETTING — dikunci, diprepend ke setiap foto milik sesi ini. Dibangun di
+   kode supaya isinya identik huruf per huruf di semua foto sesi tersebut. */
+function settingLine(se){
+  if(!se) return '';
+  const P=[
+    se.outfit && 'wearing '+se.outfit,
+    se.lokasi && 'at '+se.lokasi,
+    se.rambut && 'hair '+se.rambut,
+    se.waktu  && se.waktu,
+    se.cahaya && se.cahaya
+  ].map(x=>String(x||'').trim()).filter(Boolean);
+  if(!P.length) return '';
+  return 'SETTING (identical in every frame of this session, do not vary): '+P.join(', ')+'.';
+}
+/* Jumlah foto per sesi, dipakai UI dan ekspor. */
+function shotsOfSesi(id){ return state.shots.filter(sh=>sh.sesi===id); }
+/* Menyerap balasan AI. Sengaja memaafkan dua bentuk lama: balasan datar
+   {"shots":[…]} dari versi sebelum ada sesi, dan sesi tanpa daftar shots.
+   Yang datar dimasukkan ke satu sesi "Lepas" supaya tidak ada foto yatim —
+   foto tanpa sesi tetap bisa dirender, hanya tidak mendapat kunci SETTING. */
+function adoptShoot(d){
+  const mkShot=(s, sesiId, fallbackPeran)=>({
+    judul:s.judul||'', tujuan:s.tujuan||'',
+    peran:(PERAN.find(p=>p.id===s.peran)||{}).id||fallbackPeran||'filler',
+    pose:s.pose||'', prompt:s.prompt||'', negative:s.negative||'',
+    sesi:sesiId||'', imgs:[], konten:null
+  });
+  const sesiArr=Array.isArray(d.sesi)?d.sesi:null;
+  if(sesiArr&&sesiArr.length){
+    const sesi=[], shots=[];
+    sesiArr.forEach(se=>{
+      const rec=sesiBaru({
+        nama:se.nama||'', outfit:se.outfit||'', lokasi:se.lokasi||'',
+        waktu:se.waktu||'', cahaya:se.cahaya||'', rambut:se.rambut||'', catatan:se.catatan||''
+      });
+      sesi.push(rec);
+      const arr=Array.isArray(se.shots)?se.shots:[];
+      const mix=peranMix(arr.length);
+      arr.forEach((sh,i)=>shots.push(mkShot(sh, rec.id, mix[i])));
+    });
+    if(!shots.length) throw new Error('AI mengembalikan sesi tanpa satu pun foto. Coba lagi.');
+    state.sesi=sesi; state.shots=shots;
+    return;
+  }
+  const arr=Array.isArray(d.shots)?d.shots:(Array.isArray(d)?d:[]);
+  if(!arr.length) throw new Error('AI tidak mengembalikan daftar foto. Coba lagi.');
+  const rec=sesiBaru({nama:'Sesi 1', outfit:'', lokasi:''});
+  const mix=peranMix(arr.length);
+  state.sesi=[rec];
+  state.shots=arr.map((sh,i)=>mkShot(sh, rec.id, mix[i]));
+}
+
 function promptShoot(fb){
-  const n=Math.max(1,Math.min(12,+state.shoot.jumlah||6));
+  const n=Math.max(1,Math.min(24,+state.shoot.jumlah||6));
+  const nSesi=Math.max(1,Math.min(6,+state.shoot.sesiJumlah||Math.max(1,Math.round(n/4))));
+  const mix=PERAN.map(p=>p.id+' ('+p.rs+')').join('; ');
   return HEADER+'\n'+buildContext()+
-    '\n\nTAHAP: RENCANA PHOTOSHOOT. Rancang '+n+' foto berbeda untuk satu sesi konten influencer ini.'+
-    '\nSetiap foto harus berbeda jelas: variasikan lokasi, jarak kamera (close-up / medium / full body), outfit, waktu, aktivitas, dan ekspresi. Jangan ada dua foto yang mirip.'+
-    '\nField judul, tujuan, outfit, lokasi, pose, pencahayaan dalam '+state.talent.bahasa+' dan singkat.'+
-    '\nField prompt WAJIB bahasa Inggris, 45–90 kata, mendeskripsikan HANYA: outfit, lokasi/latar, pose & aktivitas, ekspresi, pencahayaan, dan komposisi. JANGAN mendeskripsikan wajah, umur, etnis, atau rambut di field prompt — identitas sudah dikunci terpisah dan akan ditambahkan otomatis di depan prompt. Jangan tulis aspect ratio, setelan kamera, atau kata "photorealistic"; ketiganya ditambahkan otomatis.'+
-    '\nSYARAT ANTI-KAKU (wajib, ini pembeda foto nyata dan foto AI). Setiap prompt harus memuat:'+
+    '\n\nTAHAP: RENCANA PHOTOSHOOT. Rancang '+nSesi+' SESI pemotretan dengan total '+n+' foto.'+
+    '\n\nAPA ITU SESI. Satu sesi = satu hari, satu outfit, satu lokasi, satu kondisi cahaya. Orang sungguhan tidak berganti baju dan berpindah tempat di setiap foto — mereka memotret beberapa frame sekaligus dalam satu kesempatan. Feed yang tiap fotonya ganti outfit dan lokasi adalah penanda konten AI yang paling gampang dibaca orang.'+
+    '\nAntar sesi HARUS berbeda jelas (outfit, lokasi, waktu, mood). Di DALAM satu sesi, outfit/lokasi/rambut/cahaya WAJIB sama persis — yang berubah hanya pose, aktivitas, jarak kamera, dan ekspresi.'+
+    '\n\nPERAN FOTO. Feed asli bukan kumpulan foto juara semua; justru itu yang membuatnya terbaca sebagai katalog. Setiap foto diberi salah satu peran: '+mix+'.'+
+    '\nSetiap sesi minimal punya satu foto berperan "objek" — frame tanpa orang sama sekali (benda, sudut ruangan, makanan, sepatu di lantai). Itu yang paling meyakinkan sebagai potongan hidup seseorang.'+
+    '\n\nATURAN PENULISAN PROMPT (paling penting, jangan dilanggar):'+
+    '\n- Field outfit, lokasi, rambut, waktu, cahaya ditulis SEKALI di level SESI, bukan di tiap foto.'+
+    '\n- Field prompt milik foto DILARANG menyebut outfit, pakaian, warna baju, lokasi, latar tempat, gaya rambut, waktu, atau arah cahaya. Semua itu sudah dikunci di level sesi dan ditambahkan otomatis di depan prompt. Menulisnya ulang membuat outfit berubah pelan-pelan antar foto dan merusak seluruh sesi.'+
+    '\n- Field prompt juga DILARANG mendeskripsikan wajah, umur, etnis, atau rambut — identitas dikunci terpisah.'+
+    '\n- Jadi field prompt HANYA berisi: pose & aktivitas, mikro-aksi, ekspresi, jarak/sudut kamera, komposisi, dan satu detail lingkungan kecil. Bahasa Inggris, 30–60 kata.'+
+    '\n- Untuk foto berperan "objek": TIDAK ADA orang di frame. Tulis bendanya saja, tanpa tangan, tanpa tubuh. Contoh: cangkir kopi setengah kosong di meja kayu bercoret, kunci dan kacamata di sampingnya.'+
+    '\n- Jangan tulis aspect ratio, setelan kamera, atau kata "photorealistic"; ketiganya ditambahkan otomatis.'+
+    '\n\nSYARAT ANTI-KAKU untuk foto berisi orang. Setiap prompt harus memuat:'+
     '\n  (a) satu MIKRO-AKSI yang sedang berlangsung, bukan pose diam — menyibak rambut, menyesap kopi, membetulkan tali tas, tertawa sambil menoleh, melangkah;'+
     '\n  (b) satu INTERAKSI dengan lingkungan — bersandar di kusen, tangan menyentuh meja, kaki menginjak trotoar basah;'+
     '\n  (c) satu DETAIL LINGKUNGAN yang spesifik dan tidak sempurna — cat mengelupas, gelas kopi setengah kosong, kabel lampu menjuntai, bayangan daun;'+
-    '\n  (d) arah cahaya yang jelas (dari jendela kiri, matahari sore dari belakang, lampu neon di atas).'+
+    '\n  (d) jarak kamera yang bervariasi antar foto dalam sesi yang sama (close-up, medium, full body).'+
     '\nDILARANG: subjek berdiri tegak menghadap kamera dengan senyum netral, latar polos tanpa konteks, kata "perfect", "flawless", "beautiful", "stunning".'+
+    '\n\nField berbahasa '+state.talent.bahasa+' dan singkat: nama sesi, judul, tujuan, pose. Field cahaya dan waktu boleh campuran, ditulis ringkas.'+
+    '\nField outfit, lokasi, rambut milik sesi WAJIB bahasa Inggris dan konkret — keduanya masuk langsung ke prompt gambar. Contoh outfit: "an oversized cream linen shirt over a white tank top, faded straight-leg jeans, small gold hoop earrings". Contoh lokasi: "a small neighbourhood coffee shop with a chipped wooden counter and one large street-facing window".'+
     '\nField negative: bahasa Inggris, hal spesifik yang harus dihindari di foto itu (boleh kosong).'+
     fbLine(fb)+
-    '\nBalas HANYA satu objek JSON valid: {"shots":[{"judul":"string","tujuan":"string","outfit":"string","lokasi":"string","pose":"string","pencahayaan":"string","prompt":"string","negative":"string"}]} dengan tepat '+n+' item.';
+    '\nBalas HANYA satu objek JSON valid:'+
+    '\n{"sesi":[{"nama":"string","outfit":"string","lokasi":"string","waktu":"string","cahaya":"string","rambut":"string","catatan":"string",'+
+    '"shots":[{"judul":"string","tujuan":"string","peran":"hero|filler|objek|cermin","pose":"string","prompt":"string","negative":"string"}]}]}'+
+    '\nTepat '+nSesi+' sesi, total '+n+' foto di seluruh sesi.';
 }
 function promptSheet(fb){
   const n=state.sheet.niches, p=state.sheet.platforms.map(id=>(PLATFORMS.find(x=>x.id===id)||{}).label).filter(Boolean);
@@ -1380,11 +1508,14 @@ function refinePrompt(instruksi){
   });
 }
 function promptContent(i, fb, adaFoto){
-  const sh=state.shots[i];
+  const sh=state.shots[i], se=sesiOf(sh);
   return HEADER+'\n'+buildContext()+
     '\n\nTAHAP: CAPTION & SCRIPT untuk FOTO '+(i+1)+'.'+
     (adaFoto?' Foto jadinya terlampir di pesan ini — sebut satu detail yang benar-benar terlihat di sana supaya caption terasa nyata, bukan tempelan.':'')+
-    '\nDetail foto ini:\n- Judul: '+(sh.judul||'-')+'\n- Tujuan: '+(sh.tujuan||'-')+'\n- Outfit: '+(sh.outfit||'-')+'\n- Lokasi: '+(sh.lokasi||'-')+'\n- Pose: '+(sh.pose||'-')+
+    '\nDetail foto ini:\n- Judul: '+(sh.judul||'-')+'\n- Tujuan: '+(sh.tujuan||'-')+
+    '\n- Peran di feed: '+peranDef(sh.peran).label+' ('+peranDef(sh.peran).rs+')'+
+    (se?'\n- Sesi: '+(se.nama||'-')+'\n- Outfit: '+(se.outfit||'-')+'\n- Lokasi: '+(se.lokasi||'-'):'')+
+    '\n- Pose: '+(sh.pose||'-')+
     '\nTulis dengan suara persona di atas, dalam '+state.talent.bahasa+'. Hook maksimal 12 kata dan scroll-stopping. Caption 2–4 kalimat, terasa personal, bukan iklan. Hashtag 8–12 buah relevan dipisah spasi. Script video 15–20 detik dalam format bernomor per beat, siap dibaca.'+
     (state.persona.disclosure?'\nWAJIB: sertakan penanda konten AI (mis. "dibuat dengan AI" atau tagar #AIgenerated) di akhir caption dan di field hashtag.':'')+
     fbLine(fb)+'\n'+JSON_RULE+
@@ -1400,9 +1531,12 @@ function lockLine(){
     ? 'SUBJECT — keep this exact same person in every image, identical facial identity: '
     : 'SUBJECT — a single consistent fictional person, identical facial identity in every image: ')+lock;
 }
-function composePrompt({scene, negative, aspek, tail, noIdentity, noLife}){
+function composePrompt({scene, negative, aspek, tail, noIdentity, noLife, setting}){
   const P=[];
   if(!noIdentity){ const l=lockLine(); if(l) P.push(l); }
+  /* Kunci sesi berdiri SETELAH identitas dan SEBELUM adegan: outfit dan lokasi
+     harus lebih kuat daripada apa pun yang ditulis di level foto. */
+  if(String(setting||'').trim()) P.push(String(setting).trim());
   if(String(scene||'').trim()) P.push('SCENE: '+String(scene).trim());
   const tech=techOf(); if(tech) P.push('CAPTURE: '+tech+'.');
   /* Panel benda (mood board) tidak butuh blok jiwa yang bicara soal kulit. */
@@ -1413,7 +1547,21 @@ function composePrompt({scene, negative, aspek, tail, noIdentity, noLife}){
   if(neg) P.push('AVOID: '+neg+'.');
   return P.join('\n\n');
 }
-function finalPrompt(sh){ return composePrompt({scene:sh.prompt, negative:sh.negative}); }
+/* Foto "tanpa wajah" sengaja tidak membawa identity lock — blok itu
+   mendeskripsikan wajah, dan model akan memaksa wajah masuk frame. Identitas
+   untuk frame itu dijaga lewat outfit, properti, dan lokasi yang sama. */
+const OBJEK_TAIL='A real, unretouched photograph of the objects and place themselves. No person is visible in this frame — no face, no body, no hands. Shot casually by the owner of these things, slightly off-centre, as a real person photographs their own day.';
+function finalPrompt(sh){
+  const peran=peranDef(sh.peran);
+  return composePrompt({
+    scene:sh.prompt,
+    negative:sh.negative,
+    setting:settingLine(sesiOf(sh)),
+    noIdentity:!!peran.noIdentity,
+    noLife:!!peran.noIdentity,
+    tail:peran.noIdentity?OBJEK_TAIL:undefined
+  });
+}
 /* Panel character sheet: komposisinya sudah diatur di template, jadi arahan
    kamera candid diganti arahan lembar acuan studio. */
 function panelPrompt(def){
@@ -1438,7 +1586,7 @@ const HAS={
   persona: ()=>filled(F.persona,state.persona),
   sheet:   ()=>filled(F.sheet,state.sheet)||state.sheet.niche_rows.length>0||
                state.sheet.panels.some(p=>p.imgs.length)||state.sheet.grid.cells.some(c=>c.img),
-  shoot:   ()=>state.shots.length>0,
+  shoot:   ()=>state.shots.length>0||state.sesi.length>0,
   render:  ()=>state.shots.some(s=>s.imgs.length),
   content: ()=>state.shots.length>0&&state.shots.every(s=>s.konten)
 };
@@ -1465,14 +1613,8 @@ async function runStage(id, fb){
       if(Array.isArray(d.niche_rows)) state.sheet.niche_rows=d.niche_rows;
       if(Array.isArray(d.platform_rows)) state.sheet.platform_rows=d.platform_rows;
     }else if(id==='shoot'){
-      const d=await callJSON(promptShoot(fb), 3600);
-      const arr=Array.isArray(d.shots)?d.shots:(Array.isArray(d)?d:[]);
-      if(!arr.length) throw new Error('AI tidak mengembalikan daftar foto. Coba lagi.');
-      state.shots=arr.map(s=>({
-        judul:s.judul||'', tujuan:s.tujuan||'', outfit:s.outfit||'', lokasi:s.lokasi||'',
-        pose:s.pose||'', pencahayaan:s.pencahayaan||'', prompt:s.prompt||'', negative:s.negative||'',
-        imgs:[], konten:null
-      }));
+      const d=await callJSON(promptShoot(fb), 4200);
+      adoptShoot(d);
     }
     markDirty(id);
     countCall('txt');
@@ -1511,13 +1653,22 @@ async function runContentAll(){
    percobaan gagal dibuang supaya galeri tidak penuh sampah. */
 async function renderShot(i){
   const sh=state.shots[i], G=state.qaGate;
-  const maxUlang=G.on?Math.max(0,Math.min(3,+G.retry||0)):0;
+  /* Frame tanpa orang diperlakukan berbeda di tiga tempat sekaligus, dan
+     ketiganya wajib — masing-masing pernah jadi sumber bug di grid character
+     sheet:
+       1. foto acuan TIDAK dikirim. Anchor adalah wajah; mengirimkannya ke
+          frame benda membuat model memaksa wajah masuk ke frame.
+       2. QA dilewati. qaImage membandingkan hasil dengan identity lock, jadi
+          foto meja akan selalu dinilai nol dan memicu render ulang berbayar.
+       3. hasilnya TIDAK boleh jadi anchor. Anchor harus selalu wajah. */
+  const noFace=!!peranDef(sh.peran).noIdentity;
+  const maxUlang=(G.on&&!noFace)?Math.max(0,Math.min(3,+G.retry||0)):0;
   let best=null, saran='';
   for(let att=0; att<=maxUlang; att++){
     if(att) setBusy(true,'Skor di bawah ambang — render ulang '+att+'/'+maxUlang+'…');
-    const img=await generateImage(finalPrompt(sh)+(saran?'\n\nFIX: '+saran:''));
+    const img=await generateImage(finalPrompt(sh)+(saran?'\n\nFIX: '+saran:''), undefined, noFace?[]:undefined);
     countCall('img');
-    if(!G.on||!img.data){ best=img; break; }
+    if(!G.on||noFace||!img.data){ best=img; break; }
     try{ await qaImage(img); countCall('txt'); }
     catch(e){ best=img; break; }              /* QA gagal: jangan buang gambarnya */
     img.percobaan=att+1;
@@ -1527,8 +1678,9 @@ async function renderShot(i){
   }
   sh.imgs.push(best);
   /* Anchor pertama otomatis: hasil render pertama jadi acuan wajah berikutnya,
-     supaya foto ke-2 dan seterusnya konsisten walau tanpa foto orang asli. */
-  if(!state.anchor && best.data) state.anchor=best;
+     supaya foto ke-2 dan seterusnya konsisten walau tanpa foto orang asli.
+     Foto tanpa orang dikecualikan — di dalamnya tidak ada wajah untuk diacu. */
+  if(!state.anchor && best.data && !noFace) state.anchor=best;
   autosaveSoon(1500);
 }
 /* ---- panel character sheet ---- */
@@ -2033,22 +2185,74 @@ function viewSheet(){
 
 function viewShoot(){
   const s=state.shoot;
-  const shots=state.shots.map((sh,i)=>
-    '<div class="shot"><div class="shothead"><span class="no">FOTO '+String(i+1).padStart(2,'0')+'</span>'+
-      '<span class="ttl">'+esc(sh.judul||'(tanpa judul)')+'</span><span class="spacer"></span>'+
+  /* Foto dirender per sesi. Nomor global tetap dipertahankan karena tahap
+     Render, Konten, dan semua ekspor memakai indeks di state.shots. */
+  const shotCard=(sh,i)=>{
+    const se=sesiOf(sh);
+    return '<div class="shot"><div class="shothead"><span class="no">'+String(i+1).padStart(2,'0')+'</span>'+
+      '<span class="ttl">'+esc(sh.judul||'(tanpa judul)')+'</span>'+
+      '<span class="peran '+esc(sh.peran||'filler')+'">'+esc(peranDef(sh.peran).label)+'</span>'+
+      '<span class="spacer"></span>'+
       '<button class="btn small danger needidle" data-rmshot="'+i+'">Hapus</button></div>'+
       '<div class="shotbody"><div class="kvgrid">'+
         '<div class="kv"><label>Judul</label><input data-path="shots.'+i+'.judul" value="'+esc(sh.judul)+'"></div>'+
         '<div class="kv"><label>Tujuan</label><input data-path="shots.'+i+'.tujuan" value="'+esc(sh.tujuan)+'"></div>'+
-        '<div class="kv"><label>Outfit</label><input data-path="shots.'+i+'.outfit" value="'+esc(sh.outfit)+'"></div>'+
-        '<div class="kv"><label>Lokasi</label><input data-path="shots.'+i+'.lokasi" value="'+esc(sh.lokasi)+'"></div>'+
-        '<div class="kv"><label>Pose</label><input data-path="shots.'+i+'.pose" value="'+esc(sh.pose)+'"></div>'+
-        '<div class="kv"><label>Pencahayaan</label><input data-path="shots.'+i+'.pencahayaan" value="'+esc(sh.pencahayaan)+'"></div>'+
-        '<div class="kv full"><label>Prompt adegan (English — tanpa deskripsi wajah)</label>'+
-          '<textarea data-path="shots.'+i+'.prompt" rows="3">'+esc(sh.prompt)+'</textarea></div>'+
+        '<div class="kv"><label>Peran</label><select data-path="shots.'+i+'.peran">'+
+          PERAN.map(pr=>'<option value="'+pr.id+'"'+(sh.peran===pr.id?' selected':'')+'>'+esc(pr.label)+' — '+esc(pr.rs)+'</option>').join('')+
+        '</select></div>'+
+        '<div class="kv"><label>Sesi</label><select data-path="shots.'+i+'.sesi">'+
+          '<option value=""'+(!sh.sesi?' selected':'')+'>(lepas — tanpa kunci sesi)</option>'+
+          state.sesi.map((x,k)=>'<option value="'+esc(x.id)+'"'+(sh.sesi===x.id?' selected':'')+'>'+
+            (k+1)+'. '+esc(x.nama||'(tanpa nama)')+'</option>').join('')+
+        '</select></div>'+
+        '<div class="kv full"><label>Pose &amp; aktivitas</label><input data-path="shots.'+i+'.pose" value="'+esc(sh.pose||'')+'"></div>'+
+        '<div class="kv full"><label>Prompt adegan (English — hanya pose, aksi, ekspresi, framing)</label>'+
+          '<textarea data-path="shots.'+i+'.prompt" rows="3">'+esc(sh.prompt)+'</textarea>'+
+          (se&&!peranDef(sh.peran).noIdentity
+            ? '<div class="hint">Outfit &amp; lokasi datang dari sesi "'+esc(se.nama||'-')+'" dan ditambahkan otomatis. Jangan ditulis ulang di sini.</div>'
+            : (peranDef(sh.peran).noIdentity
+              ? '<div class="hint">Peran <b>tanpa wajah</b>: identity lock tidak dikirim untuk foto ini, dan prompt tidak boleh memuat orang.</div>'
+              : '<div class="hint">Foto lepas: tidak ada kunci sesi, jadi outfit &amp; lokasi harus kamu tulis sendiri di prompt.</div>'))+
+        '</div>'+
         '<div class="kv full"><label>Negative khusus foto ini</label>'+
           '<input data-path="shots.'+i+'.negative" value="'+esc(sh.negative)+'"></div>'+
-      '</div></div></div>').join('');
+      '</div></div></div>';
+  };
+  const idx=new Map(state.shots.map((sh,i)=>[sh,i]));
+  const sesiCard=(se,k)=>{
+    const mine=shotsOfSesi(se.id);
+    const kunci=settingLine(se);
+    return '<div class="card sesi"><h3>🎬 Sesi '+(k+1)+' · '+esc(se.nama||'(tanpa nama)')+
+      '<span class="stamp'+(kunci?' done':'')+'">'+mine.length+' foto</span></h3>'+
+      '<p class="hint" style="margin:-6px 0 12px">Semua foto di sesi ini memakai outfit, lokasi, rambut, dan cahaya yang sama persis. Itu yang membuat feed-nya terbaca sebagai satu hari yang nyata, bukan katalog.</p>'+
+      '<div class="kvgrid">'+
+        '<div class="kv"><label>Nama sesi</label><input data-path="sesi.'+k+'.nama" value="'+esc(se.nama)+'" placeholder="mis. Pagi di kafe"></div>'+
+        '<div class="kv"><label>Waktu</label><input data-path="sesi.'+k+'.waktu" value="'+esc(se.waktu)+'" placeholder="mis. late morning"></div>'+
+        '<div class="kv full"><label>Outfit — DIKUNCI (English, konkret)</label>'+
+          '<textarea data-path="sesi.'+k+'.outfit" rows="2" placeholder="an oversized cream linen shirt over a white tank top, faded straight-leg jeans, small gold hoop earrings">'+esc(se.outfit)+'</textarea></div>'+
+        '<div class="kv full"><label>Lokasi — DIKUNCI (English, konkret)</label>'+
+          '<textarea data-path="sesi.'+k+'.lokasi" rows="2" placeholder="a small neighbourhood coffee shop with a chipped wooden counter and one large street-facing window">'+esc(se.lokasi)+'</textarea></div>'+
+        '<div class="kv"><label>Rambut</label><input data-path="sesi.'+k+'.rambut" value="'+esc(se.rambut)+'" placeholder="loosely tied back, a few strands loose"></div>'+
+        '<div class="kv"><label>Cahaya</label><input data-path="sesi.'+k+'.cahaya" value="'+esc(se.cahaya)+'" placeholder="soft daylight from the window on her left"></div>'+
+      '</div>'+
+      (kunci
+        ? '<div class="keynote"><b>Blok terkunci yang masuk ke setiap foto sesi ini:</b><br>'+esc(kunci)+'</div>'
+        : '<div class="check warn"><span class="sym">!</span><div>Outfit dan lokasi masih kosong, jadi sesi ini belum mengunci apa pun — tiap foto akan bebas mengarang sendiri. Isi minimal salah satunya.</div></div>')+
+      '<div class="toolbar" style="margin-top:12px">'+
+        '<button class="btn small needidle" data-addshot="'+esc(se.id)+'">+ Tambah foto di sesi ini</button>'+
+        '<div class="spacer"></div>'+
+        '<button class="btn small danger needidle" data-rmsesi="'+k+'">Hapus sesi</button></div>'+
+      (mine.length?'<div class="mini">Foto di sesi ini</div>'+mine.map(sh=>shotCard(sh, idx.get(sh))).join(''):'')+
+    '</div>';
+  };
+  const lepas=state.shots.filter(sh=>!sesiOf(sh));
+  const sesiHTML=state.sesi.map(sesiCard).join('')+
+    (lepas.length
+      ? '<div class="card"><h3>📎 Foto lepas<span class="stamp">'+lepas.length+'</span></h3>'+
+        '<p class="hint" style="margin:-6px 0 12px">Foto yang tidak masuk sesi mana pun. Tidak mendapat kunci outfit/lokasi, jadi konsistensinya bergantung penuh pada apa yang kamu tulis di prompt.</p>'+
+        lepas.map(sh=>shotCard(sh, idx.get(sh))).join('')+'</div>'
+      : '');
+  const shots=sesiHTML;
   const quickRasio=state.sheet.platforms.length
     ? '<div class="mini">Rasio cepat dari platform yang kamu pilih</div><div class="chips">'+
       state.sheet.platforms.map(id=>{
@@ -2059,10 +2263,16 @@ function viewShoot(){
     ? '<div class="mini">Isi cepat dari niche di character sheet</div><div class="chips">'+
       state.sheet.niches.map(n=>'<button class="chip" data-preset="'+esc(n)+'">'+esc(n)+'</button>').join('')+'</div>'+
       '<div class="hint">Menyalin sudut pandang & props niche itu ke kolom tema/outfit/mood di bawah.</div>' : '';
-  return head('Tahap 05','Rencana Photoshoot','Satu sesi, beberapa foto berbeda. Prompt adegan sengaja tidak memuat deskripsi wajah — identity lock ditambahkan otomatis saat render.')+
+  const nSesi=state.sesi.length, nShot=state.shots.length;
+  const nObjek=state.shots.filter(sh=>peranDef(sh.peran).noIdentity).length;
+  return head('Tahap 05','Rencana Photoshoot','Foto disusun per SESI: satu hari, satu outfit, satu lokasi, beberapa frame. Outfit & lokasi dikunci di level sesi; wajah dikunci di level proyek. Prompt tiap foto hanya berisi pose dan aksi.')+
+    (nShot?'<div class="estimate"><span>Sesi: <b>'+nSesi+'</b></span><span>Foto: <b>'+nShot+'</b></span>'+
+      '<span>Tanpa wajah: <b>'+nObjek+'</b> ('+Math.round(nObjek/nShot*100)+'%)</span>'+
+      '<span>Panggilan API: <b>'+nShot+'</b></span></div>':'')+
     (quickNiche||quickRasio?'<div class="card"><h3>⚡ Isi cepat</h3>'+quickNiche+quickRasio+'</div>':'')+
-    '<div class="card"><h3>🎬 Arahan sesi</h3><div class="kvgrid">'+
-      '<div class="kv"><label>Jumlah foto</label><input type="number" min="1" max="12" data-path="shoot.jumlah" value="'+esc(s.jumlah)+'"></div>'+
+    '<div class="card"><h3>🎬 Arahan produksi</h3><div class="kvgrid">'+
+      '<div class="kv"><label>Jumlah sesi</label><input type="number" min="1" max="6" data-path="shoot.sesiJumlah" value="'+esc(s.sesiJumlah)+'"></div>'+
+      '<div class="kv"><label>Total foto</label><input type="number" min="1" max="24" data-path="shoot.jumlah" value="'+esc(s.jumlah)+'"></div>'+
       '<div class="kv"><label>Rasio</label><select data-path="shoot.aspek">'+
         ASPECTS.map(a=>'<option value="'+a.id+'"'+(s.aspek===a.id?' selected':'')+'>'+esc(a.label)+'</option>').join('')+'</select></div>'+
       '<div class="kv"><label>Platform</label><input data-path="shoot.platform" value="'+esc(s.platform)+'"></div>'+
@@ -2088,9 +2298,12 @@ function viewShoot(){
       '<div class="check ok" style="margin-top:12px"><span class="sym">✓</span><div>Kata <code>photorealistic</code> sengaja tidak dipakai di prompt mana pun — di banyak model kata itu justru menarik hasilnya ke render 3D yang licin. Yang dipakai <i>“a real, unretouched photograph”</i> plus deskripsi medium yang konkret.</div></div>'+
     '</div>'+
     '<div class="toolbar">'+stampHTML('shoot')+'<div class="spacer"></div>'+
-      '<button class="btn primary needidle" data-gen="shoot">✦ '+(state.shots.length?'Susun ulang daftar foto':'Susun daftar foto')+'</button></div>'+
-    (state.shots.length?shots+reviseHTML('shoot','mis. tambah 2 foto outdoor sore hari, kurangi close-up')
-      :'<div class="empty"><div class="big">Belum ada rencana foto</div><p>Isi arahan sesi di atas lalu klik “Susun daftar foto”. AI akan membuat variasi lokasi, jarak kamera, outfit, dan ekspresi.</p></div>')+
+      '<button class="btn primary needidle" data-gen="shoot">✦ '+(state.shots.length?'Susun ulang sesi & foto':'Susun daftar foto')+'</button></div>'+
+    (state.shots.length||state.sesi.length
+      ? shots+
+        '<div class="toolbar"><button class="btn needidle" data-addsesi="1">+ Tambah sesi kosong</button><div class="spacer"></div></div>'+
+        reviseHTML('shoot','mis. tambah satu sesi outdoor sore hari, kurangi close-up')
+      :'<div class="empty"><div class="big">Belum ada rencana foto</div><p>Isi arahan produksi di atas lalu klik “Susun daftar foto”. AI akan menyusun beberapa sesi — tiap sesi satu outfit dan satu lokasi yang dikunci — lalu membagi fotonya ke dalam sesi-sesi itu.</p></div>')+
     (state.shots.length?'<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="render">Lanjut ke render →</button></div>':'');
 }
 
@@ -2131,8 +2344,12 @@ function viewRender(){
         (im.dari?'<div class="hint">revisi dari #'+esc(im.dari)+'</div>':'')+
         '</div>';
     }).join('');
+    const se=sesiOf(sh);
     return '<div class="shot"><div class="shothead"><span class="no">FOTO '+String(i+1).padStart(2,'0')+'</span>'+
-      '<span class="ttl">'+esc(sh.judul||'(tanpa judul)')+'</span><span class="spacer"></span>'+
+      '<span class="ttl">'+esc(sh.judul||'(tanpa judul)')+
+        (se?' <span style="color:var(--faint);font-weight:400">· '+esc(se.nama||'sesi')+'</span>':'')+'</span>'+
+      '<span class="peran '+esc(sh.peran||'filler')+'">'+esc(peranDef(sh.peran).label)+'</span>'+
+      '<span class="spacer"></span>'+
       '<span class="stamp'+(sh.imgs.length?' done':'')+'">'+sh.imgs.length+' hasil</span>'+
       '<button class="btn small primary needidle" data-render="'+i+'"'+(manual?' disabled':'')+'>▶ Render</button></div>'+
       '<div class="shotbody">'+
@@ -2422,10 +2639,24 @@ function promptsText(){
   const L=['# Prompt gambar — '+(state.persona.nama||'AI Influencer'),
     '# Mode identitas: '+(state.talent.mode==='locked'?'wajah konsisten dari foto referensi':'wajah baru terinspirasi foto'),
     '# Rasio: '+state.shoot.aspek,''];
-  state.shots.forEach((sh,i)=>{
-    L.push('=== FOTO '+String(i+1).padStart(2,'0')+' — '+(sh.judul||'-')+' ===');
+  const tulis=(sh,i)=>{
+    L.push('=== FOTO '+String(i+1).padStart(2,'0')+' — '+(sh.judul||'-')+' ['+peranDef(sh.peran).label+'] ===');
     L.push(finalPrompt(sh)); L.push('');
+  };
+  const idx=new Map(state.shots.map((sh,i)=>[sh,i]));
+  state.sesi.forEach((se,k)=>{
+    const mine=shotsOfSesi(se.id); if(!mine.length) return;
+    L.push('##################################################');
+    L.push('# SESI '+(k+1)+' — '+(se.nama||'-')+'  ('+mine.length+' foto)');
+    if(se.outfit) L.push('# outfit  : '+se.outfit);
+    if(se.lokasi) L.push('# lokasi  : '+se.lokasi);
+    if(se.rambut) L.push('# rambut  : '+se.rambut);
+    if(se.cahaya) L.push('# cahaya  : '+se.cahaya);
+    L.push('##################################################','');
+    mine.forEach(sh=>tulis(sh, idx.get(sh)));
   });
+  const lepas=state.shots.filter(sh=>!sesiOf(sh));
+  if(lepas.length){ L.push('### FOTO LEPAS (tanpa kunci sesi)',''); lepas.forEach(sh=>tulis(sh, idx.get(sh))); }
   return L.join('\n');
 }
 function exportPrompts(){ download(slug(state.persona.nama)+'-prompts.txt', promptsText()); }
@@ -2839,14 +3070,34 @@ function saveProject(){
     : ' — TANPA gambar, hanya teks & rencana.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','shots','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
+const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','sesi','shots','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
 /* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
    dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
 function normalizeState(){
   state.uploads=state.uploads||{refs:[]};
   state.uploads.refs=Array.isArray(state.uploads.refs)?state.uploads.refs:[];
+  state.sesi=Array.isArray(state.sesi)?state.sesi:[];
+  state.sesi.forEach(se=>{
+    if(!se.id) se.id=sesiBaru().id;
+    ['nama','outfit','lokasi','waktu','cahaya','rambut','catatan'].forEach(k=>{ if(se[k]==null) se[k]=''; });
+  });
   state.shots=(Array.isArray(state.shots)?state.shots:[]).map(s=>Object.assign({imgs:[],konten:null},s));
-  state.shots.forEach(sh=>{ if(!Array.isArray(sh.imgs)) sh.imgs=[]; });
+  state.shots.forEach(sh=>{
+    if(!Array.isArray(sh.imgs)) sh.imgs=[];
+    /* Project dari versi sebelum ada sesi: outfit & lokasi dulu ada di level
+       foto. Nilainya tidak dibuang — ditempelkan ke prompt supaya foto lama
+       tetap merender adegan yang sama seperti dulu. */
+    if(sh.sesi===undefined){
+      sh.sesi='';
+      const sisa=[sh.outfit,sh.lokasi,sh.pencahayaan].map(x=>String(x||'').trim()).filter(Boolean);
+      if(sisa.length&&!/wearing|at a|lighting/i.test(sh.prompt||'')) sh.prompt=[sh.prompt,sisa.join(', ')].filter(Boolean).join(', ');
+    }
+    if(!PERAN.some(p=>p.id===sh.peran)) sh.peran='filler';
+    if(sh.pose==null) sh.pose='';
+  });
+  /* id sesi yang tidak dikenal (mis. sesi terhapus di file lama) dijadikan lepas. */
+  const ids=new Set(state.sesi.map(x=>x.id));
+  state.shots.forEach(sh=>{ if(sh.sesi&&!ids.has(sh.sesi)) sh.sesi=''; });
   state.dirty=state.dirty||{};
   state.talent=Object.assign({mode:'inspired',consent:false,catatan:'',bahasa:'Indonesia (santai, ala creator)'}, state.talent||{});
   if(state.talent.mode==='locked'&&!state.talent.consent) state.talent.mode='inspired';
@@ -2857,6 +3108,8 @@ function normalizeState(){
   state.sheet.panels.forEach(pn=>{ if(!Array.isArray(pn.imgs)) pn.imgs=[]; });
   state.sheet.grid=Object.assign({cols:4,rows:3,aspek:'2:3',latar:'studio',label:true,cells:[],sheetImg:null}, state.sheet.grid||{});
   if(!Array.isArray(state.sheet.grid.cells)) state.sheet.grid.cells=[];
+  state.shoot=Object.assign({jumlah:8,sesiJumlah:2,aspek:'2:3',tema:'',outfit:'',mood:'',
+    platform:'Instagram feed + Reels cover',realisme:'phone',kamera:'',jiwa:'',negatif:''}, state.shoot||{});
   state.kalender=Object.assign({hari:14,mulai:'',rows:[]}, state.kalender||{});
   if(!Array.isArray(state.kalender.rows)) state.kalender.rows=[];
   state.qaGate=Object.assign({on:false,min:75,retry:1}, state.qaGate||{});
@@ -3035,6 +3288,7 @@ function resetSummary(){
     ['Panel character sheet ter-render', s.sheet.panels.reduce((a,p)=>a+(p.imgs||[]).length,0)],
     ['Sel grid terisi',                  s.sheet.grid.cells.filter(c=>c.img).length],
     ['Kanvas grid gabungan',             s.sheet.grid.sheetImg?1:0],
+    ['Sesi pemotretan',                  s.sesi.length],
     ['Rencana foto',                     s.shots.length],
     ['Foto hasil render',                s.shots.reduce((a,x)=>a+x.imgs.length,0)],
     ['Caption & script',                 s.shots.filter(x=>x.konten).length],
@@ -3268,7 +3522,24 @@ document.addEventListener('click', async e=>{
     state.talent.mode=t.dataset.mode; state.dirty.identity=true; render(); return;
   }
   if(t.dataset.rmref!=null){ state.uploads.refs.splice(+t.dataset.rmref,1); render(); return; }
-  if(t.dataset.rmshot!=null){ state.shots.splice(+t.dataset.rmshot,1); render(); return; }
+  if(t.dataset.rmshot!=null){ state.shots.splice(+t.dataset.rmshot,1); autosaveSoon(); render(); return; }
+  if(t.dataset.addsesi){ state.sesi.push(sesiBaru({nama:'Sesi '+(state.sesi.length+1)})); autosaveSoon(); render(); return; }
+  if(t.dataset.addshot){
+    state.shots.push({judul:'', tujuan:'', peran:'filler', pose:'', prompt:'', negative:'',
+      sesi:t.dataset.addshot, imgs:[], konten:null});
+    autosaveSoon(); render(); return;
+  }
+  if(t.dataset.rmsesi!=null){
+    const se=state.sesi[+t.dataset.rmsesi]; if(!se) return;
+    const n=shotsOfSesi(se.id).length;
+    /* Menghapus sesi TIDAK menghapus fotonya — foto berisi gambar hasil render
+       yang mahal. Foto-fotonya dilepas jadi "foto lepas" supaya user yang
+       memutuskan nasibnya, bukan aplikasi. */
+    state.shots.forEach(sh=>{ if(sh.sesi===se.id) sh.sesi=''; });
+    state.sesi.splice(+t.dataset.rmsesi,1);
+    toast(n?'Sesi dihapus. '+n+' fotonya dipindahkan ke "foto lepas", tidak ikut terhapus.':'Sesi kosong dihapus.','ok');
+    autosaveSoon(); render(); return;
+  }
   if(t.dataset.render!=null){ runRenderOne(+t.dataset.render); return; }
   if(t.dataset.renderall){ runRenderAll(); return; }
   if(t.dataset.gencontent!=null){
