@@ -353,6 +353,47 @@ project yang harus dibawa antar-komputer.
 `runKitab()` **menambah, tidak menimpa** — entri yang sudah dipakai sesi tidak boleh
 hilang hanya karena tombolnya ditekan dua kali; duplikat disaring lewat `teks` yang sama.
 
+### Audit konsistensi menyeluruh
+
+`promptQA()` membandingkan foto dengan **teks** identity lock. Itu berguna, tapi teks
+tidak pernah bisa menangkap sebuah wajah — dua orang berbeda bisa sama-sama cocok
+dengan "perempuan Asia Tenggara, wajah oval". Yang benar-benar mengungkap drift adalah
+membandingkan foto dengan **foto**.
+
+`promptQAPair()` + `qaPair(img)` mengirim **anchor dan kandidat berdampingan** dalam
+satu panggilan. Urutannya penting: anchor selalu dikirim lebih dulu supaya cocok dengan
+"FOTO 1 / FOTO 2" di prompt. Biayanya sama — satu panggilan per foto — tapi jauh lebih
+sensitif. Hasilnya ditandai `qa.mode==='banding'` dan menambah field `qa.beda[]`.
+
+Prompt-nya **menyuruh mengabaikan** pose, ekspresi, sudut, pakaian, rambut, riasan, dan
+cahaya, lalu menyebut secara eksplisit ciri yang tidak boleh berbeda pada orang yang
+sama (jarak antar-mata, bentuk hidung, garis rahang, letak tahi lalat). Tanpa daftar itu
+model menilai "mirip secara umum" dan hampir selalu meluluskan.
+
+`auditTargets()` melewati frame `objek` — di dalamnya tidak ada wajah untuk dibandingkan,
+dan memeriksanya hanya membakar panggilan berbayar untuk skor yang selalu nol. Anchor
+sendiri juga dikeluarkan; membandingkannya dengan dirinya sendiri tidak berarti apa-apa.
+
+`auditAll(ulang)` bisa dihentikan (`auditAbort`) dan **melewati foto yang sudah punya
+skor** kecuali diminta ulang — 30 foto berarti 30 panggilan, jadi jangan pernah
+menjalankannya diam-diam. `confirm()` menyebut jumlah panggilan dan perkiraan biayanya
+lebih dulu.
+
+**Diagnosis tingkat kumpulan** adalah bagian yang tidak dimiliki pemeriksaan per foto.
+`auditRingkas()` menghitung rata-rata, sebaran, jumlah di bawah ambang, dan **pola cacat
+berulang** lewat `CIRI` (penghitungan kata kunci per bagian wajah). Tiap ciri dihitung
+**sekali per foto**, bukan sekali per kalimat — kalau tidak, satu foto yang cerewet
+mendominasi seluruh diagnosis.
+
+Aturan yang membuat fitur ini berguna: kalau satu ciri melenceng di **≥40% foto**, itu
+bukan kesalahan render satu per satu melainkan **identity lock yang kurang spesifik**,
+dan UI mengatakannya — arahkan user memperbaiki Tahap 02, bukan menambal foto satu-satu.
+Sebaran skor >18 diperingatkan terpisah karena penyebabnya berbeda: biasanya anchor
+berganti di tengah jalan.
+
+Ambangnya memakai `state.qaGate.min` yang sudah ada — sengaja **satu konsep ambang**,
+bukan dua yang bisa berbeda diam-diam.
+
 ### Tahap `feed` — simulasi feed
 
 Feed dibaca sebagai satu kesatuan, bukan foto per foto. Dua cacat hanya muncul di

@@ -194,6 +194,18 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
 
 /* ---------- tabel sheet / kalender ---------- */
 .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+/* --- Audit konsistensi menyeluruh --- */
+.arow{display:flex;gap:11px;align-items:flex-start;padding:9px;border:1px solid var(--line);
+  border-radius:var(--r-sm);background:var(--panel2);margin-bottom:7px}
+.arow>img{width:64px;height:80px;flex:none;object-fit:cover;border-radius:6px;border:1px solid var(--line2)}
+.abody{flex:1;min-width:0}
+.atop{display:flex;align-items:center;gap:8px;font-size:13px}
+.asub{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin:5px 0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.skorbar{display:inline-block;width:66px;height:4px;border-radius:99px;background:var(--line2);overflow:hidden;vertical-align:middle}
+.skorbar i{display:block;height:100%}
+.alist{margin:4px 0 0 15px;font-size:12px;color:var(--txt);line-height:1.45}
+.aact{display:flex;flex-direction:column;gap:5px;flex:none}
+.mini3{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--violet)}
 /* --- Kitab kesinambungan --- */
 .kseksi{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
 .kseksihead{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px}
@@ -1694,6 +1706,38 @@ function promptQA(){
     'Jawab dalam '+state.talent.bahasa+'. '+JSON_RULE+
     '\nSkema: {"skor":0,"skor_identitas":0,"skor_realisme":0,"skor_teknis":0,"identitas_cocok":"ya|meleset sedikit|meleset jauh","slop":["string"],"masalah":["string"],"saran":"string"}';
 }
+/* =====================================================================
+   AUDIT KONSISTENSI MENYELURUH
+
+   promptQA membandingkan foto dengan TEKS identity lock. Itu berguna, tapi teks
+   tidak pernah bisa menangkap sebuah wajah — dua orang berbeda bisa sama-sama
+   cocok dengan "perempuan Asia Tenggara, wajah oval, kulit sawo matang".
+
+   Yang benar-benar mengungkap drift adalah membandingkan foto dengan FOTO:
+   anchor dan kandidat dikirim berdampingan dalam satu panggilan, lalu model
+   diminta menilai apakah keduanya orang yang sama. Biayanya sama — satu
+   panggilan per foto — tapi jauh lebih sensitif.
+===================================================================== */
+function promptQAPair(){
+  return 'Kamu QA artist untuk produksi AI influencer, dan kamu terkenal galak. Dua foto terlampir.\n'+
+    'FOTO 1 = acuan wajah resmi (anchor). FOTO 2 = hasil render yang sedang diperiksa.\n'+
+    'Tugasmu: menentukan apakah FOTO 2 menampilkan ORANG YANG SAMA dengan FOTO 1.\n\n'+
+    'Abaikan hal-hal yang memang boleh berbeda: pose, ekspresi, sudut kamera, jarak, pakaian, gaya rambut, riasan, cahaya, latar.\n'+
+    'Perhatikan hal-hal yang TIDAK boleh berbeda pada orang yang sama: jarak antar-mata, bentuk dan lebar hidung, bentuk bibir dan garis senyum, garis rahang dan bentuk dagu, bentuk alis, letak dan jumlah tahi lalat atau bekas luka, bentuk telinga, warna kulit dasar, perkiraan usia.\n\n'+
+    (String(state.identity.identity_lock||'').trim()
+      ? 'Sebagai konteks tambahan, identitas tertulisnya: "'+String(state.identity.identity_lock).trim()+'"\n\n' : '')+
+    'Nilai TIGA hal terpisah.\n'+
+    '1. skor_identitas (0–100): seberapa yakin kamu ini orang yang sama dengan FOTO 1. Di bawah 60 berarti kamu menduga ini orang lain. Sebutkan alasannya secara konkret dan berlokasi, mis. "hidung di foto 2 jelas lebih lebar dan pangkalnya lebih rendah", bukan "wajahnya agak beda".\n'+
+    '2. skor_realisme (0–100): seberapa meyakinkan FOTO 2 sebagai foto asli buatan manusia. Turunkan nilainya untuk tiap gejala: kulit mulus tanpa pori atau mengilap seperti lilin, wajah terlalu simetris, latar mulus bergradien, cahaya rata tanpa arah, gambar terlalu bersih tanpa noise di bayangan, gigi terlalu putih dan rata, rambut terlalu rapi, mata tanpa pantulan cahaya. Tiga gejala atau lebih: TIDAK BOLEH di atas 45.\n'+
+    '3. skor_teknis (0–100): cacat anatomi dan artefak — jumlah jari, bentuk tangan, telinga, gigi, aksesori menyatu dengan kulit, anggota badan hilang atau ganda, teks aneh.\n\n'+
+    'Field skor: rata-rata ketiganya, dibulatkan.\n'+
+    'Field beda: daftar perbedaan wajah yang kamu temukan antara FOTO 1 dan FOTO 2. Satu butir satu ciri, sebut bagian wajahnya. Kosongkan kalau benar-benar orang yang sama.\n'+
+    'Field slop: gejala AI yang kamu lihat. Field masalah: cacat teknis konkret.\n'+
+    'Field saran: satu kalimat instruksi perbaikan yang bisa langsung dipakai untuk render ulang.\n'+
+    'Jangan sungkan memberi nilai rendah — gunanya pemeriksaan ini menyaring foto yang tidak layak pakai.\n'+
+    'Jawab dalam '+state.talent.bahasa+'. '+JSON_RULE+
+    '\nSkema: {"skor":0,"skor_identitas":0,"skor_realisme":0,"skor_teknis":0,"identitas_cocok":"ya|meleset sedikit|meleset jauh","beda":["string"],"slop":["string"],"masalah":["string"],"saran":"string"}';
+}
 function refinePrompt(instruksi){
   return composePrompt({
     scene:'Edit the attached photograph of this person. Keep the same person, the same face, the same identity and the same overall photographic style. Change only what is asked: '+String(instruksi||'').trim(),
@@ -2062,6 +2106,107 @@ async function qaImage(img){
     saran:d.saran||''
   };
   return img.qa;
+}
+/* Perbandingan foto-ke-foto. Anchor dikirim LEBIH DULU supaya urutannya cocok
+   dengan "FOTO 1 / FOTO 2" di prompt. */
+async function qaPair(img){
+  if(!img.data) throw new Error('Gambar ini hanya berupa URL dari provider, tidak bisa diperiksa.');
+  if(!state.anchor||!state.anchor.data) throw new Error('Belum ada anchor wajah bergambar — audit banding butuh acuan.');
+  if(state.anchor===img) throw new Error('Foto ini sendiri yang jadi anchor.');
+  const d=await callJSON(promptQAPair(), 1200, [state.anchor, img]);
+  const cl=v=>Math.max(0,Math.min(100,Math.round(+v||0)));
+  const arr=v=>Array.isArray(v)?v.filter(Boolean).map(String):(v?[String(v)]:[]);
+  const id_=cl(d.skor_identitas), re=cl(d.skor_realisme), te=cl(d.skor_teknis);
+  img.qa={
+    skor: d.skor!=null?cl(d.skor):Math.round((id_+re+te)/3),
+    identitas:id_, realisme:re, teknis:te,
+    cocok:d.identitas_cocok||'', mode:'banding',
+    beda:arr(d.beda), slop:arr(d.slop), masalah:arr(d.masalah), saran:d.saran||''
+  };
+  return img.qa;
+}
+/* =====================================================================
+   AUDIT MENYELURUH — kumpulan, bukan foto per foto
+===================================================================== */
+let auditAbort=false;
+/* Sasaran audit: varian terakhir tiap foto yang berisi orang. Frame tanpa orang
+   dilewati — di dalamnya tidak ada wajah untuk dibandingkan, dan memeriksanya
+   hanya membakar panggilan berbayar untuk skor yang selalu nol. */
+function auditTargets(){
+  return state.shots.map((sh,i)=>{
+    if(peranDef(sh.peran).noIdentity) return null;
+    const im=(sh.imgs||[]).filter(x=>x&&x.data).pop();
+    return im?{i, sh, im}:null;
+  }).filter(Boolean).filter(t=>t.im!==state.anchor);
+}
+async function auditAll(ulang){
+  if(busy) return;
+  const target=auditTargets().filter(t=>ulang||!t.im.qa);
+  if(!target.length){ toast(ulang?'Tidak ada foto yang bisa diperiksa.':'Semua foto sudah punya skor. Centang "periksa ulang" kalau mau menilai ulang.','err'); return; }
+  if(!state.anchor||!state.anchor.data){ toast('Belum ada anchor wajah. Render satu foto dulu, atau pilih ⚓ di salah satu hasil.','err'); return; }
+  const biaya=target.length*(+state.usage.harga||0);
+  if(!confirm('Audit akan memeriksa '+target.length+' foto dengan '+target.length+' panggilan mesin teks'+
+    (biaya>0?' (~$'+biaya.toFixed(2)+' kalau harga per panggilan sama dengan harga gambarmu)':'')+
+    '.\n\nTiap foto dibandingkan langsung dengan anchor, bukan cuma dengan teks identity lock.\n\nOK = jalankan, Cancel = batal')) return;
+  auditAbort=false;
+  let ok=0, gagal=0, lastErr='';
+  try{
+    for(let n=0;n<target.length;n++){
+      if(auditAbort) break;
+      setBusy(true,'Audit '+(n+1)+'/'+target.length+'…');
+      try{ await qaPair(target[n].im); countCall('txt'); ok++; }
+      catch(e){ gagal++; lastErr=e.message; }
+      render();
+    }
+  }finally{
+    setBusy(false);
+    autosaveSoon(1000);
+    toast((auditAbort?'Audit dihentikan. ':'Audit selesai. ')+ok+' foto diperiksa'+
+      (gagal?', '+gagal+' gagal ('+lastErr+')':'.'), gagal?'err':'ok');
+    render();
+  }
+}
+/* Pola cacat berulang. Ini penghitungan kata kunci, bukan pemahaman — tapi
+   justru itu yang berguna: kalau satu bagian wajah disebut di banyak foto,
+   masalahnya bukan di render satu-satu, melainkan di identity lock. */
+const CIRI=[
+  {k:'hidung', re:/hidung|nose/i},
+  {k:'mata',   re:/mata|kelopak|eyes?/i},
+  {k:'alis',   re:/alis|brow/i},
+  {k:'bibir',  re:/bibir|mulut|lips?|senyum/i},
+  {k:'rahang & dagu', re:/rahang|dagu|jaw|chin/i},
+  {k:'bentuk wajah',  re:/bentuk wajah|pipi|tulang pipi|face shape|cheek/i},
+  {k:'warna kulit',   re:/warna kulit|skin tone|lebih terang|lebih gelap/i},
+  {k:'usia',          re:/usia|umur|lebih tua|lebih muda|age/i},
+  {k:'rambut',        re:/rambut|hair/i},
+  {k:'tanda & tahi lalat', re:/tahi lalat|lesung|bekas luka|tato|mole|scar|dimple/i},
+  {k:'gigi',          re:/gigi|teeth/i},
+  {k:'telinga',       re:/telinga|ear/i},
+  {k:'tangan & jari', re:/jari|tangan|finger|hand/i}
+];
+function auditRingkas(){
+  const t=auditTargets().filter(x=>x.im.qa);
+  if(!t.length) return null;
+  const skor=t.map(x=>x.im.qa.skor);
+  const mean=skor.reduce((a,b)=>a+b,0)/skor.length;
+  const sd=Math.sqrt(skor.reduce((a,b)=>a+(b-mean)*(b-mean),0)/skor.length);
+  const min=+state.qaGate.min||70;
+  const bawah=t.filter(x=>x.im.qa.skor<min);
+  const ident=t.map(x=>x.im.qa.identitas).filter(v=>v!=null);
+  const identMean=ident.length?ident.reduce((a,b)=>a+b,0)/ident.length:null;
+  /* Tiap ciri dihitung sekali per foto, bukan sekali per kalimat — kalau tidak,
+     satu foto yang cerewet akan mendominasi seluruh diagnosis. */
+  const pola=CIRI.map(c=>{
+    const kena=t.filter(x=>{
+      const q=x.im.qa;
+      return [].concat(q.beda||[], q.masalah||[], q.slop||[]).some(m=>c.re.test(m));
+    });
+    return {k:c.k, n:kena.length, foto:kena.map(x=>x.i+1)};
+  }).filter(x=>x.n>=2).sort((a,b)=>b.n-a.n);
+  const belum=auditTargets().filter(x=>!x.im.qa).length;
+  const banding=t.filter(x=>x.im.qa.mode==='banding').length;
+  return {n:t.length, mean, sd, min, bawah, identMean, pola, belum, banding,
+          urut:t.slice().sort((a,b)=>a.im.qa.skor-b.im.qa.skor)};
 }
 async function runQA(i,j){
   if(busy) return;
@@ -2548,10 +2693,80 @@ function qaHTML(im){
   const cls=q.skor>=85?'good':(q.skor>=70?'mid':'bad');
   const sub=[q.identitas!=null&&'wajah '+q.identitas, q.realisme!=null&&'nyata '+q.realisme, q.teknis!=null&&'teknis '+q.teknis]
     .filter(Boolean).join(' · ');
-  const list=[].concat((q.slop||[]).map(x=>['slop',x]), (q.masalah||[]).map(x=>['',x]));
+  const list=[].concat((q.beda||[]).map(x=>['beda',x]), (q.slop||[]).map(x=>['slop',x]), (q.masalah||[]).map(x=>['',x]));
   return '<div class="qa '+cls+'"><b>'+q.skor+'/100</b>'+(sub?' <span style="color:var(--muted)">'+esc(sub)+'</span>':'')+
-    (list.length?'<ul>'+list.map(([tag,m])=>'<li>'+(tag?'<b>slop:</b> ':'')+esc(m)+'</li>').join('')+'</ul>':'')+
+    (q.mode==='banding'?' <span class="mini3">banding vs anchor</span>':'')+
+    (list.length?'<ul>'+list.map(([tag,m])=>'<li>'+(tag?'<b>'+esc(tag)+':</b> ':'')+esc(m)+'</li>').join('')+'</ul>':'')+
     (q.saran?'<div style="margin-top:4px;color:var(--muted)">'+esc(q.saran)+'</div>':'')+'</div>';
+}
+function auditCard(){
+  const target=auditTargets();
+  const R=auditRingkas();
+  const nBelum=target.filter(t=>!t.im.qa).length;
+  const adaAnchor=!!(state.anchor&&state.anchor.data);
+  if(!target.length&&!R) return '';
+  const bar=(v)=>'<span class="skorbar"><i style="width:'+Math.max(2,Math.min(100,v))+'%;background:'+
+    (v>=80?'var(--green)':v>=60?'var(--amber)':'var(--red)')+'"></i></span>';
+  let isi='';
+  if(!adaAnchor){
+    isi='<div class="check warn"><span class="sym">!</span><div>Belum ada anchor wajah bergambar. Audit ini membandingkan tiap foto <b>dengan anchor</b>, jadi anchor harus ada dulu — render satu foto, atau tekan ⚓ di hasil yang wajahnya paling pas.</div></div>';
+  }else if(!R){
+    isi='<div class="check ok"><span class="sym">i</span><div>'+target.length+' foto siap diperiksa. Tiap foto akan dibandingkan langsung dengan anchor — bukan cuma dengan teks identity lock, karena teks tidak pernah bisa menangkap sebuah wajah.</div></div>';
+  }else{
+    const v=(x)=>x==null?'—':Math.round(x);
+    isi='<div class="estimate"><span>Diperiksa: <b>'+R.n+'</b>'+(R.belum?' <span style="color:var(--amber)">('+R.belum+' belum)</span>':'')+'</span>'+
+      '<span>Rata-rata: <b>'+v(R.mean)+'</b></span>'+
+      '<span>Identitas: <b>'+v(R.identMean)+'</b></span>'+
+      '<span>Sebaran: <b>'+R.sd.toFixed(1)+'</b></span>'+
+      '<span>Di bawah '+R.min+': <b'+(R.bawah.length?' style="color:var(--red)"':'')+'>'+R.bawah.length+'</b></span></div>';
+    if(R.banding<R.n) isi+='<div class="hint">'+(R.n-R.banding)+' skor berasal dari pemeriksaan lama (foto vs teks). Jalankan audit dengan "periksa ulang" untuk menggantinya dengan perbandingan foto-ke-foto yang lebih ketat.</div>';
+
+    /* Diagnosis kumpulan: satu cacat yang muncul di banyak foto bukan lagi
+       kesalahan render, melainkan identity lock yang kurang spesifik. */
+    if(R.pola.length){
+      const akut=R.pola.filter(p=>p.n/R.n>=0.4);
+      isi+='<div class="mini">Pola cacat yang berulang</div>'+
+        '<table class="sum"><tbody>'+R.pola.map(p=>
+          '<tr><td>'+esc(p.k)+'</td><td style="color:var(--muted);font-size:11.5px">foto '+p.foto.join(', ')+'</td>'+
+          '<td style="text-align:right;width:70px"><b>'+p.n+'/'+R.n+'</b></td></tr>').join('')+'</tbody></table>';
+      if(akut.length) isi+='<div class="check err"><span class="sym">✕</span><div><b>'+
+        esc(akut.map(p=>p.k).join(', '))+'</b> disebut di lebih dari 40% foto. Kalau satu ciri melenceng di sebagian besar hasil, itu <b>bukan</b> kesalahan render satu per satu — <b>identity lock-nya yang kurang spesifik soal itu</b>. Perbaiki kalimatnya di Tahap 02, lalu render ulang; menambal foto satu-satu hanya membakar kuota.</div></div>';
+      else isi+='<div class="check ok"><span class="sym">✓</span><div>Tidak ada satu ciri pun yang melenceng di lebih dari 40% foto — masalahnya tersebar, jadi cukup ditangani per foto.</div></div>';
+    }else if(R.n>=3){
+      isi+='<div class="check ok"><span class="sym">✓</span><div>Tidak ada pola cacat yang berulang di beberapa foto. Identity lock-mu bekerja.</div></div>';
+    }
+    if(R.sd>18) isi+='<div class="check warn"><span class="sym">!</span><div>Sebaran skor lebar ('+R.sd.toFixed(1)+
+      '). Sebagian foto jauh lebih baik daripada yang lain — biasanya tanda anchor berganti di tengah jalan, atau sebagian foto dirender sebelum anchor terpasang.</div></div>';
+
+    if(R.bawah.length){
+      isi+='<div class="mini">Foto di bawah ambang, terburuk dulu</div>'+
+        R.urut.filter(x=>x.im.qa.skor<R.min).map(x=>{
+          const q=x.im.qa;
+          return '<div class="arow">'+
+            '<img src="'+esc(imgSrc(x.im))+'" alt="">'+
+            '<div class="abody"><div class="atop"><b>'+String(x.i+1).padStart(2,'0')+' · '+esc(x.sh.judul||'(tanpa judul)')+'</b>'+
+              '<span class="stamp'+(q.skor>=R.min?' done':'')+'">'+q.skor+'/100</span></div>'+
+              '<div class="asub">identitas '+q.identitas+' '+bar(q.identitas)+' · realisme '+q.realisme+' · teknis '+q.teknis+'</div>'+
+              ((q.beda||[]).length?'<ul class="alist">'+q.beda.slice(0,4).map(m=>'<li>'+esc(m)+'</li>').join('')+'</ul>':'')+
+              (q.saran?'<div class="hint">'+esc(q.saran)+'</div>':'')+
+            '</div>'+
+            '<div class="aact"><button class="btn small needidle" data-render="'+x.i+'">▶ Render ulang</button>'+
+              '<button class="btn small" data-gofoto="'+x.i+'">Lihat</button></div>'+
+          '</div>';
+        }).join('');
+    }else if(R.n) isi+='<div class="check ok"><span class="sym">✓</span><div>Semua '+R.n+' foto lulus ambang '+R.min+'. Tidak ada yang perlu dirender ulang.</div></div>';
+  }
+  return '<div class="card"><h3>🔬 Audit konsistensi menyeluruh'+(R?'<span class="stamp done">'+R.n+' diperiksa</span>':'')+'</h3>'+
+    '<p class="hint" style="margin:-6px 0 12px">Pemeriksaan per foto membandingkan hasil dengan <i>teks</i> identity lock. Audit ini membandingkan tiap foto dengan <b>anchor</b> — foto lawan foto — karena teks tidak pernah bisa menangkap sebuah wajah: dua orang berbeda bisa sama-sama cocok dengan “perempuan Asia Tenggara, wajah oval”.</p>'+
+    isi+
+    '<div class="toolbar" style="margin-top:12px">'+
+      '<button class="btn primary needidle" data-audit="0"'+(adaAnchor&&nBelum?'':' disabled')+'>🔬 Periksa '+nBelum+' foto baru</button>'+
+      '<button class="btn needidle" data-audit="1"'+(adaAnchor&&target.length?'':' disabled')+'>↻ Periksa ulang semua ('+target.length+')</button>'+
+      (busy?'<button class="btn danger" data-auditstop="1">■ Hentikan</button>':'')+
+      '<div class="spacer"></div>'+
+      '<span class="stamp">ambang '+(+state.qaGate.min||70)+' · atur di Rencana Foto</span></div>'+
+    '<div class="hint">Frame tanpa orang dilewati — di dalamnya tidak ada wajah untuk dibandingkan, dan memeriksanya hanya membakar kuota untuk skor yang selalu nol.</div>'+
+  '</div>';
 }
 function viewRender(){
   const a=state.api;
@@ -2608,6 +2823,7 @@ function viewRender(){
     : '';
 
   return head('Tahap 06','Render Foto','Identity lock + prompt adegan + setelan teknis digabung otomatis. Foto pertama yang jadi otomatis dipakai sebagai anchor wajah untuk foto-foto berikutnya.')+
+    auditCard()+
     (!lock?'<div class="check err"><span class="sym">✕</span><div>IDENTITY LOCK masih kosong. Isi tahap 02 dulu, kalau tidak setiap foto akan menghasilkan orang yang berbeda.</div></div>':'')+
     (manual?'<div class="check warn"><span class="sym">!</span><div>Mesin gambar diset “Tanpa render”. Salin prompt di bawah ke tool gambar pilihanmu, atau pilih mesin gambar lewat ⚙ API.</div></div>'
            :'<div class="check ok"><span class="sym">✓</span><div>'+esc(info)+'</div></div>')+
@@ -3373,10 +3589,11 @@ async function downloadAllImages(){
    folder bernomor supaya masih masuk akal dibuka setahun kemudian tanpa aplikasi
    ini. project.json di akar tetap bisa dimuat ulang lewat tombol Buka. */
 function qaCSV(){
-  const heads=['file','skor','identitas','realisme','teknis','cocok','slop','masalah','saran'];
+  const heads=['file','mode','skor','identitas','realisme','teknis','cocok','beda wajah','slop','masalah','saran'];
   const rows=[heads.map(csvCell).join(',')];
-  const add=(file,q)=>{ if(q) rows.push([file,q.skor,q.identitas,q.realisme,q.teknis,q.cocok,
-    (q.slop||[]).join(' | '),(q.masalah||[]).join(' | '),q.saran].map(csvCell).join(',')); };
+  const add=(file,q)=>{ if(q) rows.push([file,q.mode==='banding'?'banding vs anchor':'vs identity lock',
+    q.skor,q.identitas,q.realisme,q.teknis,q.cocok,
+    (q.beda||[]).join(' | '),(q.slop||[]).join(' | '),(q.masalah||[]).join(' | '),q.saran].map(csvCell).join(',')); };
   state.shots.forEach((sh,i)=>sh.imgs.forEach((im,j)=>
     add('03-foto/foto'+String(i+1).padStart(2,'0')+'-'+(j+1)+'.'+imgExt(im), im.qa)));
   return rows.length>1 ? '\uFEFF'+rows.join('\r\n') : '';
@@ -4052,6 +4269,13 @@ document.addEventListener('click', async e=>{
     autosaveSoon(); render(); return;
   }
   if(t.dataset.genkitab){ runKitab(); return; }
+  if(t.dataset.audit){ auditAll(t.dataset.audit==='1'); return; }
+  if(t.dataset.auditstop){ auditAbort=true; toast('Audit akan berhenti setelah foto ini selesai.','ok'); return; }
+  if(t.dataset.gofoto!=null){
+    const el=$$('.shot')[+t.dataset.gofoto];
+    if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
+    return;
+  }
   if(t.dataset.feedauto){ autoUrut(); autosaveSoon(); toast('Feed disusun ulang — sesi diselang-seling.','ok'); render(); return; }
   if(t.dataset.feedlabel){ state.feed.label=!state.feed.label; render(); return; }
   if(t.dataset.addshot){
