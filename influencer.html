@@ -256,10 +256,20 @@ label.pcheck span{flex:1;min-width:0}
 .kseksihead{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px}
 .kentry{display:flex;gap:10px;align-items:flex-start;padding:9px;border:1px solid var(--line);
   border-radius:var(--r-sm);background:var(--panel2);margin-bottom:7px}
-.kimg{width:56px;height:56px;flex:none;object-fit:cover;border-radius:6px;border:1px solid var(--line2);background:var(--bg)}
-.kadd{display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--faint);
-  font-size:20px;border-style:dashed}
-.kadd:hover{color:var(--violet);border-color:var(--violet)}
+.kimg{width:56px;height:64px;flex:none;object-fit:cover;border-radius:6px;border:1px solid var(--line2);background:var(--bg)}
+.kadd{display:flex;flex-direction:column;border-style:dashed;overflow:hidden;padding:0}
+.kadd .kgen,.kadd .kup{flex:1;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;color:var(--faint);background:transparent;border:none;width:100%;
+  font-family:inherit;font-size:15px;padding:0;margin:0;line-height:1}
+/* Tombol "buatkan" adalah aksi utama di kotak kosong, jadi ia diberi warna
+   sejak awal — bukan cuma saat hover. Kalau keduanya sama-sama abu, user tidak
+   tahu mana yang dimaksud aplikasi. */
+.kadd .kgen{border-bottom:1px dashed var(--line2);font-size:14px;
+  color:var(--violet);background:var(--violet-soft);flex:1.25}
+.kadd .kgen:hover{background:#A78BFA33}
+.kadd .kup{font-size:17px}
+.kadd .kup:hover{color:var(--txt);background:var(--panel2)}
+.kadd .kgen:disabled{opacity:.4;cursor:default}
 .kbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
 .kbody .knama{font-weight:600}
 .kbody .kcat{font-size:12px}
@@ -1727,12 +1737,86 @@ async function runKitab(fb){
     render();
   }catch(e){ toast(e.message,'err'); }
   finally{ setBusy(false); }
+  /* Langsung ditawarkan membuat foto acuannya, karena itu yang membuat entri
+     ini benar-benar terpakai. Dipisah dari finally supaya setBusy sudah lepas
+     dan confirm-nya tidak muncul di balik layar sibuk. */
+  if(kitabImgTodo(false).length) await runKitabImgAll(false);
+}
+/* ---- foto acuan entri kitab, dibuat aplikasi ----
+   Foto acuan yang di-upload sembarangan justru merusak render: ia jadi acuan
+   visual yang bertengkar dengan teksnya. Yang dibuat dari teks entri itu
+   sendiri tidak punya masalah itu — gambarnya tidak mungkin bertentangan
+   dengan kalimat yang melahirkannya.
+
+   Semua frame ini TANPA ORANG (kecuali makro tanda permanen, yang pun tanpa
+   wajah), jadi identity lock tidak dipasang dan tidak ada risiko wajah bocor. */
+const KITAB_TAIL={
+  outfit:'A flat-lay reference photograph of these clothes laid out on a plain wooden floor or bed sheet, shot from directly above. The garments are worn-in and casually arranged, with natural creases and folds — not pressed, not styled for a catalogue. Daylight from a window on one side. NO PERSON in frame: no body, no face, no hands, no mannequin.',
+  lokasi:'A reference photograph of this place with NOBODY in it — empty, as if the owner stepped out for a moment. Everyday clutter left where it is. Natural light from a real window or lamp, with visible direction and shadows. NO PERSON in frame: no body, no face, no hands.',
+  props:'A reference photograph of this object resting on an ordinary surface, shot casually from slightly above at close range. It looks used, not new in a box. Natural indoor light with a visible shadow. NO PERSON in frame: no body, no face, no hands.',
+  tanda:'An extreme macro reference photograph of this detail on human skin, filling the frame at very close range. Real skin texture with visible pores. NO FACE and no recognisable person in frame — only the small area of skin being described.'
+};
+function kitabImgPrompt(k, e){
+  const teks=String(e.teks||'').trim();
+  return composePrompt({
+    scene:teks,
+    negative:'person, human, face, model, mannequin, catalogue product shot, seamless studio backdrop, watermark, text',
+    aspek:'1:1',
+    noIdentity:true,   /* blok wajah tidak berlaku untuk benda & tempat */
+    noLife:true,       /* blok kulit/asimetri juga tidak, kecuali lewat tail tanda */
+    tail:KITAB_TAIL[k]||KITAB_TAIL.props
+  });
+}
+/* Entri yang layak dibuatkan foto: punya teks, dan belum punya gambar. */
+function kitabImgTodo(ulang){
+  const out=[];
+  KITAB.forEach(({k})=>kitabList(k).forEach(e=>{
+    if(String(e.teks||'').trim() && (ulang||!e.img)) out.push({k, e});
+  }));
+  return out;
+}
+async function renderKitabImg(k, e){
+  const img=await generateImage(kitabImgPrompt(k,e), '1:1', []);  /* [] = tanpa acuan wajah */
+  countCall('img');
+  e.img=img;
+  /* Tanda permanen sengaja TIDAK otomatis dikirim sebagai acuan: makro kulit
+     bukan elemen adegan, dan menyelipkannya ke slot acuan hanya menggeser
+     jatah anchor wajah. Teksnya sudah masuk ke blok SUBJECT. */
+  e.kirim = k!=='tanda';
+  return img;
+}
+let kitabAbort=false;
+async function runKitabImgAll(ulang){
+  if(busy) return;
+  const todo=kitabImgTodo(ulang);
+  if(!todo.length){ toast(ulang?'Kitab masih kosong — susun entrinya dulu.':'Semua entri sudah punya foto acuan.','err'); return; }
+  const biaya=todo.length*(+state.usage.harga||0);
+  if(!confirm('Aplikasi akan membuat '+todo.length+' foto acuan — satu untuk tiap entri, digambar dari teks entrinya sendiri.\n\n'+
+    todo.length+' panggilan mesin gambar'+(biaya>0?' (~$'+biaya.toFixed(2)+')':'')+'.\n\n'+
+    'Semuanya frame tanpa orang, jadi tidak ada risiko wajah ikut berubah.\n\nOK = buat, Cancel = batal')) return;
+  kitabAbort=false;
+  let ok=0, gagal=0, lastErr='';
+  try{
+    for(let n=0;n<todo.length;n++){
+      if(kitabAbort) break;
+      setBusy(true,'Membuat foto acuan '+(n+1)+'/'+todo.length+' — '+(todo[n].e.nama||todo[n].k)+'…', n, todo.length);
+      try{ await renderKitabImg(todo[n].k, todo[n].e); ok++; }
+      catch(err){ gagal++; lastErr=err.message; }
+      render();
+    }
+  }finally{
+    setBusy(false);
+    autosaveSoon(1200);
+    toast((kitabAbort?'Dihentikan. ':'')+ok+' foto acuan dibuat'+(gagal?', '+gagal+' gagal ('+lastErr+')':'.'), gagal?'err':'ok');
+    render();
+  }
 }
 function kitabCard(){
   const isi=k=>kitabList(k).map((e,i)=>
     '<div class="kentry">'+
       (e.img?'<img class="kimg" src="'+esc(imgSrc(e.img))+'" alt="">'
-           :'<label class="kimg kadd" title="Tambah foto acuan"><input type="file" accept="image/*" data-kimg="'+k+'|'+e.id+'" style="display:none">+</label>')+
+           :'<div class="kimg kadd"><button class="kgen needidle" data-kgen="'+k+'|'+e.id+'" title="Biar aplikasi yang membuatkan foto acuannya dari teks entri ini">✦</button>'+
+             '<label class="kup" title="Atau upload foto sendiri"><input type="file" accept="image/*" data-kimg="'+k+'|'+e.id+'" style="display:none">+</label></div>')+
       '<div class="kbody">'+
         '<input class="knama" data-path="kitab.'+k+'.'+i+'.nama" value="'+esc(e.nama)+'" placeholder="nama pendek">'+
         '<textarea data-path="kitab.'+k+'.'+i+'.teks" rows="2" placeholder="deskripsi English, konkret — masuk mentah ke prompt">'+esc(e.teks)+'</textarea>'+
@@ -1740,6 +1824,7 @@ function kitabCard(){
       '</div>'+
       '<div class="kact">'+
         (e.img?'<label class="mini2"><input type="checkbox" data-kkirim="'+k+'|'+e.id+'"'+(e.kirim?' checked':'')+'> kirim sbg acuan</label>'+
+               '<button class="btn small needidle" data-kgen="'+k+'|'+e.id+'">✦ Ulangi foto</button>'+
                '<button class="btn small" data-kimgdel="'+k+'|'+e.id+'">Hapus foto</button>':'')+
         '<button class="btn small danger" data-kdel="'+k+'|'+e.id+'">Hapus</button>'+
       '</div>'+
@@ -1758,7 +1843,11 @@ function kitabCard(){
     '<div class="check ok"><span class="sym">✓</span><div><b>Lemari pakaian, lokasi, dan properti</b> dirujuk dari sesi di tahap Rencana Foto — mengedit satu entri di sini ikut memperbaiki semua sesi yang memakainya. <b>Tanda permanen</b> berbeda: ia menempel pada orangnya, jadi otomatis ikut di setiap foto berisi dia.</div></div>'+
     '<div class="toolbar" style="margin:12px 0">'+
       '<button class="btn primary needidle" data-genkitab="1">✦ Susun dari persona</button>'+
+      '<button class="btn needidle" data-kimgall="0"'+(kitabImgTodo(false).length?'':' disabled')+
+        '>🖼 Buatkan foto acuan yang kosong ('+kitabImgTodo(false).length+')</button>'+
+      (busy?'<button class="btn danger" data-kimgstop="1">■ Hentikan</button>':'')+
       '<div class="spacer"></div><span class="stamp">menambah, tidak menimpa</span></div>'+
+    '<div class="hint" style="margin:-6px 0 12px">Foto acuan digambar aplikasi <b>dari teks entrinya sendiri</b>, semuanya frame tanpa orang — jadi tidak mungkin bertentangan dengan kalimat yang melahirkannya, dan tidak ada risiko wajah ikut berubah. Tombol <b>+</b> tetap ada kalau kamu punya foto asli yang mau dipakai.</div>'+
     seksi+'</div>';
 }
 function promptShoot(fb){
@@ -5019,6 +5108,23 @@ document.addEventListener('click', async e=>{
     autosaveSoon(); render(); return;
   }
   if(t.dataset.genkitab){ runKitab(); return; }
+  if(t.dataset.kimgall){ runKitabImgAll(t.dataset.kimgall==='1'); return; }
+  if(t.dataset.kimgstop){ kitabAbort=true; toast('Berhenti setelah foto ini selesai.','ok'); return; }
+  if(t.dataset.kgen){
+    const [k,id]=t.dataset.kgen.split('|');
+    const e=kitabFind(k,id); if(!e) return;
+    if(!String(e.teks||'').trim()) return toast('Isi dulu deskripsi entrinya — foto acuan digambar dari teks itu.','err');
+    (async()=>{
+      if(busy) return;
+      try{
+        setBusy(true,'Membuat foto acuan — '+(e.nama||k)+'…');
+        await renderKitabImg(k,e);
+        toast('Foto acuan "'+(e.nama||k)+'" selesai.','ok');
+      }catch(err){ toast(err.message,'err'); }
+      finally{ setBusy(false); autosaveSoon(1200); render(); }
+    })();
+    return;
+  }
   if(t.dataset.buka){ bukaProyek(t.dataset.buka); return; }
   if(t.dataset.dupproj){ duplikatProyek(t.dataset.dupproj); return; }
   if(t.dataset.namaproj){ gantiNamaProyek(t.dataset.namaproj); return; }

@@ -464,6 +464,26 @@ saat `withImages` mati, dan folder `04-kitab/` di ZIP. Batasnya 4 MB per entri (
 kecil daripada foto talent) karena puluhan entri berfoto besar akan membengkakkan file
 project yang harus dibawa antar-komputer.
 
+**Foto acuan entri dibuat aplikasi, bukan di-upload user.** Foto sembarangan justru
+merusak render: ia jadi acuan visual yang bertengkar dengan teksnya. `kitabImgPrompt()`
+menggambar dari `teks` entri itu sendiri, jadi gambarnya tidak mungkin bertentangan
+dengan kalimat yang melahirkannya. `KITAB_TAIL` memberi tiap kategori bingkai berbeda —
+outfit sebagai flat-lay, lokasi sebagai ruangan kosong, props sebagai benda terpakai,
+tanda sebagai makro kulit — dan **keempatnya menegaskan tanpa orang di frame**.
+
+Karena itu semua frame acuan memakai `noIdentity` + `noLife` dan `explicitRefs=[]`:
+tidak ada identity lock, tidak ada blok kulit, dan **anchor wajah tidak pernah dikirim**.
+Rasionya dipaksa `1:1`.
+
+`renderKitabImg()` menyalakan `kirim` otomatis **kecuali** untuk `tanda`: makro kulit
+bukan elemen adegan, dan menyelipkannya ke slot acuan hanya menggeser jatah anchor wajah
+di `refsForShot()` yang dibatasi 4. Teks tanda sudah masuk blok SUBJECT lewat
+`tandaLine()`.
+
+`runKitab()` menawarkan langsung membuat fotonya setelah entri tersusun — dipisah dari
+blok `finally` supaya `setBusy` sudah lepas dan `confirm()`-nya tidak muncul di balik
+layar sibuk. Tombol `+` (upload manual) tetap ada untuk user yang punya foto asli.
+
 `runKitab()` **menambah, tidak menimpa** — entri yang sudah dipakai sesi tidak boleh
 hilang hanya karena tombolnya ditekan dua kali; duplikat disaring lewat `teks` yang sama.
 
