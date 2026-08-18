@@ -194,6 +194,24 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
 
 /* ---------- tabel sheet / kalender ---------- */
 .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+/* --- Simulasi feed: grid ala Instagram, 3 kolom persis seperti aslinya --- */
+.fhead{display:flex;gap:16px;align-items:center;margin-bottom:14px}
+.favatar{width:56px;height:56px;border-radius:50%;object-fit:cover;flex:none;
+  border:1px solid var(--line2);background:var(--panel2)}
+.fname{font-weight:700;font-size:14px}
+.fstat{font-size:12px;color:var(--muted);margin-top:2px}
+.fbio{font-size:12px;color:var(--faint);margin-top:3px;max-width:46ch}
+.fgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;max-width:520px}
+.ftile{position:relative;aspect-ratio:1/1;overflow:hidden;background:var(--panel2)}
+.ftile img{width:100%;height:100%;object-fit:cover;display:block}
+.fbar{position:absolute;top:0;left:0;right:0;height:3px}
+.flabel{position:absolute;left:0;right:0;bottom:0;padding:3px 5px;font-family:var(--mono);
+  font-size:8.5px;letter-spacing:.04em;color:#fff;background:linear-gradient(transparent,#000c);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fmove{position:absolute;top:6px;right:4px;display:flex;gap:3px;opacity:0;transition:opacity .12s}
+.ftile:hover .fmove{opacity:1}
+.fmove .btn{padding:2px 7px;font-size:11px;line-height:1.4}
+@media (max-width:560px){ .fgrid{max-width:100%} }
 /* Badge peran foto di tahap Rencana Foto. Warna membedakan frame berisi orang
    dari frame tanpa orang, karena keduanya berbeda biaya dan berbeda risiko. */
 .peran{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
@@ -489,6 +507,9 @@ function freshProject(){
        masing-masing gambar. */
     sesi:[],
     shots:[],
+    /* Urutan feed disimpan sebagai daftar id foto, bukan indeks: indeks bergeser
+       begitu satu foto dihapus dan urutannya jadi salah diam-diam. */
+    feed:{ urutan:[], label:true },
     anchor:null,
     dirty:{}
   };
@@ -535,8 +556,9 @@ const STEPS=[
   {id:'sheet',    no:'04', label:'Character Sheet',  ai:true},
   {id:'shoot',    no:'05', label:'Rencana Foto',     ai:true},
   {id:'render',   no:'06', label:'Render Foto'},
-  {id:'content',  no:'07', label:'Caption & Script', ai:true},
-  {id:'export',   no:'08', label:'Ekspor'}
+  {id:'feed',     no:'07', label:'Simulasi Feed'},
+  {id:'content',  no:'08', label:'Caption & Script', ai:true},
+  {id:'export',   no:'09', label:'Ekspor'}
 ];
 /* Tahap yang jadi kotor ketika tahap di kirinya di-regenerate. */
 const REGEN_ORDER=['identity','persona','sheet','shoot','content'];
@@ -1366,7 +1388,10 @@ function peranMix(n){
   for(let i=0;i<n;i++) out.push(pool[(i*3)%pool.length]);
   return out;
 }
-let sesiSeq=0;
+let sesiSeq=0, shotSeq=0;
+/* Foto perlu id sendiri karena urutan feed menunjuk ke foto, dan indeks array
+   bergeser tiap kali satu foto dihapus. */
+const shotId=()=>'f'+(++shotSeq)+'-'+Math.random().toString(36).slice(2,6);
 function sesiBaru(init){
   return Object.assign({
     id:'s'+(++sesiSeq)+'-'+Math.random().toString(36).slice(2,6),
@@ -1396,7 +1421,7 @@ function shotsOfSesi(id){ return state.shots.filter(sh=>sh.sesi===id); }
    foto tanpa sesi tetap bisa dirender, hanya tidak mendapat kunci SETTING. */
 function adoptShoot(d){
   const mkShot=(s, sesiId, fallbackPeran)=>({
-    judul:s.judul||'', tujuan:s.tujuan||'',
+    id:shotId(), judul:s.judul||'', tujuan:s.tujuan||'',
     peran:(PERAN.find(p=>p.id===s.peran)||{}).id||fallbackPeran||'filler',
     pose:s.pose||'', prompt:s.prompt||'', negative:s.negative||'',
     sesi:sesiId||'', imgs:[], konten:null
@@ -1587,6 +1612,7 @@ const HAS={
   sheet:   ()=>filled(F.sheet,state.sheet)||state.sheet.niche_rows.length>0||
                state.sheet.panels.some(p=>p.imgs.length)||state.sheet.grid.cells.some(c=>c.img),
   shoot:   ()=>state.shots.length>0||state.sesi.length>0,
+  feed:    ()=>state.shots.some(sh=>(sh.imgs||[]).length>0),
   render:  ()=>state.shots.some(s=>s.imgs.length),
   content: ()=>state.shots.length>0&&state.shots.every(s=>s.konten)
 };
@@ -2414,6 +2440,193 @@ function viewRender(){
         '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="content">Lanjut ke caption →</button></div>');
 }
 
+/* =====================================================================
+   SIMULASI FEED
+
+   Feed dibaca sebagai satu kesatuan, bukan foto per foto. Dua cacat yang cuma
+   kelihatan di tampilan grid dan tidak pernah kelihatan saat memeriksa gambar
+   satu-satu:
+     - foto satu sesi menggerombol berurutan → terbaca sebagai satu kali unggah
+       massal, bukan hidup yang berjalan;
+     - kecerahan antar-ubin melompat-lompat → feed terasa acak dan berantakan.
+   Keduanya dihitung di sini, bukan dinilai AI, supaya gratis dan konsisten.
+===================================================================== */
+/* Rata-rata warna per ubin dihitung sekali lalu disimpan di luar state: hasilnya
+   turunan dari gambar, tidak perlu ikut file project maupun autosave. */
+const AVG=new WeakMap();
+let avgJalan=false;
+async function hitungAvg(imgs){
+  if(avgJalan) return;
+  avgJalan=true;
+  let baru=false;
+  try{
+    for(const im of imgs){
+      if(!im||AVG.has(im)) continue;
+      try{
+        const el=await loadImg(imgSrc(im));
+        const c=document.createElement('canvas'); c.width=24; c.height=24;
+        const x=c.getContext('2d',{willReadFrequently:true});
+        x.drawImage(el,0,0,24,24);
+        const d=x.getImageData(0,0,24,24).data;
+        let r=0,g=0,b=0;
+        for(let i=0;i<d.length;i+=4){ r+=d[i]; g+=d[i+1]; b+=d[i+2]; }
+        const n=d.length/4;
+        r/=n; g/=n; b/=n;
+        AVG.set(im,{r,g,b, lum:0.2126*r+0.7152*g+0.0722*b});
+        baru=true;
+      }catch(e){ AVG.set(im,null); }   /* remoteUrl mencemari canvas — lewati diam-diam */
+    }
+  }finally{ avgJalan=false; }
+  if(baru&&current==='feed') render();
+}
+/* Foto terakhir tiap shot = varian terbaru, sama seperti yang dipakai tahap lain. */
+const feedImg=sh=>(sh.imgs||[]).filter(im=>im&&(im.data||im.remoteUrl)).pop()||null;
+/* Urutan tersimpan menunjuk id; foto baru menyusul di belakang, id yang sudah
+   tidak ada dibuang. Jadi urutan tidak pernah rusak walau foto dihapus. */
+function feedOrder(){
+  const punya=new Map(state.shots.map(sh=>[sh.id,sh]));
+  const out=[];
+  state.feed.urutan.forEach(id=>{ const sh=punya.get(id); if(sh){ out.push(sh); punya.delete(id); } });
+  state.shots.forEach(sh=>{ if(punya.has(sh.id)) out.push(sh); });
+  return out;
+}
+const feedItems=()=>feedOrder().filter(sh=>feedImg(sh));
+function setFeedOrder(list){ state.feed.urutan=list.map(sh=>sh.id); }
+/* Susun otomatis: selang-seling sesi supaya tidak ada dua tetangga dari sesi
+   yang sama, dan frame tanpa orang disebar rata, tidak menumpuk di ujung. */
+function autoUrut(){
+  const items=feedItems();
+  const grup=new Map();
+  items.forEach(sh=>{
+    const k=sh.sesi||'_lepas';
+    if(!grup.has(k)) grup.set(k,[]);
+    grup.get(k).push(sh);
+  });
+  /* Tiap grup diurutkan supaya objek tidak semua di depan. */
+  grup.forEach(arr=>arr.sort((a,b)=>(peranDef(a.peran).noIdentity?1:0)-(peranDef(b.peran).noIdentity?1:0)));
+  const out=[];
+  let sisa=items.length, terakhir=null;
+  while(sisa>0){
+    /* Ambil dari grup terbanyak yang bukan grup sebelumnya — ini yang mencegah
+       dua tetangga sesejenis tanpa perlu backtracking. */
+    let pilih=null, besar=-1;
+    grup.forEach((arr,k)=>{
+      if(!arr.length) return;
+      if(k===terakhir && grup.size>1){
+        const lain=[...grup.entries()].some(([kk,vv])=>kk!==k&&vv.length);
+        if(lain) return;
+      }
+      if(arr.length>besar){ besar=arr.length; pilih=k; }
+    });
+    if(pilih==null) break;
+    out.push(grup.get(pilih).shift());
+    terakhir=pilih; sisa--;
+  }
+  const sisanya=feedOrder().filter(sh=>!out.includes(sh));
+  setFeedOrder(out.concat(sisanya));
+}
+/* Temuan dihitung, bukan ditebak. Tiap temuan menyebutkan posisinya supaya bisa
+   langsung ditindak, bukan sekadar "feed-mu kurang bagus". */
+function feedAudit(){
+  const items=feedItems(), out=[];
+  if(items.length<3) return out;
+  const namaSesi=sh=>{ const se=sesiOf(sh); return se?(se.nama||'sesi tanpa nama'):'foto lepas'; };
+
+  /* 1. Sesi menggerombol */
+  let run=1, worst=0, worstAt=0;
+  for(let i=1;i<items.length;i++){
+    const sama=(items[i].sesi||'_')===(items[i-1].sesi||'_');
+    run=sama?run+1:1;
+    if(run>worst){ worst=run; worstAt=i-run+2; }
+  }
+  if(worst>=3) out.push(['warn','Foto dari <b>'+esc(namaSesi(items[worstAt-1]))+'</b> menumpuk '+worst+
+    ' berturut-turut (posisi '+worstAt+'–'+(worstAt+worst-1)+'). Feed jadi terbaca sebagai satu kali unggah massal, bukan hidup yang berjalan. Klik “Susun otomatis” untuk menyelang-nyelingnya.']);
+  else out.push(['ok','Sesi terselang-seling — tidak ada '+(worst>1?worst+' ':'')+'foto sesi yang sama menumpuk berturut-turut.']);
+
+  /* 2. Porsi frame tanpa orang */
+  const objek=items.filter(sh=>peranDef(sh.peran).noIdentity).length;
+  const pct=Math.round(objek/items.length*100);
+  if(pct<15) out.push(['warn','Hanya '+pct+'% frame tanpa orang ('+objek+' dari '+items.length+
+    '). Feed yang isinya wajah semua terbaca sebagai katalog. Sasaran wajarnya 25–35% — dan frame benda justru yang paling murah dirender.']);
+  else if(pct>55) out.push(['warn',pct+'% frame tanpa orang. Kebanyakan — audiens jadi jarang melihat orangnya.']);
+  else out.push(['ok',pct+'% frame tanpa orang ('+objek+' dari '+items.length+'). Porsi ini yang membuat feed terasa seperti potongan hidup, bukan katalog.']);
+
+  /* 3. Kecerahan antar-ubin */
+  const lum=items.map(sh=>{ const a=AVG.get(feedImg(sh)); return a?a.lum:null; }).filter(v=>v!=null);
+  if(lum.length>=Math.min(4,items.length)){
+    const m=lum.reduce((a,b)=>a+b,0)/lum.length;
+    const sd=Math.sqrt(lum.reduce((a,b)=>a+(b-m)*(b-m),0)/lum.length);
+    if(sd>52) out.push(['warn','Kecerahan antar-foto melompat jauh (sebaran '+sd.toFixed(0)+
+      '). Feed terasa acak. Samakan arah cahaya antar sesi, atau selipkan foto bernada tengah di antara yang paling terang dan paling gelap.']);
+    else if(sd<7) out.push(['warn','Semua foto nyaris sama terang (sebaran '+sd.toFixed(0)+
+      '). Feed jadi datar dan tidak ada yang menonjol. Satu-dua foto lebih gelap atau lebih terang membuat grid bernapas.']);
+    else out.push(['ok','Nada terang-gelap antar-foto masih satu keluarga (sebaran '+sd.toFixed(0)+') — feed terbaca sebagai satu aroma.']);
+  }
+
+  /* 4. Ubin bertetangga yang warnanya nyaris kembar */
+  const jarak=(a,b)=>a&&b?Math.hypot(a.r-b.r,a.g-b.g,a.b-b.b):999;
+  const kembar=[];
+  for(let i=1;i<items.length;i++){
+    if(jarak(AVG.get(feedImg(items[i])), AVG.get(feedImg(items[i-1])))<9) kembar.push(i+1);
+  }
+  if(kembar.length) out.push(['warn','Foto di posisi '+kembar.join(', ')+
+    ' warnanya nyaris kembar dengan tetangganya — di grid keduanya terlihat seperti foto yang sama diposting dua kali.']);
+  return out;
+}
+function viewFeed(){
+  const semua=feedOrder(), items=feedItems();
+  const belum=semua.length-items.length;
+  if(!items.length){
+    return head('Tahap 07','Simulasi Feed','Melihat hasil render sebagai satu grid — cacat yang cuma muncul di hubungan antar-foto, bukan di masing-masing foto.')+
+      '<div class="empty"><div class="big">Belum ada foto yang bisa ditampilkan</div>'+
+      '<p>Render dulu beberapa foto di tahap sebelumnya. Feed baru berarti kalau sudah ada minimal 6–9 foto — di bawah itu polanya belum kelihatan.</p>'+
+      '<div class="toolbar" style="justify-content:center;margin-top:14px"><button class="btn go" data-go="render">← Ke tahap render</button></div></div>';
+  }
+  /* Warna rata-rata dihitung di latar; render ulang sendiri begitu selesai. */
+  hitungAvg(items.map(feedImg));
+
+  const warnaSesi=id=>{
+    const i=state.sesi.findIndex(x=>x.id===id);
+    return i<0?'var(--faint)':['#7c6cf0','#3fa46a','#d99a3f','#d4635f','#4f9fd4','#b06cc9'][i%6];
+  };
+  const tile=(sh,i)=>{
+    const im=feedImg(sh), se=sesiOf(sh), pr=peranDef(sh.peran);
+    return '<div class="ftile">'+
+      '<img src="'+esc(imgSrc(im))+'" alt="'+esc(sh.judul||'')+'">'+
+      '<span class="fbar" style="background:'+warnaSesi(sh.sesi)+'"></span>'+
+      (state.feed.label?'<span class="flabel">'+String(i+1).padStart(2,'0')+' · '+esc(se?(se.nama||'sesi'):'lepas')+
+        (pr.noIdentity?' · tanpa wajah':'')+'</span>':'')+
+      '<span class="fmove">'+
+        (i>0?'<button class="btn small" data-feedmove="'+i+'|-1" title="Geser ke kiri">←</button>':'')+
+        (i<items.length-1?'<button class="btn small" data-feedmove="'+i+'|1" title="Geser ke kanan">→</button>':'')+
+      '</span></div>';
+  };
+  const p=state.persona;
+  const kepala='<div class="fhead">'+
+    (state.anchor?'<img class="favatar" src="'+esc(imgSrc(state.anchor))+'" alt="">':'<div class="favatar"></div>')+
+    '<div><div class="fname">'+esc(p.nama||'nama_influencer')+'</div>'+
+    '<div class="fstat"><b>'+items.length+'</b> kiriman &nbsp; <b>—</b> pengikut</div>'+
+    (p.bio?'<div class="fbio">'+esc(p.bio)+'</div>':'')+'</div></div>';
+
+  const temuan=feedAudit();
+  const auditHTML=temuan.map(([t,m])=>'<div class="check '+(t==='ok'?'ok':'warn')+'"><span class="sym">'+
+    (t==='ok'?'✓':'!')+'</span><div>'+m+'</div></div>').join('');
+
+  return head('Tahap 07','Simulasi Feed','Feed dibaca sebagai satu kesatuan, bukan foto per foto. Dua cacat di bawah hanya kelihatan di tampilan grid — tidak pernah kelihatan saat memeriksa gambar satu per satu.')+
+    '<div class="card"><h3>📱 Pratinjau grid</h3>'+
+      '<div class="toolbar" style="margin:-4px 0 12px">'+
+        '<button class="btn needidle" data-feedauto="1">🔀 Susun otomatis</button>'+
+        '<button class="btn" data-feedlabel="1">'+(state.feed.label?'🏷 Sembunyikan label':'🏷 Tampilkan label')+'</button>'+
+        '<div class="spacer"></div>'+
+        '<span class="stamp">'+items.length+' foto'+(belum?' · '+belum+' belum dirender':'')+'</span></div>'+
+      kepala+
+      '<div class="fgrid">'+items.map(tile).join('')+'</div>'+
+      '<div class="hint">Garis warna di atas tiap ubin menandai sesinya. Kalau satu warna berderet, itu yang dilihat audiens sebagai unggahan massal.</div>'+
+    '</div>'+
+    '<div class="card"><h3>🔍 Yang terbaca dari grid ini</h3>'+auditHTML+
+      '<div class="hint">Semua ini dihitung dari gambarnya sendiri di browser — tanpa panggilan API, jadi gratis dan hasilnya sama tiap kali.</div></div>'+
+    '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="content">Lanjut ke caption →</button></div>';
+}
 function viewContent(){
   const shots=state.shots.map((sh,i)=>{
     const k=sh.konten;
@@ -2448,7 +2661,7 @@ function viewContent(){
     (kal||'<div class="hint">Rencana posting harian lintas platform, memakai pilar konten dan panduan niche dari character sheet. Maksimal 1 dari 4 post bersifat promosi.</div>')+
     (K.rows.length?reviseHTML('kalender','mis. lebih banyak konten edukasi, kurangi promosi'):'')+'</div>';
 
-  return head('Tahap 07','Caption & Script','Ditulis dengan suara persona, per foto, siap tempel — plus kalender posting lintas platform.')+
+  return head('Tahap 08','Caption & Script','Ditulis dengan suara persona, per foto, siap tempel — plus kalender posting lintas platform.')+
     kalCard+
     (!state.shots.length
       ? '<div class="empty"><div class="big">Belum ada foto</div><p>Susun rencana photoshoot dulu di tahap 05.</p><button class="btn primary" data-go="shoot">← Ke rencana foto</button></div>'
@@ -2472,7 +2685,7 @@ function viewExport(){
   if(state.talent.mode==='locked') push('warn','!','Mode wajah persis aktif. Pastikan izin talent masih berlaku sebelum kontennya dipublikasikan.');
   if(!state.persona.disclosure) push('warn','!','Penanda konten AI dimatikan. Cek dulu aturan pelabelan media sintetis di platform tujuanmu.');
 
-  return head('Tahap 08','Ekspor','Semua hasil bisa dibawa keluar. File project menyimpan semuanya kecuali API key.')+
+  return head('Tahap 09','Ekspor','Semua hasil bisa dibawa keluar. File project menyimpan semuanya kecuali API key.')+
     '<div class="card"><h3>✅ Pemeriksaan</h3>'+checks.join('')+'</div>'+
     '<div class="card"><h3>🗄 Arsip lengkap</h3>'+
       '<p class="hint" style="margin:-6px 0 12px">Satu file .zip berisi semua hasil proyek ini — foto, character sheet, prompt, caption, kalender, laporan QA, dan project.json yang bisa dimuat ulang. Dipakai untuk menyimpan proyek yang sudah selesai.</p>'+
@@ -2518,7 +2731,7 @@ function viewExport(){
     '</div>';
 }
 
-const VIEWS={talent:viewTalent, identity:viewIdentity, persona:viewPersona, sheet:viewSheet, shoot:viewShoot, render:viewRender, content:viewContent, export:viewExport};
+const VIEWS={talent:viewTalent, identity:viewIdentity, persona:viewPersona, sheet:viewSheet, shoot:viewShoot, render:viewRender, feed:viewFeed, content:viewContent, export:viewExport};
 const mb=n=>(n/1048576).toFixed(n<10485760?2:1)+' MB';
 function restoreBanner(){
   if(!pendingRestore) return '';
@@ -3070,7 +3283,7 @@ function saveProject(){
     : ' — TANPA gambar, hanya teks & rencana.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','sesi','shots','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
+const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
 /* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
    dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
 function normalizeState(){
@@ -3083,6 +3296,7 @@ function normalizeState(){
   });
   state.shots=(Array.isArray(state.shots)?state.shots:[]).map(s=>Object.assign({imgs:[],konten:null},s));
   state.shots.forEach(sh=>{
+    if(!sh.id) sh.id=shotId();
     if(!Array.isArray(sh.imgs)) sh.imgs=[];
     /* Project dari versi sebelum ada sesi: outfit & lokasi dulu ada di level
        foto. Nilainya tidak dibuang — ditempelkan ke prompt supaya foto lama
@@ -3098,6 +3312,8 @@ function normalizeState(){
   /* id sesi yang tidak dikenal (mis. sesi terhapus di file lama) dijadikan lepas. */
   const ids=new Set(state.sesi.map(x=>x.id));
   state.shots.forEach(sh=>{ if(sh.sesi&&!ids.has(sh.sesi)) sh.sesi=''; });
+  state.feed=Object.assign({urutan:[],label:true}, state.feed||{});
+  if(!Array.isArray(state.feed.urutan)) state.feed.urutan=[];
   state.dirty=state.dirty||{};
   state.talent=Object.assign({mode:'inspired',consent:false,catatan:'',bahasa:'Indonesia (santai, ala creator)'}, state.talent||{});
   if(state.talent.mode==='locked'&&!state.talent.consent) state.talent.mode='inspired';
@@ -3524,8 +3740,21 @@ document.addEventListener('click', async e=>{
   if(t.dataset.rmref!=null){ state.uploads.refs.splice(+t.dataset.rmref,1); render(); return; }
   if(t.dataset.rmshot!=null){ state.shots.splice(+t.dataset.rmshot,1); autosaveSoon(); render(); return; }
   if(t.dataset.addsesi){ state.sesi.push(sesiBaru({nama:'Sesi '+(state.sesi.length+1)})); autosaveSoon(); render(); return; }
+  if(t.dataset.feedmove){
+    const [i,d]=t.dataset.feedmove.split('|').map(Number);
+    const list=feedItems(), j=i+d;
+    if(j<0||j>=list.length) return;
+    [list[i],list[j]]=[list[j],list[i]];
+    /* Foto yang belum dirender tidak ikut di grid, tapi urutannya tetap harus
+       tersimpan — kalau tidak, ia melompat ke belakang begitu dirender. */
+    const belum=feedOrder().filter(sh=>!feedImg(sh));
+    setFeedOrder(list.concat(belum));
+    autosaveSoon(); render(); return;
+  }
+  if(t.dataset.feedauto){ autoUrut(); autosaveSoon(); toast('Feed disusun ulang — sesi diselang-seling.','ok'); render(); return; }
+  if(t.dataset.feedlabel){ state.feed.label=!state.feed.label; render(); return; }
   if(t.dataset.addshot){
-    state.shots.push({judul:'', tujuan:'', peran:'filler', pose:'', prompt:'', negative:'',
+    state.shots.push({id:shotId(), judul:'', tujuan:'', peran:'filler', pose:'', prompt:'', negative:'',
       sesi:t.dataset.addshot, imgs:[], konten:null});
     autosaveSoon(); render(); return;
   }

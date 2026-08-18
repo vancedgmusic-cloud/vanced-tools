@@ -91,7 +91,7 @@ telemetry, atau logging yang menyentuh key.
 
 ## `influencer.html` — AI Influencer Studio
 
-Pipeline: `talent → identity → persona → sheet → shoot → render → content → export`.
+Pipeline: `talent → identity → persona → sheet → shoot → render → feed → content → export`.
 Bikin virtual influencer dari foto talent: baca fotonya, kunci identitas, susun
 persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis caption.
 
@@ -308,6 +308,34 @@ efek samping, itu alasan porsinya besar.
 
 Menghapus sesi **tidak** menghapus fotonya — foto berisi gambar hasil render yang
 mahal. Foto-fotonya dilepas jadi foto lepas; user yang memutuskan nasibnya.
+
+### Tahap `feed` — simulasi feed
+
+Feed dibaca sebagai satu kesatuan, bukan foto per foto. Dua cacat hanya muncul di
+tampilan grid dan tidak pernah terlihat saat memeriksa gambar satu-satu: foto satu
+sesi yang menggerombol berurutan (terbaca sebagai satu kali unggah massal) dan
+kecerahan antar-ubin yang melompat-lompat.
+
+`feedAudit()` menghitung empat temuan **dari gambarnya sendiri di browser** — sesi
+menggerombol, porsi frame tanpa orang, sebaran kecerahan, dan ubin bertetangga yang
+warnanya nyaris kembar. Tidak ada panggilan API: gratis, dan hasilnya sama tiap kali.
+Tiap temuan menyebut posisinya supaya bisa langsung ditindak. `autoUrut()` menyelang-
+nyeling sesi dengan mengambil dari grup terbanyak yang bukan grup sebelumnya.
+
+Dua hal yang jangan dilonggarkan:
+
+- **`state.feed.urutan` menyimpan id foto, bukan indeks.** Indeks bergeser begitu satu
+  foto dihapus dan urutannya jadi salah diam-diam. Karena itu `shots[]` punya `id`
+  (`shotId()`), diisi otomatis di `adoptShoot()` dan ditambal di `normalizeState()`
+  untuk project lama. `feedOrder()` menambal sendiri: id yang hilang dibuang, foto
+  baru menyusul di belakang.
+- **Rata-rata warna disimpan di `AVG` (WeakMap), di luar `state`.** Ia turunan dari
+  gambar — tidak boleh ikut file project maupun autosave. `hitungAvg()` berjalan di
+  latar lalu memanggil `render()` sekali saat selesai; gambar `remoteUrl` mencemari
+  canvas jadi dilewati diam-diam.
+
+Menggeser ubin menyimpan juga urutan foto yang **belum** dirender, kalau tidak foto
+itu melompat ke belakang begitu selesai dirender.
 
 ### Tahap `sheet` — character sheet
 
