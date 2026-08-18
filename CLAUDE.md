@@ -211,6 +211,31 @@ Autosave IndexedDB bersifat **lokal per browser dan per mesin, tidak sinkron**.
 Satu-satunya cara memindahkan proyek antar komputer adalah file project (.json)
 atau arsip ZIP — tahap Ekspor memuat checklist langkahnya.
 
+### Kepatuhan & pelabelan
+
+Ada di kartu tahap Ekspor, dan dibelah dua **dengan sengaja**:
+
+- **Temuan yang dihitung** (`patuhAudit()`) — berasal dari isi proyek sendiri, jadi app
+  boleh memastikannya: penanda AI mati, caption yang tidak memuat kata penanda, cap
+  label gambar mati, mode `locked` tanpa catatan izin, foto di bawah ambang QA.
+  Pemeriksaan caption membaca **teksnya**, bukan niatnya, dan UI mengatakan itu.
+- **Daftar centang platform** (`PATUH`) — app **tidak boleh** mengklaim ini akurat.
+  Aturan pelabelan media sintetis berubah cepat dan berbeda tiap platform, dan aplikasi
+  ini tidak memantaunya. Banner di atas kartu menyatakan itu terang-terangan: catatan
+  kerja, bukan nasihat hukum, verifikasi ke kebijakan resmi. **Jangan pernah** mengubah
+  daftar itu menjadi klaim bahwa aturannya masih berlaku hari ini.
+
+`state.patuh.cek` menyimpan centang user supaya keputusannya ikut di file project.
+Daftar disaring oleh `state.sheet.platforms`; kategori `umum` selalu ikut.
+
+`provenanceText()` dan `consentText()` menghasilkan catatan kerja, bukan bukti.
+Keduanya menyebutkan batas dirinya sendiri di dalam dokumennya — catatan produksi bukan
+tanda tangan kriptografis, catatan izin bukan dokumen hukum. `provenanceText()` menyebut
+mesin dan model yang dipakai tapi **tidak pernah** menyentuh API key.
+
+Keduanya ikut di ZIP; `addText()` melewati string kosong, jadi catatan izin tidak muncul
+di proyek mode `inspired`.
+
 ### Tahap `arc` — alur hidup, mengunci waktu
 
 Wajah dikunci lewat identity lock, dunia lewat kitab, komposisi lewat simulasi feed.

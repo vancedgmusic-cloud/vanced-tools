@@ -194,6 +194,17 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
 
 /* ---------- tabel sheet / kalender ---------- */
 .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+/* --- Kepatuhan: daftar centang --- */
+/* .pcheck adalah <label>, jadi ia perlu membatalkan gaya label global
+   (uppercase, mono kecil, display:block) — kalau tidak, teksnya keluar kolom. */
+label.pcheck{display:flex;gap:9px;align-items:flex-start;padding:8px 10px;
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel2);
+  margin:0 0 6px;cursor:pointer;
+  font-size:12.5px;font-weight:400;line-height:1.5;letter-spacing:0;
+  text-transform:none;color:var(--txt)}
+label.pcheck:hover{border-color:var(--line2)}
+label.pcheck input{margin:3px 0 0;flex:none;width:auto}
+label.pcheck span{flex:1;min-width:0}
 /* --- Alur hidup --- */
 .card.babak{border-left:2px solid var(--amber)}
 .bno{font-family:var(--mono);font-size:11px;color:var(--faint);margin-right:2px}
@@ -564,6 +575,11 @@ function freshProject(){
        selama enam bulan sama mencurigakannya dengan wajah yang berubah-ubah:
        manusia sungguhan pindah, bepergian, ganti potongan rambut, punya musim. */
     arc:{ bulan:3, mulai:'', tema:'', babak:[] },
+    /* Catatan kepatuhan & izin talent. Disimpan lokal seperti isi proyek lain —
+       tidak pernah dikirim ke mana pun. `cek` menyimpan centang verifikasi user
+       supaya keputusannya ikut terbawa di file project, bukan hilang tiap
+       ganti komputer. */
+    patuh:{ talentNama:'', talentKontak:'', talentTanggal:'', talentRuang:'', cek:{} },
     /* Kitab kesinambungan — dunia milik influencer ini, dipakai ulang lintas sesi
        dan lintas bulan. Wajah dikunci di identity lock; ini yang mengunci sisanya.
        Yang membuat orang percaya bukan wajah yang sama, melainkan cangkir yang
@@ -3252,6 +3268,187 @@ function viewContent(){
         '<div class="spacer"></div></div>'+shots);
 }
 
+/* =====================================================================
+   KEPATUHAN & PELABELAN
+
+   Aturan pelabelan media sintetis berubah cepat dan berbeda tiap platform.
+   Aplikasi ini TIDAK memantau perubahan itu, jadi daftar di bawah sengaja
+   ditulis sebagai catatan kerja yang user verifikasi sendiri — bukan sebagai
+   nasihat hukum, dan bukan sebagai klaim bahwa aturannya masih berlaku hari
+   ini. Yang benar-benar dihitung aplikasi adalah temuan dari isi proyeknya
+   sendiri (patuhAudit), karena itu yang memang bisa dipastikan di sini.
+===================================================================== */
+const PATUH=[
+  {id:'meta', label:'Instagram & Facebook (Meta)', poin:[
+    'Penanda konten AI terlihat di caption, atau pakai fitur pelabelan bawaan platform kalau tersedia.',
+    'Bio akun tidak mengaku sebagai manusia nyata. Akun virtual yang menyamar itu justru yang paling sering kena tindakan.',
+    'Kalau kontennya berbayar atau berafiliasi, tandai juga sebagai konten berbayar — itu aturan terpisah dari pelabelan AI.'
+  ]},
+  {id:'tiktok', label:'TikTok', poin:[
+    'Konten AI ditandai lewat label bawaan aplikasi kalau ada, dan disebut di caption.',
+    'Wajah yang dipakai bukan wajah orang nyata tanpa izin tertulis.',
+    'Tidak dipakai untuk endorsement seolah-olah dari orang sungguhan.'
+  ]},
+  {id:'youtube', label:'YouTube / Shorts', poin:[
+    'Kotak "altered or synthetic content" diisi saat unggah, bukan cuma disebut di deskripsi.',
+    'Deskripsi menyebut bahwa sosoknya virtual.'
+  ]},
+  {id:'x', label:'X / Twitter', poin:[
+    'Penanda AI ada di postingan atau di bio akun.',
+    'Tidak dipakai untuk meniru orang atau organisasi yang benar-benar ada.'
+  ]},
+  {id:'umum', label:'Berlaku di mana pun', poin:[
+    'Tidak meniru identitas orang nyata, merek, atau lembaga.',
+    'Tidak dipakai untuk testimoni produk seolah-olah pengalaman manusia sungguhan.',
+    'Kalau memakai wajah talent nyata: izin tertulis ada, masih berlaku, dan mencakup penggunaan AI.',
+    'Simpan catatan produksi (file di bawah) — berguna kalau akun kena tinjauan atau ada sengketa brand deal.'
+  ]}
+];
+/* Temuan yang benar-benar bisa dihitung dari isi proyek — bukan tebakan soal
+   aturan platform. Ini bagian yang boleh app klaim pasti. */
+function patuhAudit(){
+  const out=[], p=state.patuh, nImg=imageCount();
+  const kap=state.shots.filter(sh=>sh.konten&&sh.konten.caption);
+  const tanpaTanda=kap.filter(sh=>{
+    const t=((sh.konten.caption||'')+' '+(sh.konten.hashtag||'')).toLowerCase();
+    return !/(\bai\b|a\.i\.|kecerdasan buatan|artificial|virtual|#aigenerated|#aiart|dibuat dengan ai|generated)/.test(t);
+  });
+  state.persona.disclosure
+    ? out.push(['ok','Penanda konten AI diminta ikut di setiap caption.'])
+    : out.push(['err','Penanda konten AI <b>dimatikan</b> di Tahap 03. Beberapa platform mewajibkan pelabelan media sintetis, dan pelabelan yang hilang adalah alasan penindakan yang paling gampang dihindari.']);
+  if(kap.length){
+    tanpaTanda.length
+      ? out.push(['warn', tanpaTanda.length+' dari '+kap.length+' caption tidak memuat kata yang terbaca sebagai penanda AI (foto '+
+          tanpaTanda.map(sh=>state.shots.indexOf(sh)+1).join(', ')+'). Periksa ulang — ini dihitung dari teksnya, bukan dari niatnya.'])
+      : out.push(['ok','Semua '+kap.length+' caption memuat penanda AI.']);
+  }
+  if(nImg){
+    state.stampAI
+      ? out.push(['ok','Cap label AI menyala — label ikut menempel di gambar saat diunduh, jadi tidak hilang waktu foto di-repost.'])
+      : out.push(['warn','Cap label AI mati. Penanda di caption bisa hilang begitu foto di-repost orang lain; label yang menempel di gambar tidak.']);
+  }
+  if(state.talent.mode==='locked'){
+    const lengkap=String(p.talentNama||'').trim()&&String(p.talentTanggal||'').trim();
+    lengkap
+      ? out.push(['ok','Catatan izin talent terisi atas nama '+esc(p.talentNama)+' ('+esc(p.talentTanggal)+').'])
+      : out.push(['err','Mode <b>wajah persis</b> aktif tapi catatan izin talent belum diisi. Memakai wajah orang nyata tanpa catatan izin adalah risiko terbesar di seluruh alur ini — isi di bawah, dan simpan bukti izinnya sendiri di luar aplikasi.']);
+  }else{
+    out.push(['ok','Mode wajah baru: tidak ada wajah orang nyata yang dipakai.']);
+  }
+  const buruk=[];
+  state.shots.forEach((sh,i)=>(sh.imgs||[]).forEach(im=>{ if(im.qa&&im.qa.skor<(+state.qaGate.min||70)) buruk.push(i+1); }));
+  if(buruk.length) out.push(['warn','Foto '+[...new Set(buruk)].join(', ')+' punya hasil di bawah ambang mutu. Bukan soal aturan platform, tapi hasil yang jelas melenceng lebih gampang memicu laporan pengguna.']);
+  return out;
+}
+function consentText(){
+  const p=state.patuh, per=state.persona;
+  if(state.talent.mode!=='locked') return '';
+  return ['CATATAN IZIN PENGGUNAAN WAJAH',
+    'Dokumen ini dibuat oleh AI Influencer Studio sebagai catatan kerja.',
+    'Ini BUKAN dokumen hukum dan bukan pengganti perjanjian tertulis dengan talent.',
+    '',
+    'Nama talent      : '+(p.talentNama||'(belum diisi)'),
+    'Kontak talent    : '+(p.talentKontak||'(belum diisi)'),
+    'Tanggal izin     : '+(p.talentTanggal||'(belum diisi)'),
+    'Ruang lingkup    : '+(p.talentRuang||'(belum diisi)'),
+    '',
+    'Karakter virtual : '+(per.nama||'(tanpa nama)'),
+    'Mode identitas   : wajah persis dari foto talent',
+    'Jumlah gambar    : '+imageCount(),
+    'Dibuat           : '+new Date().toLocaleString('id-ID'),
+    '',
+    'Pernyataan di aplikasi: operator menyatakan telah mengantongi izin talent',
+    'untuk memakai wajahnya sebagai acuan pembuatan gambar AI.',
+    '',
+    'Simpan bukti izin yang sebenarnya (perjanjian bertanda tangan, pesan',
+    'tertulis, atau rekaman persetujuan) di luar aplikasi ini. Aplikasi ini',
+    'hanya menyimpan catatannya, bukan buktinya.'
+  ].join('\n');
+}
+function provenanceText(){
+  const a=state.api, per=state.persona;
+  const mesinImg=(IMG_PROVIDERS.find(x=>x.id===a.img)||{}).name||a.img;
+  const mesinTxt=(TXT_PROVIDERS.find(x=>x.id===a.txt)||{}).name||a.txt;
+  const modelImg=a.img==='gemini_image'?a.imgGeminiModel
+    :a.img==='xai_image'?a.imgXaiModel
+    :a.img==='free'?a.imgFreeModel
+    :(a.imgOaModel||'-');
+  const P=OA[a.txt];
+  const modelTxt=P?P.model(a):(a.txt==='gemini'?a.geminiModel:a.txt==='claude'?a.claudeModel:'-');
+  const nQA=state.shots.reduce((n,sh)=>n+(sh.imgs||[]).filter(im=>im.qa).length,0);
+  return ['CATATAN PRODUKSI — '+(per.nama||'AI Influencer'),
+    'Dibuat: '+new Date().toLocaleString('id-ID'),
+    'Aplikasi: AI Influencer Studio (influencer.html)',
+    '',
+    'SIFAT KONTEN',
+    '- Seluruh gambar dalam proyek ini dihasilkan oleh AI. Tidak ada foto',
+    '  hasil kamera yang dipublikasikan apa adanya.',
+    '- Mode identitas : '+(state.talent.mode==='locked'
+        ? 'wajah persis dari foto talent (lihat catatan izin)'
+        : 'wajah orisinal; foto talent hanya jadi acuan gaya, tidak dikirim ke mesin gambar'),
+    '- Penanda AI di caption : '+(state.persona.disclosure?'diminta':'DIMATIKAN'),
+    '- Cap label di gambar   : '+(state.stampAI?'menyala':'mati'),
+    '',
+    'MESIN YANG DIPAKAI',
+    '- Teks & vision : '+mesinTxt+' · model '+(modelTxt||'-'),
+    '- Gambar        : '+mesinImg+' · model '+(modelImg||'-'),
+    '  (API key tidak pernah dicatat di file mana pun)',
+    '',
+    'ANGKA',
+    '- Sesi pemotretan : '+state.sesi.length,
+    '- Foto direncana  : '+state.shots.length,
+    '- Gambar dihasilkan: '+imageCount(),
+    '- Panggilan gambar : '+(state.usage.img||0),
+    '- Panggilan teks   : '+(state.usage.txt||0),
+    '- Gambar diperiksa QA: '+nQA,
+    '',
+    'Catatan ini dibuat dari isi proyek, bukan dari tanda tangan kriptografis.',
+    'Ia berguna sebagai riwayat kerja — mis. saat brand meminta kejelasan atau',
+    'saat akun kena tinjauan — bukan sebagai bukti yang tidak bisa dibantah.'
+  ].join('\n');
+}
+function patuhCard(){
+  const p=state.patuh;
+  const temuan=patuhAudit();
+  const dipilih=state.sheet.platforms||[];
+  const relevan=id=>id==='umum'
+    ||(id==='meta'&&dipilih.some(x=>/^ig_|facebook/.test(x)))
+    ||(id==='tiktok'&&dipilih.includes('tiktok'))
+    ||(id==='youtube'&&dipilih.some(x=>/youtube|reels/.test(x)))
+    ||(id==='x'&&dipilih.includes('x'))
+    ||!dipilih.length;
+  const daftar=PATUH.filter(x=>relevan(x.id)).map(x=>
+    '<div class="kseksi"><div class="kseksihead">'+esc(x.label)+'</div>'+
+    x.poin.map((t,i)=>{
+      const key=x.id+':'+i;
+      return '<label class="pcheck"><input type="checkbox" data-patuh="'+esc(key)+'"'+(p.cek[key]?' checked':'')+'>'+
+        '<span>'+esc(t)+'</span></label>';
+    }).join('')+'</div>').join('');
+  const nCek=Object.values(p.cek).filter(Boolean).length;
+  const nTotal=PATUH.filter(x=>relevan(x.id)).reduce((a,x)=>a+x.poin.length,0);
+  return '<div class="card"><h3>🛡 Kepatuhan &amp; pelabelan'+(nTotal?'<span class="stamp'+(nCek>=nTotal?' done':'')+'">'+nCek+'/'+nTotal+' dicentang</span>':'')+'</h3>'+
+    '<div class="check warn"><span class="sym">!</span><div><b>Baca ini dulu.</b> Aturan pelabelan media sintetis berubah cepat dan berbeda tiap platform. Daftar centang di bawah adalah <b>catatan kerja</b>, bukan nasihat hukum — dan aplikasi ini <b>tidak memantau</b> perubahan aturan. Verifikasi di halaman kebijakan resmi platform sebelum kampanye besar atau kerja sama berbayar.</div></div>'+
+    '<div class="mini">Temuan dari isi proyek ini</div>'+
+    temuan.map(([t,m])=>'<div class="check '+t+'"><span class="sym">'+(t==='ok'?'✓':t==='err'?'✕':'!')+'</span><div>'+m+'</div></div>').join('')+
+    '<div class="hint">Bagian di atas dihitung dari isi proyekmu sendiri, jadi app boleh memastikannya. Bagian di bawah tidak — itu sebabnya kamu yang mencentangnya.</div>'+
+    daftar+
+    (state.talent.mode==='locked'
+      ? '<div class="kseksi"><div class="kseksihead">📝 Catatan izin talent</div>'+
+        '<p class="hint" style="margin:0 0 10px">Mode wajah persis memakai wajah orang nyata. Isi catatannya di sini, dan simpan bukti izin yang sebenarnya di luar aplikasi — app ini menyimpan catatannya, bukan buktinya.</p>'+
+        '<div class="kvgrid">'+
+          '<div class="kv"><label>Nama talent</label><input data-path="patuh.talentNama" value="'+esc(p.talentNama)+'"></div>'+
+          '<div class="kv"><label>Kontak</label><input data-path="patuh.talentKontak" value="'+esc(p.talentKontak)+'" placeholder="email / nomor"></div>'+
+          '<div class="kv"><label>Tanggal izin</label><input type="date" data-path="patuh.talentTanggal" value="'+esc(p.talentTanggal)+'"></div>'+
+          '<div class="kv full"><label>Ruang lingkup izin</label>'+
+            '<input data-path="patuh.talentRuang" value="'+esc(p.talentRuang)+'" placeholder="mis. konten organik Instagram & TikTok, 12 bulan, tanpa iklan berbayar"></div>'+
+        '</div></div>'
+      : '')+
+    '<div class="toolbar" style="margin-top:14px">'+
+      '<button class="btn" data-export="provenance">📄 Catatan produksi (.txt)</button>'+
+      (state.talent.mode==='locked'?'<button class="btn" data-export="consent">📄 Catatan izin talent (.txt)</button>':'')+
+      '<div class="spacer"></div><span class="stamp">ikut di arsip .zip</span></div>'+
+  '</div>';
+}
 function viewExport(){
   const nImg=state.shots.reduce((n,s)=>n+s.imgs.length,0);
   const checks=[];
@@ -3269,6 +3466,7 @@ function viewExport(){
 
   return head('Tahap 10','Ekspor','Semua hasil bisa dibawa keluar. File project menyimpan semuanya kecuali API key.')+
     '<div class="card"><h3>✅ Pemeriksaan</h3>'+checks.join('')+'</div>'+
+    patuhCard()+
     '<div class="card"><h3>🗄 Arsip lengkap</h3>'+
       '<p class="hint" style="margin:-6px 0 12px">Satu file .zip berisi semua hasil proyek ini — foto, character sheet, prompt, caption, kalender, laporan QA, dan project.json yang bisa dimuat ulang. Dipakai untuk menyimpan proyek yang sudah selesai.</p>'+
       '<div class="toolbar"><button class="btn go needidle" data-zip="1">🗄 Unduh arsip (.zip)</button>'+
@@ -3855,6 +4053,8 @@ async function exportZip(){
 
     addText('README.txt', zipReadme(nImg));
     addText('identity-lock.txt', String(state.identity.identity_lock||''));
+    addText('catatan-produksi.txt', provenanceText());
+    addText('catatan-izin-talent.txt', consentText());
     addText('alur-hidup.txt', arcText());
     addText('kitab-kesinambungan.txt', kitabText());
     KITAB.forEach(({k})=>kitabList(k).forEach((e,i)=>{
@@ -3937,7 +4137,7 @@ function saveProject(){
     : ' — TANPA gambar, hanya teks & rencana.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['projNama','talent','uploads','identity','persona','sheet','kalender','kitab','arc','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
+const KEEP=['projNama','talent','uploads','identity','persona','sheet','kalender','kitab','arc','patuh','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
 /* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
    dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
 function normalizeState(){
@@ -3966,6 +4166,8 @@ function normalizeState(){
   /* id sesi yang tidak dikenal (mis. sesi terhapus di file lama) dijadikan lepas. */
   const ids=new Set(state.sesi.map(x=>x.id));
   state.shots.forEach(sh=>{ if(sh.sesi&&!ids.has(sh.sesi)) sh.sesi=''; });
+  state.patuh=Object.assign({talentNama:'',talentKontak:'',talentTanggal:'',talentRuang:'',cek:{}}, state.patuh||{});
+  if(!state.patuh.cek||typeof state.patuh.cek!=='object') state.patuh.cek={};
   state.arc=Object.assign({bulan:3,mulai:'',tema:'',babak:[]}, state.arc||{});
   if(!Array.isArray(state.arc.babak)) state.arc.babak=[];
   state.arc.babak=state.arc.babak.map(b=>babakBaru(b));
@@ -4383,6 +4585,7 @@ function resetSummary(){
     ['Sel grid terisi',                  s.sheet.grid.cells.filter(c=>c.img).length],
     ['Kanvas grid gabungan',             s.sheet.grid.sheetImg?1:0],
     ['Babak alur hidup',                 ((s.arc||{}).babak||[]).length],
+    ['Centang kepatuhan',                Object.values((s.patuh||{}).cek||{}).filter(Boolean).length],
     ['Entri kitab kesinambungan',        KITAB.reduce((a,{k})=>a+(s.kitab[k]||[]).length,0)],
     ['Sesi pemotretan',                  s.sesi.length],
     ['Rencana foto',                     s.shots.length],
@@ -4628,6 +4831,13 @@ document.addEventListener('input', e=>{
   if(!p.startsWith('api.')) autosaveSoon();
 });
 document.addEventListener('change', e=>{
+  if(e.target.dataset.patuh){
+    state.patuh.cek[e.target.dataset.patuh]=e.target.checked;
+    /* Dirender ulang supaya penghitung "n/total dicentang" ikut bergerak —
+       centang tanpa umpan balik membuat user ragu apakah tersimpan. render()
+       tidak menggeser scroll, hanya go() yang melakukannya. */
+    autosaveSoon(); render(); return;
+  }
   if(e.target.dataset.kkirim){
     const [k,id]=e.target.dataset.kkirim.split('|');
     const en=kitabFind(k,id); if(en) en.kirim=e.target.checked;
@@ -4898,6 +5108,12 @@ document.addEventListener('click', async e=>{
   if(t.dataset.export==='content'){ exportContent(); return; }
   if(t.dataset.export==='mediakit'){ exportMediaKit(); return; }
   if(t.dataset.export==='sheet'){ exportSheetHTML(); return; }
+  if(t.dataset.export==='provenance'){ download(slug(state.persona.nama)+'-catatan-produksi.txt', provenanceText()); return; }
+  if(t.dataset.export==='consent'){
+    const t2=consentText();
+    if(!t2) return toast('Catatan izin hanya berlaku untuk mode wajah persis.','err');
+    download(slug(state.persona.nama)+'-catatan-izin-talent.txt', t2); return;
+  }
   if(t.dataset.export==='kalender'){ exportKalender(); return; }
   if(t.dataset.setmodel){
     const i=t.dataset.setmodel.indexOf('|');
