@@ -194,6 +194,20 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
 
 /* ---------- tabel sheet / kalender ---------- */
 .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+/* --- Kitab kesinambungan --- */
+.kseksi{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+.kseksihead{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px}
+.kentry{display:flex;gap:10px;align-items:flex-start;padding:9px;border:1px solid var(--line);
+  border-radius:var(--r-sm);background:var(--panel2);margin-bottom:7px}
+.kimg{width:56px;height:56px;flex:none;object-fit:cover;border-radius:6px;border:1px solid var(--line2);background:var(--bg)}
+.kadd{display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--faint);
+  font-size:20px;border-style:dashed}
+.kadd:hover{color:var(--violet);border-color:var(--violet)}
+.kbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.kbody .knama{font-weight:600}
+.kbody .kcat{font-size:12px}
+.kact{display:flex;flex-direction:column;gap:5px;align-items:flex-end;flex:none}
+.mini2{font-size:10.5px;color:var(--muted);display:flex;align-items:center;gap:4px;white-space:nowrap}
 /* --- Simulasi feed: grid ala Instagram, 3 kolom persis seperti aslinya --- */
 .fhead{display:flex;gap:16px;align-items:center;margin-bottom:14px}
 .favatar{width:56px;height:56px;border-radius:50%;object-fit:cover;flex:none;
@@ -500,6 +514,11 @@ function freshProject(){
     sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[],
             grid:{ cols:4, rows:3, aspek:'2:3', latar:'studio', label:true, cells:[], sheetImg:null } },
     kalender:{ hari:14, mulai:'', rows:[] },
+    /* Kitab kesinambungan — dunia milik influencer ini, dipakai ulang lintas sesi
+       dan lintas bulan. Wajah dikunci di identity lock; ini yang mengunci sisanya.
+       Yang membuat orang percaya bukan wajah yang sama, melainkan cangkir yang
+       sama muncul di dapur yang sama selama tiga bulan. */
+    kitab:{ outfit:[], lokasi:[], props:[], tanda:[] },
     /* Sesi pemotretan. Foto asli tidak dibuat satu-satu: orang memotret dalam
        sesi — satu hari, satu outfit, satu lokasi, satu kondisi cahaya, lalu
        5-12 frame. Feed yang tiap fotonya ganti baju dan pindah kota adalah
@@ -1395,23 +1414,71 @@ const shotId=()=>'f'+(++shotSeq)+'-'+Math.random().toString(36).slice(2,6);
 function sesiBaru(init){
   return Object.assign({
     id:'s'+(++sesiSeq)+'-'+Math.random().toString(36).slice(2,6),
-    nama:'', outfit:'', lokasi:'', waktu:'', cahaya:'', rambut:'', catatan:''
+    nama:'', outfit:'', lokasi:'', waktu:'', cahaya:'', rambut:'', catatan:'',
+    /* Rujukan ke kitab. Sengaja rujukan, bukan salinan: mengedit satu entri
+       lemari pakaian harus ikut memperbaiki semua sesi yang memakainya. */
+    outfitRef:'', lokasiRef:'', props:[]
   }, init||{});
 }
 const sesiOf=sh=>state.sesi.find(x=>x.id===(sh&&sh.sesi))||null;
 /* Blok SETTING — dikunci, diprepend ke setiap foto milik sesi ini. Dibangun di
    kode supaya isinya identik huruf per huruf di semua foto sesi tersebut. */
+/* ---- kitab kesinambungan ---- */
+const KITAB=[
+  {k:'outfit', label:'Lemari pakaian', ikon:'👗', hint:'Satu set lengkap yang bisa dipakai ulang di banyak sesi. Tulis konkret dalam bahasa Inggris — teks ini masuk mentah ke prompt.'},
+  {k:'lokasi', label:'Lokasi tetap',   ikon:'📍', hint:'Tempat yang berulang: kamarnya, dapurnya, kafe langganannya. Tempat yang sama muncul berkali-kali adalah penanda hidup yang nyata.'},
+  {k:'props',  label:'Properti',       ikon:'🎒', hint:'Benda yang selalu ikut: case HP, tumbler, tas, kucingnya. Ini yang paling murah dan paling meyakinkan.'},
+  {k:'tanda',  label:'Tanda permanen', ikon:'🔖', hint:'Tato, tindik, tahi lalat, bentuk kuku. Menempel pada ORANGNYA — ikut di setiap foto berisi dia, tidak peduli sesinya.'}
+];
+const kitabDef=k=>KITAB.find(x=>x.k===k);
+let kitabSeq=0;
+const kitabEntry=init=>Object.assign({
+  id:'k'+(++kitabSeq)+'-'+Math.random().toString(36).slice(2,6),
+  nama:'', teks:'', catatan:'', img:null, kirim:false
+}, init||{});
+const kitabList=k=>(state.kitab[k]||[]);
+const kitabFind=(k,id)=>kitabList(k).find(x=>x.id===id)||null;
+/* Teks entri kitab kalau dirujuk, kalau tidak teks bebas milik sesi. Rujukan yang
+   menunjuk entri terhapus jatuh balik ke teks bebas, bukan jadi kosong diam-diam. */
+function pakaiRef(k, id, bebas){
+  const e=id?kitabFind(k,id):null;
+  return String((e&&e.teks)||bebas||'').trim();
+}
+/* Tanda permanen menempel pada orangnya, jadi ia ikut di blok SUBJECT — bukan
+   SETTING. Sesi berganti, tatonya tidak. */
+function tandaLine(){
+  const t=kitabList('tanda').map(x=>String(x.teks||'').trim()).filter(Boolean);
+  return t.length?' Permanent identifying marks, present in every photo of her: '+t.join('; ')+'.':'';
+}
 function settingLine(se){
   if(!se) return '';
+  const outfit=pakaiRef('outfit', se.outfitRef, se.outfit);
+  const lokasi=pakaiRef('lokasi', se.lokasiRef, se.lokasi);
+  const props=(se.props||[]).map(id=>{ const e=kitabFind('props',id); return e&&String(e.teks||'').trim(); }).filter(Boolean);
   const P=[
-    se.outfit && 'wearing '+se.outfit,
-    se.lokasi && 'at '+se.lokasi,
+    outfit && 'wearing '+outfit,
+    lokasi && 'at '+lokasi,
     se.rambut && 'hair '+se.rambut,
     se.waktu  && se.waktu,
-    se.cahaya && se.cahaya
+    se.cahaya && se.cahaya,
+    props.length && 'with '+props.join(', ')
   ].map(x=>String(x||'').trim()).filter(Boolean);
   if(!P.length) return '';
   return 'SETTING (identical in every frame of this session, do not vary): '+P.join(', ')+'.';
+}
+/* Foto acuan dari kitab: hanya entri yang aktif di sesi foto ini DAN ditandai
+   "kirim". Anchor wajah tetap didahulukan; sisanya dipotong oleh refsForShot. */
+function kitabRefs(sh){
+  const se=sesiOf(sh); if(!se) return [];
+  const ids=[['outfit',se.outfitRef],['lokasi',se.lokasiRef]]
+    .concat((se.props||[]).map(id=>['props',id]));
+  return ids.map(([k,id])=>{ const e=id?kitabFind(k,id):null; return (e&&e.kirim&&e.img)?e.img:null; }).filter(Boolean);
+}
+/* Acuan untuk satu foto. Frame tanpa orang tidak menerima wajah sama sekali —
+   tapi TETAP boleh menerima acuan benda/tempatnya, karena justru itu isinya. */
+function refsForShot(sh){
+  const out=peranDef(sh.peran).noIdentity?[]:refsForImage();
+  return out.concat(kitabRefs(sh)).slice(0,4);
 }
 /* Jumlah foto per sesi, dipakai UI dan ekspor. */
 function shotsOfSesi(id){ return state.shots.filter(sh=>sh.sesi===id); }
@@ -1430,8 +1497,19 @@ function adoptShoot(d){
   if(sesiArr&&sesiArr.length){
     const sesi=[], shots=[];
     sesiArr.forEach(se=>{
+      /* AI merujuk kitab dengan NAMA (id-nya tidak pernah ia lihat). Cocokkan
+         longgar; kalau tidak ketemu, jatuh ke teks bebas — jangan diam-diam
+         mengunci ke entri yang salah. */
+      const cari=(k,nama)=>{
+        const q=String(nama||'').trim().toLowerCase();
+        if(!q) return '';
+        const hit=kitabList(k).find(x=>String(x.nama||'').trim().toLowerCase()===q)
+               || kitabList(k).find(x=>q&&String(x.nama||'').trim().toLowerCase().includes(q));
+        return hit?hit.id:'';
+      };
       const rec=sesiBaru({
         nama:se.nama||'', outfit:se.outfit||'', lokasi:se.lokasi||'',
+        outfitRef:cari('outfit', se.pakaiOutfit), lokasiRef:cari('lokasi', se.pakaiLokasi),
         waktu:se.waktu||'', cahaya:se.cahaya||'', rambut:se.rambut||'', catatan:se.catatan||''
       });
       sesi.push(rec);
@@ -1451,6 +1529,94 @@ function adoptShoot(d){
   state.shots=arr.map((sh,i)=>mkShot(sh, rec.id, mix[i]));
 }
 
+/* Isi kitab disodorkan ke planner supaya sesi baru MEMAKAI ULANG barang yang
+   sudah ada, bukan mengarang lemari pakaian baru tiap kali. Itu inti fiturnya:
+   orang sungguhan punya sedikit baju yang dipakai berulang. */
+function kitabBrief(){
+  const baris=k=>kitabList(k).filter(e=>e.teks).map(e=>'    - '+(e.nama||'(tanpa nama)')+': '+e.teks).join('\n');
+  const o=baris('outfit'), l=baris('lokasi'), pr=baris('props');
+  if(!o&&!l&&!pr) return '';
+  return '\n\nKITAB KESINAMBUNGAN — barang dan tempat yang SUDAH dimiliki influencer ini.'+
+    '\nUtamakan MEMAKAI ULANG yang sudah ada daripada mengarang yang baru: orang sungguhan punya sedikit baju dan tempat yang dipakai berulang, dan pengulangan itulah yang membuat feed-nya dipercaya.'+
+    (o?'\n  Lemari pakaian:\n'+o:'')+
+    (l?'\n  Lokasi tetap:\n'+l:'')+
+    (pr?'\n  Properti:\n'+pr:'')+
+    '\nKalau sesi memakai salah satunya, tulis NAMA entri itu persis di field pakaiOutfit / pakaiLokasi, dan biarkan field outfit/lokasi kosong. Kalau memang butuh yang baru, kosongkan pakaiOutfit/pakaiLokasi dan tulis deskripsi barunya di field outfit/lokasi.';
+}
+function promptKitab(fb){
+  return HEADER+'\n'+buildContext()+
+    '\n\nTAHAP: KITAB KESINAMBUNGAN. Susun "dunia" milik influencer ini — barang dan tempat yang muncul BERULANG di kontennya selama berbulan-bulan.'+
+    '\n\nKENAPA INI ADA. Wajah yang konsisten saja tidak membuat orang percaya. Yang membuat percaya adalah cangkir yang sama muncul di dapur yang sama selama tiga bulan, tas yang itu-itu saja, tato kecil yang selalu ada di tempat yang sama. Orang sungguhan punya sedikit barang yang dipakai berulang, bukan barang baru di setiap foto.'+
+    '\n\nSusun:'+
+    '\n- outfit: 4 set pakaian lengkap yang masuk akal untuk dia dan bisa dipakai ulang lintas bulan. Bukan gaun pesta sekali pakai.'+
+    '\n- lokasi: 3 tempat yang berulang di hidupnya — biasanya rumahnya sendiri (1-2 sudut berbeda) dan satu tempat publik langganan.'+
+    '\n- props: 5 benda kecil yang selalu ikut. Yang paling berguna justru yang paling biasa: botol minum, case HP, tas kain, buku catatan.'+
+    '\n- tanda: 2 tanda permanen di tubuhnya yang kecil dan spesifik — tahi lalat di posisi tertentu, tato kecil, bentuk kuku, satu tindik. JANGAN yang mencolok atau dramatis.'+
+    '\n\nField nama: bahasa '+state.talent.bahasa+', pendek, supaya gampang dikenali di daftar (mis. "Linen krem", "Kamar tidur", "Tumbler baja").'+
+    '\nField teks: WAJIB bahasa Inggris, konkret dan bisa digambar — teks ini masuk MENTAH ke prompt gambar. Sebut bahan, warna, potongan, keausan. Contoh baik: "an oversized cream linen shirt with slightly frayed cuffs, worn over a plain white cotton tank top". Contoh buruk: "a nice casual outfit".'+
+    '\nUntuk tanda: tulis dari sudut pandang yang selalu terlihat, mis. "a small dark mole about two centimetres below the outer corner of her left eye".'+
+    '\nField catatan: bahasa '+state.talent.bahasa+', satu kalimat kapan barang/tempat itu cocok dipakai. Boleh kosong.'+
+    fbLine(fb)+'\n'+JSON_RULE+
+    '\nSkema: {"outfit":[{"nama":"string","teks":"string","catatan":"string"}],"lokasi":[…sama…],"props":[…sama…],"tanda":[…sama…]}';
+}
+async function runKitab(fb){
+  if(busy) return;
+  try{
+    setBusy(true,'Menyusun kitab kesinambungan…');
+    const d=await callJSON(promptKitab(fb), 2600);
+    let n=0;
+    KITAB.forEach(({k})=>{
+      const arr=Array.isArray(d[k])?d[k]:[];
+      if(!arr.length) return;
+      /* Menambah, bukan menimpa: entri yang sudah dipakai sesi tidak boleh
+         hilang hanya karena user menekan tombol ini dua kali. */
+      arr.forEach(e=>{
+        const teks=String(e.teks||'').trim(); if(!teks) return;
+        if(kitabList(k).some(x=>x.teks===teks)) return;
+        state.kitab[k].push(kitabEntry({nama:String(e.nama||''), teks, catatan:String(e.catatan||'')}));
+        n++;
+      });
+    });
+    countCall('txt');
+    autosaveSoon(1000);
+    toast(n?n+' entri ditambahkan ke kitab.':'Tidak ada entri baru — semuanya sudah ada.','ok');
+    render();
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+function kitabCard(){
+  const isi=k=>kitabList(k).map((e,i)=>
+    '<div class="kentry">'+
+      (e.img?'<img class="kimg" src="'+esc(imgSrc(e.img))+'" alt="">'
+           :'<label class="kimg kadd" title="Tambah foto acuan"><input type="file" accept="image/*" data-kimg="'+k+'|'+e.id+'" style="display:none">+</label>')+
+      '<div class="kbody">'+
+        '<input class="knama" data-path="kitab.'+k+'.'+i+'.nama" value="'+esc(e.nama)+'" placeholder="nama pendek">'+
+        '<textarea data-path="kitab.'+k+'.'+i+'.teks" rows="2" placeholder="deskripsi English, konkret — masuk mentah ke prompt">'+esc(e.teks)+'</textarea>'+
+        '<input class="kcat" data-path="kitab.'+k+'.'+i+'.catatan" value="'+esc(e.catatan)+'" placeholder="catatan (opsional)">'+
+      '</div>'+
+      '<div class="kact">'+
+        (e.img?'<label class="mini2"><input type="checkbox" data-kkirim="'+k+'|'+e.id+'"'+(e.kirim?' checked':'')+'> kirim sbg acuan</label>'+
+               '<button class="btn small" data-kimgdel="'+k+'|'+e.id+'">Hapus foto</button>':'')+
+        '<button class="btn small danger" data-kdel="'+k+'|'+e.id+'">Hapus</button>'+
+      '</div>'+
+    '</div>').join('');
+  const seksi=KITAB.map(({k,label,ikon,hint})=>{
+    const n=kitabList(k).length;
+    return '<div class="kseksi"><div class="kseksihead">'+ikon+' <b>'+esc(label)+'</b>'+
+      '<span class="stamp'+(n?' done':'')+'">'+n+'</span><span class="spacer"></span>'+
+      '<button class="btn small needidle" data-kadd="'+k+'">+ Tambah</button></div>'+
+      '<p class="hint" style="margin:0 0 10px">'+esc(hint)+'</p>'+
+      (n?isi(k):'<div class="hint" style="opacity:.6">(kosong)</div>')+'</div>';
+  }).join('');
+  const total=KITAB.reduce((a,{k})=>a+kitabList(k).length,0);
+  return '<div class="card"><h3>📚 Kitab kesinambungan'+(total?'<span class="stamp done">'+total+' entri</span>':'')+'</h3>'+
+    '<p class="hint" style="margin:-6px 0 12px">Wajah dikunci di identity lock; <b>ini yang mengunci sisanya</b>. Kompetitor menjual karakter yang konsisten — yang membuat orang benar-benar percaya adalah <i>dunia</i> yang konsisten: cangkir yang sama di dapur yang sama selama tiga bulan.</p>'+
+    '<div class="check ok"><span class="sym">✓</span><div><b>Lemari pakaian, lokasi, dan properti</b> dirujuk dari sesi di tahap Rencana Foto — mengedit satu entri di sini ikut memperbaiki semua sesi yang memakainya. <b>Tanda permanen</b> berbeda: ia menempel pada orangnya, jadi otomatis ikut di setiap foto berisi dia.</div></div>'+
+    '<div class="toolbar" style="margin:12px 0">'+
+      '<button class="btn primary needidle" data-genkitab="1">✦ Susun dari persona</button>'+
+      '<div class="spacer"></div><span class="stamp">menambah, tidak menimpa</span></div>'+
+    seksi+'</div>';
+}
 function promptShoot(fb){
   const n=Math.max(1,Math.min(24,+state.shoot.jumlah||6));
   const nSesi=Math.max(1,Math.min(6,+state.shoot.sesiJumlah||Math.max(1,Math.round(n/4))));
@@ -1461,6 +1627,7 @@ function promptShoot(fb){
     '\nAntar sesi HARUS berbeda jelas (outfit, lokasi, waktu, mood). Di DALAM satu sesi, outfit/lokasi/rambut/cahaya WAJIB sama persis — yang berubah hanya pose, aktivitas, jarak kamera, dan ekspresi.'+
     '\n\nPERAN FOTO. Feed asli bukan kumpulan foto juara semua; justru itu yang membuatnya terbaca sebagai katalog. Setiap foto diberi salah satu peran: '+mix+'.'+
     '\nSetiap sesi minimal punya satu foto berperan "objek" — frame tanpa orang sama sekali (benda, sudut ruangan, makanan, sepatu di lantai). Itu yang paling meyakinkan sebagai potongan hidup seseorang.'+
+    kitabBrief()+
     '\n\nATURAN PENULISAN PROMPT (paling penting, jangan dilanggar):'+
     '\n- Field outfit, lokasi, rambut, waktu, cahaya ditulis SEKALI di level SESI, bukan di tiap foto.'+
     '\n- Field prompt milik foto DILARANG menyebut outfit, pakaian, warna baju, lokasi, latar tempat, gaya rambut, waktu, atau arah cahaya. Semua itu sudah dikunci di level sesi dan ditambahkan otomatis di depan prompt. Menulisnya ulang membuat outfit berubah pelan-pelan antar foto dan merusak seluruh sesi.'+
@@ -1479,7 +1646,8 @@ function promptShoot(fb){
     '\nField negative: bahasa Inggris, hal spesifik yang harus dihindari di foto itu (boleh kosong).'+
     fbLine(fb)+
     '\nBalas HANYA satu objek JSON valid:'+
-    '\n{"sesi":[{"nama":"string","outfit":"string","lokasi":"string","waktu":"string","cahaya":"string","rambut":"string","catatan":"string",'+
+    '\n{"sesi":[{"nama":"string","pakaiOutfit":"nama entri lemari pakaian atau string kosong","pakaiLokasi":"nama entri lokasi tetap atau string kosong",'+
+    '"outfit":"string","lokasi":"string","waktu":"string","cahaya":"string","rambut":"string","catatan":"string",'+
     '"shots":[{"judul":"string","tujuan":"string","peran":"hero|filler|objek|cermin","pose":"string","prompt":"string","negative":"string"}]}]}'+
     '\nTepat '+nSesi+' sesi, total '+n+' foto di seluruh sesi.';
 }
@@ -1554,7 +1722,7 @@ function lockLine(){
   if(!lock) return '';
   return (state.talent.mode==='locked'
     ? 'SUBJECT — keep this exact same person in every image, identical facial identity: '
-    : 'SUBJECT — a single consistent fictional person, identical facial identity in every image: ')+lock;
+    : 'SUBJECT — a single consistent fictional person, identical facial identity in every image: ')+lock+tandaLine();
 }
 function composePrompt({scene, negative, aspek, tail, noIdentity, noLife, setting}){
   const P=[];
@@ -1692,7 +1860,7 @@ async function renderShot(i){
   let best=null, saran='';
   for(let att=0; att<=maxUlang; att++){
     if(att) setBusy(true,'Skor di bawah ambang — render ulang '+att+'/'+maxUlang+'…');
-    const img=await generateImage(finalPrompt(sh)+(saran?'\n\nFIX: '+saran:''), undefined, noFace?[]:undefined);
+    const img=await generateImage(finalPrompt(sh)+(saran?'\n\nFIX: '+saran:''), undefined, refsForShot(sh));
     countCall('img');
     if(!G.on||noFace||!img.data){ best=img; break; }
     try{ await qaImage(img); countCall('txt'); }
@@ -1983,6 +2151,16 @@ function getBase64(file){
     r.readAsDataURL(file);
   });
 }
+/* Foto acuan entri kitab. Batasnya lebih kecil daripada foto talent: ini
+   gambar pendamping, dan puluhan entri berfoto besar akan membengkakkan file
+   project yang harus dibawa antar-komputer. */
+async function kitabFoto(k, id, f){
+  const e=kitabFind(k,id); if(!e) return;
+  if(!/^image\//.test(f.type)) return toast('Bukan file gambar.','err');
+  if(f.size>4*1024*1024) return toast('Foto acuan maksimal 4 MB.','err');
+  try{ e.img=await getBase64(f); autosaveSoon(); render(); }
+  catch(err){ toast('Gagal memuat foto.','err'); }
+}
 async function addRefs(files){
   const list=Array.from(files||[]).filter(f=>/^image\//.test(f.type));
   if(!list.length) return;
@@ -2199,6 +2377,7 @@ function viewSheet(){
     (nicheTable?'<div class="card"><h3>📚 Panduan per niche</h3>'+nicheTable+'</div>':'')+
     (platTable?'<div class="card"><h3>📱 Panduan per platform</h3>'+platTable+'</div>':'')+
     noRefWarn()+
+    kitabCard()+
     gridCard()+
     '<div class="card"><h3>🖼 Panel referensi visual</h3>'+
       '<div class="rulebanner"><span class="sym">▲</span><div>Panel <b>Turnaround</b> adalah acuan wajah terbaik yang bisa dibuat aplikasi ini — begitu jadi, ia otomatis dipakai sebagai anchor untuk semua render berikutnya. Render panel ini duluan.</div></div>'+
@@ -2209,6 +2388,38 @@ function viewSheet(){
     '<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="shoot">Lanjut ke rencana foto →</button></div>';
 }
 
+/* Kolom outfit/lokasi di kartu sesi: dropdown kitab + teks bebas sebagai
+   cadangan. Kalau entri kitab dipilih, teks bebasnya dikunci (readonly) supaya
+   tidak ada dua sumber kebenaran yang diam-diam berbeda. */
+function pilihKitab(k, idx, se){
+  const ref=se[k+'Ref']||'', list=kitabList(k), e=ref?kitabFind(k,ref):null;
+  const L=k==='outfit'?'Outfit':'Lokasi';
+  return '<div class="kv full"><label>'+L+' — DIKUNCI (English, konkret)</label>'+
+    (list.length
+      ? '<select data-path="sesi.'+idx+'.'+k+'Ref" style="margin-bottom:6px">'+
+        '<option value="">— tulis sendiri di bawah —</option>'+
+        list.map(x=>'<option value="'+esc(x.id)+'"'+(ref===x.id?' selected':'')+'>'+
+          esc(x.nama||'(tanpa nama)')+'</option>').join('')+'</select>'
+      : '')+
+    '<textarea data-path="sesi.'+idx+'.'+k+'" rows="2"'+(e?' readonly':'')+
+      ' placeholder="'+(k==='outfit'
+        ? 'an oversized cream linen shirt over a white tank top, faded straight-leg jeans'
+        : 'a small neighbourhood coffee shop with a chipped wooden counter and one window')+'">'+
+      esc(e?e.teks:se[k])+'</textarea>'+
+    (e?'<div class="hint">Dari kitab: <b>'+esc(e.nama||'-')+'</b>. Edit teksnya di tahap Character Sheet — perubahannya ikut ke semua sesi yang memakai entri ini.'+
+        (e.img?(e.kirim?' Foto acuannya ikut dikirim ke mesin gambar.':' Foto acuannya <b>tidak</b> dikirim — centang "kirim sbg acuan" di kitab kalau mau.'):'')+'</div>'
+       :(list.length?'<div class="hint">Pilih dari kitab supaya bisa dipakai ulang di sesi lain, atau tulis sendiri di sini untuk sesi ini saja.</div>':''))+
+  '</div>';
+}
+function propsKitab(idx, se){
+  const list=kitabList('props');
+  if(!list.length) return '';
+  const on=new Set(se.props||[]);
+  return '<div class="kv full"><label>Properti yang ikut di sesi ini</label><div class="chips">'+
+    list.map(x=>'<button class="chip'+(on.has(x.id)?' sel':'')+'" data-kprop="'+idx+'|'+esc(x.id)+'">'+
+      esc(x.nama||'(tanpa nama)')+'</button>').join('')+'</div>'+
+    '<div class="hint">Benda yang muncul berulang adalah penanda hidup nyata yang paling murah — dan paling gampang terlewat.</div></div>';
+}
 function viewShoot(){
   const s=state.shoot;
   /* Foto dirender per sesi. Nomor global tetap dipertahankan karena tahap
@@ -2254,12 +2465,11 @@ function viewShoot(){
       '<div class="kvgrid">'+
         '<div class="kv"><label>Nama sesi</label><input data-path="sesi.'+k+'.nama" value="'+esc(se.nama)+'" placeholder="mis. Pagi di kafe"></div>'+
         '<div class="kv"><label>Waktu</label><input data-path="sesi.'+k+'.waktu" value="'+esc(se.waktu)+'" placeholder="mis. late morning"></div>'+
-        '<div class="kv full"><label>Outfit — DIKUNCI (English, konkret)</label>'+
-          '<textarea data-path="sesi.'+k+'.outfit" rows="2" placeholder="an oversized cream linen shirt over a white tank top, faded straight-leg jeans, small gold hoop earrings">'+esc(se.outfit)+'</textarea></div>'+
-        '<div class="kv full"><label>Lokasi — DIKUNCI (English, konkret)</label>'+
-          '<textarea data-path="sesi.'+k+'.lokasi" rows="2" placeholder="a small neighbourhood coffee shop with a chipped wooden counter and one large street-facing window">'+esc(se.lokasi)+'</textarea></div>'+
+        pilihKitab('outfit', k, se)+
+        pilihKitab('lokasi', k, se)+
         '<div class="kv"><label>Rambut</label><input data-path="sesi.'+k+'.rambut" value="'+esc(se.rambut)+'" placeholder="loosely tied back, a few strands loose"></div>'+
         '<div class="kv"><label>Cahaya</label><input data-path="sesi.'+k+'.cahaya" value="'+esc(se.cahaya)+'" placeholder="soft daylight from the window on her left"></div>'+
+        propsKitab(k, se)+
       '</div>'+
       (kunci
         ? '<div class="keynote"><b>Blok terkunci yang masuk ke setiap foto sesi ini:</b><br>'+esc(kunci)+'</div>'
@@ -2948,6 +3158,7 @@ function sheetHTML(){
     '<h2>Identitas visual</h2><dl>'+defList(F.identity.filter(f=>f.k!=='identity_lock'),id)+'</dl>'+
     (id.identity_lock?'<h2>Identity lock</h2><pre>'+esc(id.identity_lock)+'</pre>':'')+
     '<h2>Brand kit</h2><dl>'+defList(F.sheet,S)+'</dl>'+
+    kitabHTML()+
     '<h2>Panduan per niche</h2>'+tbl(['Niche','Sudut pandang','Format','Contoh hook','Props','Hindari'],
       S.niche_rows.map(r=>row([r.niche,r.sudut_pandang,r.format,r.hook,r.props,r.hindari])))+
     '<h2>Panduan per platform</h2>'+tbl(['Platform','Jenis konten','Gaya hook','Caption','Frekuensi','CTA'],
@@ -2957,6 +3168,38 @@ function sheetHTML(){
       '. Semua gambar dihasilkan AI.</footer>'+
     '</div></body></html>';
   return html;
+}
+/* Kitab ikut ke character sheet yang diekspor: tanpa itu, lembar acuan yang
+   dibawa keluar tidak memuat justru bagian yang menjaga kesinambungan. */
+function kitabHTML(){
+  const seksi=KITAB.map(({k,label})=>{
+    const arr=kitabList(k).filter(e=>e.teks||e.nama);
+    if(!arr.length) return '';
+    return '<h2>'+esc(label)+'</h2><table><thead><tr><th>Nama</th><th>Deskripsi (masuk ke prompt)</th><th>Catatan</th></tr></thead><tbody>'+
+      arr.map(e=>'<tr><td>'+esc(e.nama||'-')+'</td><td>'+esc(e.teks||'-')+'</td><td>'+esc(e.catatan||'')+'</td></tr>').join('')+
+      '</tbody></table>';
+  }).filter(Boolean).join('');
+  return seksi;
+}
+function kitabText(){
+  const L=['# Kitab kesinambungan — '+(state.persona.nama||'AI Influencer'),
+    '# Dunia milik influencer ini: barang & tempat yang muncul berulang.',
+    '# Deskripsi berbahasa Inggris masuk MENTAH ke prompt gambar.',''];
+  let ada=false;
+  KITAB.forEach(({k,label})=>{
+    const arr=kitabList(k).filter(e=>e.teks||e.nama);
+    if(!arr.length) return;
+    ada=true;
+    L.push('=== '+label.toUpperCase()+' ===');
+    arr.forEach(e=>{
+      L.push('- '+(e.nama||'(tanpa nama)'));
+      if(e.teks) L.push('  '+e.teks);
+      if(e.catatan) L.push('  catatan: '+e.catatan);
+      if(e.img) L.push('  (punya foto acuan'+(e.kirim?', dikirim ke mesin gambar':'')+')');
+    });
+    L.push('');
+  });
+  return ada?L.join('\n'):'';
 }
 function exportSheetHTML(){ download(slug(state.persona.nama)+'-character-sheet.html', sheetHTML(), 'text/html'); }
 
@@ -3208,6 +3451,10 @@ async function exportZip(){
 
     addText('README.txt', zipReadme(nImg));
     addText('identity-lock.txt', String(state.identity.identity_lock||''));
+    addText('kitab-kesinambungan.txt', kitabText());
+    KITAB.forEach(({k})=>kitabList(k).forEach((e,i)=>{
+      if(e.img) addImg('04-kitab/'+k+'-'+String(i+1).padStart(2,'0')+'-'+slug(e.nama||k)+'.'+imgExt(e.img), e.img);
+    }));
     addText('prompts.txt', promptsText());
     addText('caption-script.txt', contentText());
     addText('media-kit.md', mediaKitText());
@@ -3243,6 +3490,7 @@ function projectJSON(){
     ((snap.sheet||{}).panels||[]).forEach(p=>{ p.imgs=[]; });
     const sg=(snap.sheet||{}).grid;
     if(sg){ (sg.cells||[]).forEach(c=>{ c.img=null; }); sg.sheetImg=null; }
+    Object.values(snap.kitab||{}).forEach(arr=>(arr||[]).forEach(e=>{ e.img=null; e.kirim=false; }));
     snap.anchor=null;
   }
   snap._app='ai-influencer-studio'; snap._v=1;
@@ -3255,6 +3503,7 @@ function imageCount(){
   state.sheet.panels.forEach(pn=>{ n+=(pn.imgs||[]).length; });
   n+=state.sheet.grid.cells.filter(c=>c.img).length;
   if(state.sheet.grid.sheetImg) n++;
+  KITAB.forEach(({k})=>{ n+=kitabList(k).filter(e=>e.img).length; });
   return n;
 }
 function saveProject(){
@@ -3283,7 +3532,7 @@ function saveProject(){
     : ' — TANPA gambar, hanya teks & rencana.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['talent','uploads','identity','persona','sheet','kalender','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
+const KEEP=['talent','uploads','identity','persona','sheet','kalender','kitab','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
 /* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
    dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
 function normalizeState(){
@@ -3312,6 +3561,20 @@ function normalizeState(){
   /* id sesi yang tidak dikenal (mis. sesi terhapus di file lama) dijadikan lepas. */
   const ids=new Set(state.sesi.map(x=>x.id));
   state.shots.forEach(sh=>{ if(sh.sesi&&!ids.has(sh.sesi)) sh.sesi=''; });
+  state.kitab=Object.assign({outfit:[],lokasi:[],props:[],tanda:[]}, state.kitab||{});
+  KITAB.forEach(({k})=>{
+    if(!Array.isArray(state.kitab[k])) state.kitab[k]=[];
+    state.kitab[k]=state.kitab[k].map(e=>kitabEntry(e));
+  });
+  state.sesi.forEach(se=>{
+    if(!Array.isArray(se.props)) se.props=[];
+    ['outfitRef','lokasiRef'].forEach(r=>{ if(se[r]==null) se[r]=''; });
+    /* Rujukan ke entri yang sudah tidak ada dibuang, supaya tidak diam-diam
+       mengunci ke teks kosong. Teks bebas sesi tetap jadi cadangannya. */
+    if(se.outfitRef&&!kitabFind('outfit',se.outfitRef)) se.outfitRef='';
+    if(se.lokasiRef&&!kitabFind('lokasi',se.lokasiRef)) se.lokasiRef='';
+    se.props=se.props.filter(id=>kitabFind('props',id));
+  });
   state.feed=Object.assign({urutan:[],label:true}, state.feed||{});
   if(!Array.isArray(state.feed.urutan)) state.feed.urutan=[];
   state.dirty=state.dirty||{};
@@ -3409,6 +3672,7 @@ function imageWeight(){
   state.sheet.panels.forEach(pn=>(pn.imgs||[]).forEach(add));
   state.sheet.grid.cells.forEach(c=>add(c.img));
   add(state.sheet.grid.sheetImg);
+  KITAB.forEach(({k})=>kitabList(k).forEach(e=>add(e.img)));
   return n;
 }
 let autoTimer=null, autoLast=0, autoOn=true, autoNoImg=false, autoRunning=false;
@@ -3504,6 +3768,7 @@ function resetSummary(){
     ['Panel character sheet ter-render', s.sheet.panels.reduce((a,p)=>a+(p.imgs||[]).length,0)],
     ['Sel grid terisi',                  s.sheet.grid.cells.filter(c=>c.img).length],
     ['Kanvas grid gabungan',             s.sheet.grid.sheetImg?1:0],
+    ['Entri kitab kesinambungan',        KITAB.reduce((a,{k})=>a+(s.kitab[k]||[]).length,0)],
     ['Sesi pemotretan',                  s.sesi.length],
     ['Rencana foto',                     s.shots.length],
     ['Foto hasil render',                s.shots.reduce((a,x)=>a+x.imgs.length,0)],
@@ -3707,6 +3972,18 @@ document.addEventListener('input', e=>{
   if(!p.startsWith('api.')) autosaveSoon();
 });
 document.addEventListener('change', e=>{
+  if(e.target.dataset.kkirim){
+    const [k,id]=e.target.dataset.kkirim.split('|');
+    const en=kitabFind(k,id); if(en) en.kirim=e.target.checked;
+    autosaveSoon(); render(); return;
+  }
+  if(e.target.dataset.kimg){
+    const [k,id]=e.target.dataset.kimg.split('|');
+    const f=(e.target.files||[])[0];
+    if(f) kitabFoto(k,id,f);
+    e.target.value='';
+    return;
+  }
   if(e.target.id==='consent'){
     state.talent.consent=e.target.checked;
     if(!e.target.checked&&state.talent.mode==='locked') state.talent.mode='inspired';
@@ -3751,6 +4028,30 @@ document.addEventListener('click', async e=>{
     setFeedOrder(list.concat(belum));
     autosaveSoon(); render(); return;
   }
+  if(t.dataset.kadd){ state.kitab[t.dataset.kadd].push(kitabEntry()); autosaveSoon(); render(); return; }
+  if(t.dataset.kdel){
+    const [k,id]=t.dataset.kdel.split('|');
+    const e=kitabFind(k,id); if(!e) return;
+    const dipakai=state.sesi.filter(se=>se.outfitRef===id||se.lokasiRef===id||(se.props||[]).includes(id)).length;
+    if(dipakai&&!confirm('Entri ini dipakai di '+dipakai+' sesi. Menghapusnya membuat sesi itu jatuh ke teks bebasnya sendiri (yang mungkin kosong).\n\nOK = hapus, Cancel = batal')) return;
+    state.kitab[k]=kitabList(k).filter(x=>x.id!==id);
+    normalizeState();
+    autosaveSoon(); render(); return;
+  }
+  if(t.dataset.kimgdel){
+    const [k,id]=t.dataset.kimgdel.split('|');
+    const e=kitabFind(k,id); if(!e) return;
+    e.img=null; e.kirim=false; autosaveSoon(); render(); return;
+  }
+  if(t.dataset.kprop){
+    const [idx,id]=t.dataset.kprop.split('|');
+    const se=state.sesi[+idx]; if(!se) return;
+    se.props=se.props||[];
+    const i=se.props.indexOf(id);
+    if(i<0) se.props.push(id); else se.props.splice(i,1);
+    autosaveSoon(); render(); return;
+  }
+  if(t.dataset.genkitab){ runKitab(); return; }
   if(t.dataset.feedauto){ autoUrut(); autosaveSoon(); toast('Feed disusun ulang — sesi diselang-seling.','ok'); render(); return; }
   if(t.dataset.feedlabel){ state.feed.label=!state.feed.label; render(); return; }
   if(t.dataset.addshot){

@@ -309,6 +309,50 @@ efek samping, itu alasan porsinya besar.
 Menghapus sesi **tidak** menghapus fotonya — foto berisi gambar hasil render yang
 mahal. Foto-fotonya dilepas jadi foto lepas; user yang memutuskan nasibnya.
 
+### Kitab kesinambungan — mengunci dunia, bukan cuma wajah
+
+`state.kitab` = `{outfit:[], lokasi:[], props:[], tanda:[]}`, tiap entri
+`{id, nama, teks, catatan, img, kirim}`. `teks` **wajib bahasa Inggris** — ia masuk
+mentah ke prompt gambar; `nama` cuma label untuk daftar di UI.
+
+Empat kategori, **tiga titik suntik berbeda**, dan itu bukan detail sepele:
+
+| kategori | masuk ke | ruang lingkup |
+|---|---|---|
+| `tanda` | `lockLine()` → blok **SUBJECT** | menempel pada orangnya, ikut di setiap foto berisi dia |
+| `outfit`, `lokasi`, `props` | `settingLine()` → blok **SETTING** | milik satu sesi |
+
+Tanda permanen sengaja **bukan** SETTING: tato tidak berganti waktu sesi berganti.
+Menaruhnya di SETTING berarti ia hilang di foto lepas dan di sesi yang lupa memilihnya.
+
+**Rujukan, bukan salinan.** `sesi.outfitRef` / `sesi.lokasiRef` / `sesi.props[]` menyimpan
+id entri. `pakaiRef()` menyelesaikannya ke `teks`, dengan teks bebas milik sesi sebagai
+cadangan. Itu inti fiturnya: mengedit satu entri lemari pakaian ikut memperbaiki semua
+sesi yang memakainya. Kalau ini diubah jadi salinan, fiturnya kehilangan alasan ada.
+
+`normalizeState()` membuang rujukan ke entri yang sudah terhapus — kalau tidak, sesi
+diam-diam terkunci ke teks kosong. Teks bebas sesi tetap jadi jaring pengamannya, dan
+tombol Hapus memperingatkan berapa sesi yang terdampak sebelum menghapus.
+
+`kitabBrief()` menyodorkan isi kitab ke `promptShoot()` supaya planner **memakai ulang**
+barang yang sudah ada, bukan mengarang lemari pakaian baru tiap kali — orang sungguhan
+punya sedikit baju yang dipakai berulang. AI merujuk lewat **nama** (id tidak pernah ia
+lihat); `adoptShoot()` mencocokkannya jadi id, dan kalau tidak ketemu jatuh ke teks
+bebas — jangan diam-diam mengunci ke entri yang salah.
+
+`refsForShot(sh)` menggantikan `refsForImage()` di `renderShot()`: anchor wajah dulu,
+lalu foto acuan entri kitab yang aktif di sesi itu **dan** ditandai `kirim`, dipotong 4.
+Frame `objek` tidak menerima wajah sama sekali tapi **tetap** menerima acuan benda dan
+tempatnya — justru itu isinya.
+
+Gambar entri kitab ikut `imageCount()`, `imageWeight()`, penyaringan `projectJSON()`
+saat `withImages` mati, dan folder `04-kitab/` di ZIP. Batasnya 4 MB per entri (lebih
+kecil daripada foto talent) karena puluhan entri berfoto besar akan membengkakkan file
+project yang harus dibawa antar-komputer.
+
+`runKitab()` **menambah, tidak menimpa** — entri yang sudah dipakai sesi tidak boleh
+hilang hanya karena tombolnya ditekan dua kali; duplikat disaring lewat `teks` yang sama.
+
 ### Tahap `feed` — simulasi feed
 
 Feed dibaca sebagai satu kesatuan, bukan foto per foto. Dua cacat hanya muncul di
