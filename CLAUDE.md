@@ -211,6 +211,40 @@ Autosave IndexedDB bersifat **lokal per browser dan per mesin, tidak sinkron**.
 Satu-satunya cara memindahkan proyek antar komputer adalah file project (.json)
 atau arsip ZIP — tahap Ekspor memuat checklist langkahnya.
 
+### Roster — banyak influencer di satu browser
+
+IndexedDB tidak lagi memakai satu slot. Sekarang: `proj:<projId>` per influencer +
+satu record `roster` berisi **metadata saja** (`{id, nama, t, nFoto, nImg, nSesi,
+thumb}`). Metadata dipisah dengan sengaja — menampilkan daftar tidak boleh memuat
+ratusan MB gambar milik proyek yang tidak sedang dibuka. `thumb` digambar ulang lewat
+canvas ke 96 px JPEG, jadi beberapa kB, bukan beberapa MB.
+
+**`state.projId` sengaja TIDAK ada di `KEEP`.** Memuat file project dari mesin lain
+harus jadi entri roster baru, bukan menimpa proyek yang kebetulan ber-id sama.
+`projNama` ikut di `KEEP` supaya labelnya tetap terbawa bersama file. Invarian ini
+diuji — kalau `projId` masuk `KEEP`, smoke13 gagal.
+
+`flushProyek()` menyimpan proyek yang sedang dibuka **sebelum** berpindah; tanpa itu
+kerja beberapa detik terakhir hilang tiap kali user ganti influencer. `projectEpoch`
+dinaikkan di setiap perpindahan, bukan cuma di reset — autosave yang sedang jalan
+memegang snapshot proyek lama dan tulisannya harus dibuang kalau mendarat belakangan.
+
+`migrasiSlotLama()` memindahkan slot `autosave` versi satu-proyek ke roster sekali saat
+boot lalu menghapusnya. Tanpa ini pekerjaan user yang sudah ada tampak lenyap begitu
+app diperbarui.
+
+Dua perubahan makna yang sengaja:
+
+- **Reset** mengosongkan isi proyek tapi **mempertahankan entri roster-nya** — yang
+  user minta adalah mengosongkan influencer ini, bukan menghapusnya dari daftar.
+  Menghapus dari daftar punya tombolnya sendiri di 👥 Proyek.
+- **"Buang"** di banner pemulihan hanya menutup tawaran dan mengosongkan `roster.aktif`.
+  Ia **tidak lagi menghapus slot**: dengan adanya roster, membuang influencer diam-diam
+  lewat tombol itu akan jadi kehilangan yang tak terduga.
+
+`hapusProyek()` yang menyasar proyek yang sedang dibuka juga mengosongkan memori —
+kalau tidak, autosave berikutnya menulis ulang slot yang baru saja dihapus.
+
 ### Reset — isi proyek vs setup
 
 `state` dibelah dua secara sengaja:

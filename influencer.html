@@ -194,6 +194,16 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
 
 /* ---------- tabel sheet / kalender ---------- */
 .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+/* --- Roster influencer --- */
+.prow{display:flex;gap:11px;align-items:center;padding:10px;border:1px solid var(--line);
+  border-radius:var(--r-sm);background:var(--panel2);margin-bottom:8px}
+.prow.now{border-color:var(--violet)}
+.prow>img,.pth{width:52px;height:66px;flex:none;object-fit:cover;border-radius:6px;
+  border:1px solid var(--line2);background:var(--bg)}
+.pbody{flex:1;min-width:0}
+.ptop{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.psub{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px}
+.pact{display:flex;flex-direction:column;gap:4px;flex:none}
 /* --- Audit konsistensi menyeluruh --- */
 .arow{display:flex;gap:11px;align-items:flex-start;padding:9px;border:1px solid var(--line);
   border-radius:var(--r-sm);background:var(--panel2);margin-bottom:7px}
@@ -383,6 +393,7 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
     <div class="actions">
       <button class="btn small" id="btnLoad" title="Buka project .json">📂 Buka</button>
       <button class="btn small" id="btnSave" title="Simpan project sebagai .json">💾 Simpan</button>
+      <button class="btn small" id="btnRoster" title="Daftar influencer yang tersimpan di browser ini">👥 Proyek</button>
       <button class="btn small" id="btnApi">⚙ API</button>
       <button class="btn small danger needidle" id="btnReset" title="Kosongkan proyek untuk talent baru">🗑 Reset</button>
     </div>
@@ -420,6 +431,19 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
       <button class="btn ghost" id="btnTestTxt">Tes mesin teks</button>
       <button class="btn ghost" id="btnTestImg">Tes mesin gambar</button>
       <button class="btn primary" id="btnCloseApi">Selesai</button>
+    </div>
+  </div>
+</div>
+
+<!-- Roster modal -->
+<div class="overlay" id="rosterOverlay">
+  <div class="modal" style="max-width:660px">
+    <h2>Influencer di browser ini</h2>
+    <div class="sub">Tiap influencer punya slotnya sendiri — foto, sesi, kitab, dan semua render tersimpan terpisah. Berpindah tidak menghapus apa pun.</div>
+    <div id="rosterBody"></div>
+    <div class="foot">
+      <button class="btn ghost" id="btnRosterClose">Tutup</button>
+      <button class="btn primary needidle" id="btnProyekBaru">+ Influencer baru</button>
     </div>
   </div>
 </div>
@@ -513,8 +537,14 @@ function setBusy(b, text){
    memegang referensi array/objek dari proyek sebelumnya.
    Menambah field isi proyek: taruh DI SINI, bukan di objek state di bawah —
    kalau tidak, ia akan lolos dari Reset dan bocor ke proyek berikutnya. */
+let projSeq=0;
+const projId=()=>'p'+Date.now().toString(36)+'-'+(++projSeq)+Math.random().toString(36).slice(2,5);
 function freshProject(){
   return {
+    /* Identitas slot di roster. projId sengaja TIDAK ikut di KEEP: memuat file
+       project dari mesin lain harus jadi entri baru, bukan menimpa proyek yang
+       kebetulan ber-id sama. projNama ikut supaya labelnya tetap terbawa. */
+    projId:projId(), projNama:'',
     talent:{ mode:'inspired', consent:false, catatan:'', bahasa:'Indonesia (santai, ala creator)' },
     uploads:{ refs:[] },
     identity:{},
@@ -3166,8 +3196,9 @@ function restoreBanner(){
   const nFoto=(d.shots||[]).length;
   const nImg=(d.shots||[]).reduce((a,s)=>a+((s.imgs||[]).length),0)
     +((d.sheet&&d.sheet.grid&&d.sheet.grid.cells)||[]).filter(c=>c&&c.img).length;
+  const nm=String(d.projNama||(d.persona&&d.persona.nama)||'').trim();
   return '<div class="restore"><span class="sym">⟲</span>'+
-    '<div>Ada pekerjaan tersimpan otomatis dari <b>'+esc(t)+'</b>'+
+    '<div>Ada pekerjaan tersimpan otomatis'+(nm?' untuk <b>'+esc(nm)+'</b>':'')+' dari <b>'+esc(t)+'</b>'+
     (nFoto||nImg?' — '+nFoto+' foto direncanakan, '+nImg+' gambar':'')+
     (d._tanpaGambar?' <b>(tanpa gambar — penyimpanan browser penuh saat itu)</b>':'')+
     '. Pulihkan sebelum mulai, atau buang kalau mau mulai bersih.</div>'+
@@ -3749,7 +3780,7 @@ function saveProject(){
     : ' — TANPA gambar, hanya teks & rencana.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['talent','uploads','identity','persona','sheet','kalender','kitab','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
+const KEEP=['projNama','talent','uploads','identity','persona','sheet','kalender','kitab','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
 /* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
    dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
 function normalizeState(){
@@ -3847,7 +3878,10 @@ function loadProject(file){
    tidak ikut disimpan — aturan "key hanya hidup di memori sesi" berlaku juga di
    sini, jadi snapshot melewati penyaring /key$/i yang sama.
 ===================================================================== */
-const DB_NAME='ai-influencer-studio', DB_STORE='snapshot', DB_SLOT='autosave';
+const DB_NAME='ai-influencer-studio', DB_STORE='snapshot', DB_SLOT='autosave', DB_ROSTER='roster';
+/* Satu slot per influencer. Slot lama bernama 'autosave' (versi satu-proyek)
+   dimigrasikan sekali saat boot. */
+const slotKey=id=>'proj:'+(id||state.projId);
 let dbFailed=false;
 function idbOpen(){
   return new Promise((res,rej)=>{
@@ -3892,6 +3926,51 @@ function imageWeight(){
   KITAB.forEach(({k})=>kitabList(k).forEach(e=>add(e.img)));
   return n;
 }
+/* ---- roster: daftar influencer ----
+   Metadata disimpan terpisah dari snapshot-nya supaya daftar bisa ditampilkan
+   tanpa memuat ratusan MB gambar milik proyek yang tidak sedang dibuka. */
+async function rosterLoad(){
+  try{
+    const r=await idbTx('readonly',st=>st.get(DB_ROSTER));
+    if(r&&Array.isArray(r.list)) return r;
+  }catch(e){ dbFailed=true; }
+  return {v:1, aktif:'', list:[]};
+}
+async function rosterSave(r){
+  try{ await idbTx('readwrite',st=>st.put({v:1, aktif:r.aktif||'', list:r.list||[]}, DB_ROSTER)); }
+  catch(e){}
+}
+const projLabel=(m)=>String((m&&m.nama)||'').trim()||'(tanpa nama)';
+function namaProyek(){
+  return String(state.projNama||'').trim() || String(state.persona.nama||'').trim() || '';
+}
+/* Thumbnail kecil supaya daftar bisa dikenali sekilas. Digambar ulang lewat
+   canvas jadi ukurannya beberapa kB, bukan beberapa MB. */
+async function projThumb(){
+  const im=state.anchor||state.shots.map(s=>(s.imgs||[]).filter(x=>x&&x.data).pop()).filter(Boolean)[0]
+    ||state.uploads.refs[0];
+  if(!im||!im.data) return '';
+  try{
+    const el=await loadImg(imgSrc(im));
+    const w=96, h=Math.max(1,Math.round(w*el.naturalHeight/el.naturalWidth));
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(el,0,0,w,h);
+    return c.toDataURL('image/jpeg',0.7);
+  }catch(e){ return ''; }
+}
+async function rosterTulis(extra){
+  const r=await rosterLoad();
+  const i=r.list.findIndex(x=>x.id===state.projId);
+  const lama=i>=0?r.list[i]:null;
+  const meta=Object.assign({
+    id:state.projId, nama:namaProyek(), t:Date.now(),
+    nFoto:state.shots.length, nImg:imageCount(), nSesi:state.sesi.length,
+    thumb:(lama&&lama.thumb)||''
+  }, extra||{});
+  if(i>=0) r.list[i]=meta; else r.list.push(meta);
+  r.aktif=state.projId;
+  await rosterSave(r);
+}
 let autoTimer=null, autoLast=0, autoOn=true, autoNoImg=false, autoRunning=false;
 /* Dinaikkan tiap kali proyek di-reset. Autosave yang sudah berjalan sebelum
    reset memegang snapshot proyek LAMA; kalau tulisannya mendarat setelah slot
@@ -3903,22 +3982,25 @@ async function autosaveNow(){
   autoRunning=true;
   const epoch=projectEpoch;
   try{
+    const kunci=slotKey();
     try{
-      await idbTx('readwrite',st=>st.put({t:Date.now(), state:snapshotForDisk(!autoNoImg)}, DB_SLOT));
+      await idbTx('readwrite',st=>st.put({t:Date.now(), nama:namaProyek(), state:snapshotForDisk(!autoNoImg)}, kunci));
     }catch(err){
       /* Kuota penuh: rencana dan teks jauh lebih murah diselamatkan daripada
          hilang semuanya, jadi coba sekali lagi tanpa gambar. */
       if(autoNoImg) throw err;
       autoNoImg=true;
-      await idbTx('readwrite',st=>st.put({t:Date.now(), state:snapshotForDisk(false)}, DB_SLOT));
+      await idbTx('readwrite',st=>st.put({t:Date.now(), nama:namaProyek(), state:snapshotForDisk(false)}, kunci));
       toast('Penyimpanan browser penuh — autosave lanjut tanpa gambar. Pakai 🗄 Arsip .zip untuk menyimpan gambarnya.','err');
     }
     if(epoch!==projectEpoch){
-      /* Reset terjadi saat tulisan ini sedang jalan — buang lagi hasilnya. */
-      try{ await idbTx('readwrite',st=>st.delete(DB_SLOT)); }catch(err){}
+      /* Reset atau pindah proyek terjadi saat tulisan ini sedang jalan — buang
+         lagi hasilnya, kalau tidak snapshot lama hidup kembali. */
+      try{ await idbTx('readwrite',st=>st.delete(kunci)); }catch(err){}
       autoStamp('belum tersimpan');
       return;
     }
+    try{ await rosterTulis({thumb:await projThumb()}); }catch(err){}
     autoLast=Date.now();
     autoStamp((autoNoImg?'tersimpan tanpa gambar ':'tersimpan ')+new Date(autoLast).toLocaleTimeString('id-ID'));
   }catch(e){
@@ -3935,13 +4017,156 @@ function autosaveSoon(ms){
   clearTimeout(autoTimer);
   autoTimer=setTimeout(autosaveNow, jeda);
 }
-let pendingRestore=null;
-async function checkAutosave(){
+let pendingRestore=null, ROSTER={v:1,aktif:'',list:[]};
+/* Slot versi satu-proyek dipindahkan sekali ke roster, lalu dihapus. Tanpa ini
+   pekerjaan user yang sudah ada akan tampak lenyap begitu app diperbarui. */
+async function migrasiSlotLama(){
   try{
     const rec=await idbTx('readonly',st=>st.get(DB_SLOT));
-    if(rec&&rec.state) pendingRestore=rec;
+    if(!rec||!rec.state) return null;
+    const id=(rec.state&&rec.state.projId)||projId();
+    rec.state.projId=id;
+    await idbTx('readwrite',st=>st.put({t:rec.t||Date.now(), nama:(rec.state.persona&&rec.state.persona.nama)||'', state:rec.state}, slotKey(id)));
+    await idbTx('readwrite',st=>st.delete(DB_SLOT));
+    return {id, t:rec.t||Date.now(),
+      nama:(rec.state.persona&&rec.state.persona.nama)||'',
+      nFoto:(rec.state.shots||[]).length,
+      nImg:(rec.state.shots||[]).reduce((a,x)=>a+((x.imgs||[]).length),0),
+      nSesi:(rec.state.sesi||[]).length, thumb:''};
+  }catch(e){ return null; }
+}
+async function checkAutosave(){
+  try{
+    ROSTER=await rosterLoad();
+    const lama=await migrasiSlotLama();
+    if(lama){
+      if(!ROSTER.list.some(x=>x.id===lama.id)) ROSTER.list.push(lama);
+      ROSTER.aktif=lama.id;
+      await rosterSave(ROSTER);
+    }
+    const aktif=ROSTER.aktif&&ROSTER.list.find(x=>x.id===ROSTER.aktif);
+    if(aktif){
+      const rec=await idbTx('readonly',st=>st.get(slotKey(aktif.id)));
+      if(rec&&rec.state) pendingRestore=rec;
+    }
   }catch(e){ dbFailed=true; }
   render();
+}
+/* ---- operasi roster ---- */
+/* Menyimpan proyek yang sedang dibuka SEBELUM berpindah. Tanpa ini, kerja
+   beberapa detik terakhir hilang tiap kali user ganti influencer. */
+async function flushProyek(){
+  clearTimeout(autoTimer);
+  for(let i=0;i<40&&autoRunning;i++) await sleep(50);
+  if(HAS.talent()||state.shots.length||state.sesi.length) await autosaveNow();
+}
+async function bukaProyek(id){
+  if(busy) return;
+  if(id===state.projId){ tutupRoster(); return; }
+  try{
+    setBusy(true,'Memindahkan proyek…');
+    await flushProyek();
+    const rec=await idbTx('readonly',st=>st.get(slotKey(id)));
+    if(!rec||!rec.state){ toast('Slot proyek itu tidak ditemukan.','err'); return; }
+    projectEpoch++;
+    const fresh=freshProject();
+    Object.keys(fresh).forEach(k=>{ state[k]=fresh[k]; });
+    applySnapshot(rec.state);
+    state.projId=id;
+    state.usage.img=+((rec.state.usage||{}).img)||0;
+    state.usage.txt=+((rec.state.usage||{}).txt)||0;
+    ROSTER.aktif=id; await rosterSave(ROSTER);
+    pendingRestore=null;
+    autoNoImg=false;
+    autoStamp('tersimpan '+new Date(rec.t||Date.now()).toLocaleTimeString('id-ID'));
+    tutupRoster(); go('talent');
+    toast('Proyek "'+(namaProyek()||'tanpa nama')+'" dibuka.','ok');
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function proyekBaru(){
+  if(busy) return;
+  try{
+    setBusy(true,'Menyiapkan proyek baru…');
+    await flushProyek();
+    projectEpoch++;
+    const fresh=freshProject();
+    Object.keys(fresh).forEach(k=>{ state[k]=fresh[k]; });
+    state.usage.img=0; state.usage.txt=0;
+    pendingRestore=null; autoNoImg=false; gridAbort=false;
+    ROSTER=await rosterLoad();
+    await rosterTulis({thumb:''});
+    ROSTER=await rosterLoad();
+    autoStamp('belum tersimpan');
+    tutupRoster(); go('talent');
+    toast('Proyek baru dibuat. Key & setelan mesin tetap terpasang.','ok');
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function duplikatProyek(id){
+  if(busy) return;
+  try{
+    setBusy(true,'Menyalin proyek…');
+    if(id===state.projId) await flushProyek();
+    const rec=await idbTx('readonly',st=>st.get(slotKey(id)));
+    if(!rec||!rec.state){ toast('Slot proyek itu tidak ditemukan.','err'); return; }
+    const baru=JSON.parse(JSON.stringify(rec.state));
+    const nid=projId();
+    baru.projId=nid;
+    baru.projNama=(String(baru.projNama||baru.persona&&baru.persona.nama||'')||'Tanpa nama')+' (salinan)';
+    await idbTx('readwrite',st=>st.put({t:Date.now(), nama:baru.projNama, state:baru}, slotKey(nid)));
+    const r=await rosterLoad();
+    const asal=r.list.find(x=>x.id===id)||{};
+    r.list.push({id:nid, nama:baru.projNama, t:Date.now(),
+      nFoto:asal.nFoto||0, nImg:asal.nImg||0, nSesi:asal.nSesi||0, thumb:asal.thumb||''});
+    await rosterSave(r);
+    ROSTER=r;
+    toast('Salinan dibuat. Buka dari daftar kalau mau mengerjakannya.','ok');
+    renderRosterModal();
+  }catch(e){ toast(e.message,'err'); }
+  finally{ setBusy(false); }
+}
+async function hapusProyek(id){
+  const r=await rosterLoad();
+  const m=r.list.find(x=>x.id===id);
+  const n=(m&&m.nImg)||0;
+  const biaya=n*(+state.usage.harga||0);
+  if(!confirm('Hapus proyek "'+projLabel(m)+'" dari browser ini?\n\n'+
+    (n?n+' gambar hasil render ikut hilang permanen'+(biaya>0?' (perkiraan biaya membuatnya ulang ~$'+biaya.toFixed(2)+')':'')+'.\n\n':'')+
+    'File project (.json) dan arsip .zip yang sudah kamu unduh TIDAK terpengaruh.\n\n'+
+    'OK = hapus, Cancel = batal')) return;
+  try{ await idbTx('readwrite',st=>st.delete(slotKey(id))); }catch(e){}
+  r.list=r.list.filter(x=>x.id!==id);
+  if(r.aktif===id) r.aktif='';
+  await rosterSave(r);
+  ROSTER=r;
+  /* Kalau yang dihapus adalah proyek yang sedang dibuka, isinya masih ada di
+     memori — kosongkan supaya tidak diam-diam tertulis ulang oleh autosave. */
+  if(id===state.projId){
+    projectEpoch++;
+    const fresh=freshProject();
+    Object.keys(fresh).forEach(k=>{ state[k]=fresh[k]; });
+    state.usage.img=0; state.usage.txt=0;
+    autoStamp('belum tersimpan');
+    go('talent');
+  }
+  toast('Proyek dihapus.','ok');
+  renderRosterModal();
+}
+async function gantiNamaProyek(id){
+  const r=await rosterLoad();
+  const m=r.list.find(x=>x.id===id);
+  const nama=prompt('Nama proyek:', projLabel(m)==='(tanpa nama)'?'':projLabel(m));
+  if(nama==null) return;
+  if(id===state.projId) state.projNama=nama.trim();
+  const i=r.list.findIndex(x=>x.id===id);
+  if(i>=0){ r.list[i].nama=nama.trim(); await rosterSave(r); ROSTER=r; }
+  try{
+    const rec=await idbTx('readonly',st=>st.get(slotKey(id)));
+    if(rec&&rec.state){ rec.state.projNama=nama.trim(); rec.nama=nama.trim();
+      await idbTx('readwrite',st=>st.put(rec, slotKey(id))); }
+  }catch(e){}
+  renderRosterModal(); render();
 }
 function applySnapshot(d){
   KEEP.forEach(k=>{ if(d[k]!==undefined) state[k]=d[k]; });
@@ -3949,14 +4174,23 @@ function applySnapshot(d){
 }
 async function restoreAutosave(){
   if(!pendingRestore) return;
-  applySnapshot(pendingRestore.state);
+  const d=pendingRestore.state;
+  applySnapshot(d);
+  /* Snapshot dipulihkan ke slot asalnya, bukan ke slot baru — kalau tidak, tiap
+     pemulihan akan melahirkan entri roster kembar. */
+  if(d.projId) state.projId=d.projId;
+  state.usage.img=+((d.usage||{}).img)||0;
+  state.usage.txt=+((d.usage||{}).txt)||0;
   pendingRestore=null;
   toast('Pekerjaan terakhir dipulihkan.','ok');
   go('talent');
 }
+/* "Buang" hanya menutup tawaran pemulihan. Slot proyeknya TIDAK dihapus —
+   dengan adanya roster, menghapus influencer punya tombolnya sendiri, dan
+   membuangnya diam-diam di sini akan jadi kehilangan yang tak terduga. */
 async function discardAutosave(){
   pendingRestore=null;
-  try{ await idbTx('readwrite',st=>st.delete(DB_SLOT)); }catch(e){}
+  try{ const r=await rosterLoad(); r.aktif=''; await rosterSave(r); ROSTER=r; }catch(e){}
   render();
 }
 
@@ -4036,7 +4270,11 @@ async function resetProject(){
      setelah slot dihapus. autosaveNow juga memeriksa projectEpoch sebagai jaring
      kedua, karena transaksi yang sudah dikirim tidak bisa dibatalkan. */
   for(let i=0;i<40&&autoRunning;i++) await sleep(50);
-  try{ await idbTx('readwrite',st=>st.delete(DB_SLOT)); }catch(e){}
+  /* Slot proyek ini dikosongkan, tapi ENTRI-nya di roster dipertahankan: yang
+     user minta adalah mengosongkan influencer ini, bukan menghapusnya dari
+     daftar. Untuk menghapus dari daftar ada tombol sendiri di 👥 Proyek. */
+  try{ await idbTx('readwrite',st=>st.delete(slotKey())); }catch(e){}
+  try{ await rosterTulis({thumb:''}); ROSTER=await rosterLoad(); }catch(e){}
   autoStamp('belum tersimpan');
   toast('Proyek dikosongkan. Semua tahap kembali ke nol — key & setelan mesin tetap terpasang.','ok');
 }
@@ -4081,6 +4319,43 @@ function refreshRecs(){
   if(G) box('img', G.path, G.model, G.base);
   else{ const el=$('#rec-img'); if(el) el.innerHTML=''; }
 }
+/* ---- modal roster ---- */
+function renderRosterModal(){
+  const el=$('#rosterBody'); if(!el) return;
+  const list=(ROSTER.list||[]).slice().sort((a,b)=>(b.t||0)-(a.t||0));
+  const aktifAda=list.some(x=>x.id===state.projId);
+  const kartu=(m)=>{
+    const ini=m.id===state.projId;
+    const t=m.t?new Date(m.t).toLocaleString('id-ID'):'—';
+    return '<div class="prow'+(ini?' now':'')+'">'+
+      (m.thumb?'<img src="'+esc(m.thumb)+'" alt="">':'<div class="pth"></div>')+
+      '<div class="pbody"><div class="ptop"><b>'+esc(projLabel(m))+'</b>'+
+        (ini?'<span class="stamp done">sedang dibuka</span>':'')+'</div>'+
+        '<div class="psub">'+(m.nSesi||0)+' sesi · '+(m.nFoto||0)+' foto · '+(m.nImg||0)+' gambar</div>'+
+        '<div class="psub" style="color:var(--faint)">disentuh '+esc(t)+'</div></div>'+
+      '<div class="pact">'+
+        (ini?'':'<button class="btn small primary needidle" data-buka="'+esc(m.id)+'">Buka</button>')+
+        '<button class="btn small needidle" data-dupproj="'+esc(m.id)+'">Duplikat</button>'+
+        '<button class="btn small" data-namaproj="'+esc(m.id)+'">Ganti nama</button>'+
+        '<button class="btn small danger" data-hapusproj="'+esc(m.id)+'">Hapus</button>'+
+      '</div></div>';
+  };
+  el.innerHTML=
+    (dbFailed
+      ? '<div class="check err"><span class="sym">✕</span><div>Penyimpanan browser tidak tersedia (mode privat atau IndexedDB diblokir). Roster tidak bisa dipakai di sini — simpan tiap proyek lewat 💾 Simpan sebagai file .json.</div></div>'
+      : '')+
+    (list.length?list.map(kartu).join('')
+      :'<div class="check ok"><span class="sym">i</span><div>Belum ada proyek tersimpan. Yang sedang kamu kerjakan akan muncul di sini begitu autosave berjalan.</div></div>')+
+    (!aktifAda&&!dbFailed
+      ? '<div class="check warn"><span class="sym">!</span><div>Proyek yang sedang dibuka belum tersimpan ke daftar. Ia akan muncul otomatis setelah kamu mengisi sesuatu — autosave menulisnya sendiri.</div></div>' : '')+
+    '<div class="keynote">Semua ini tersimpan <b>di browser komputer ini saja</b> dan tidak sinkron ke mana pun. Untuk memindahkan influencer ke komputer lain, tetap pakai 💾 Simpan (.json) atau 🗄 Arsip .zip di tahap Ekspor.</div>';
+}
+async function bukaRoster(){
+  ROSTER=await rosterLoad();
+  renderRosterModal();
+  $('#rosterOverlay').classList.add('open');
+}
+function tutupRoster(){ const o=$('#rosterOverlay'); if(o) o.classList.remove('open'); }
 function renderApiModal(){
   const a=state.api;
   $('#txtGrid').innerHTML=TXT_PROVIDERS.map(p=>
@@ -4269,6 +4544,10 @@ document.addEventListener('click', async e=>{
     autosaveSoon(); render(); return;
   }
   if(t.dataset.genkitab){ runKitab(); return; }
+  if(t.dataset.buka){ bukaProyek(t.dataset.buka); return; }
+  if(t.dataset.dupproj){ duplikatProyek(t.dataset.dupproj); return; }
+  if(t.dataset.namaproj){ gantiNamaProyek(t.dataset.namaproj); return; }
+  if(t.dataset.hapusproj){ hapusProyek(t.dataset.hapusproj); return; }
   if(t.dataset.audit){ auditAll(t.dataset.audit==='1'); return; }
   if(t.dataset.auditstop){ auditAbort=true; toast('Audit akan berhenti setelah foto ini selesai.','ok'); return; }
   if(t.dataset.gofoto!=null){
@@ -4472,6 +4751,9 @@ document.addEventListener('click', async e=>{
     case 'btnTestImg': testImage(); break;
     case 'btnSave': case 'btnSave2': saveProject(); break;
     case 'btnLoad': $('#fileInput').click(); break;
+    case 'btnRoster': bukaRoster(); break;
+    case 'btnRosterClose': tutupRoster(); break;
+    case 'btnProyekBaru': proyekBaru(); break;
     case 'btnReset': case 'btnReset2': openReset(); break;
     case 'btnResetCancel': closeReset(); break;
     /* Simpan tanpa menutup modal: setelah unduhan selesai user masih di depan
@@ -4498,9 +4780,11 @@ $('#apiOverlay').addEventListener('click', e=>{ if(e.target.id==='apiOverlay') {
 /* Klik latar = batal, bukan lanjut. Aksinya menghapus, jadi jalan keluar yang
    tidak sengaja harus selalu berarti "tidak". */
 $('#resetOverlay').addEventListener('click', e=>{ if(e.target.id==='resetOverlay') closeReset(); });
+$('#rosterOverlay').addEventListener('click', e=>{ if(e.target.id==='rosterOverlay') tutupRoster(); });
 document.addEventListener('keydown', e=>{
   if(e.key==='Escape'){
     closeReset();
+    tutupRoster();
     $('#apiOverlay').classList.remove('open');
   }
 });
