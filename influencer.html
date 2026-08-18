@@ -251,6 +251,16 @@ label.pcheck span{flex:1;min-width:0}
 .alist{margin:4px 0 0 15px;font-size:12px;color:var(--txt);line-height:1.45}
 .aact{display:flex;flex-direction:column;gap:5px;flex:none}
 .mini3{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--violet)}
+/* --- Kit acuan wajah --- */
+.agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px;margin-top:12px}
+.acell{border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel2);overflow:hidden}
+.acell.done{border-color:var(--violet)}
+.acell img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block}
+.aph{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;text-align:center;
+  padding:8px;font-family:var(--mono);font-size:10px;color:var(--faint);
+  border-bottom:1px dashed var(--line2);line-height:1.4}
+.alab{padding:6px 8px 2px;font-size:11px;color:var(--muted);line-height:1.35}
+.aact{display:flex;gap:4px;padding:4px 6px 7px;flex-wrap:wrap}
 /* --- Kitab kesinambungan --- */
 .kseksi{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
 .kseksihead{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px}
@@ -657,6 +667,11 @@ function freshProject(){
     sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[],
             grid:{ cols:4, rows:3, aspek:'2:3', latar:'studio', label:true, cells:[], sheetImg:null } },
     kalender:{ hari:14, mulai:'', rows:[] },
+    /* Kit acuan wajah. Anchor tunggal tidak cukup: kalau acuannya frontal, foto
+       yang minta profil atau mendongak memaksa model MENGARANG wajah dari sudut
+       yang belum pernah ia lihat — di situlah morph dan drift lahir. Kit ini
+       menyediakan satu acuan per sudut, dan refsForShot memilih yang cocok. */
+    acuan:{ frames:[] },
     /* Alur hidup. Wajah dikunci, dunia dikunci, feed disusun — yang belum
        dikunci adalah WAKTU. Orang yang penampilan dan hidupnya sama persis
        selama enam bulan sama mencurigakannya dengan wajah yang berubah-ubah:
@@ -818,6 +833,92 @@ const PLATFORMS=[
    seperti render 3D. Diganti dinding nyata dengan cahaya jendela berarah, tapi
    tetap polos supaya fungsinya sebagai acuan tidak hilang. */
 const REF_BG='against a plain painted interior wall with real texture — faint roller marks, a scuff, slightly uneven paint — lit by soft directional daylight coming from one window at the side, so there is a visible shadow falling on the wall behind and a clear light side and shadow side on the face';
+/* =====================================================================
+   KIT ACUAN WAJAH — satu acuan untuk tiap sudut
+
+   Sistem anchor lama memakai SATU gambar untuk semua render. Kalau anchor itu
+   frontal (dan hampir selalu begitu, karena foto pertama biasanya frontal),
+   maka setiap foto yang minta profil, tiga-perempat, atau dagu terangkat
+   memaksa model mengarang wajah dari sudut yang belum pernah ia lihat. Di situ
+   morph dan drift lahir — bukan di daftar posenya.
+
+   Kit ini merender wajah yang sama dari sudut-sudut yang benar-benar dipakai
+   konten, lalu `anchorFor()` memilih acuan yang sudutnya paling dekat dengan
+   foto yang sedang dirender.
+
+   Frame DEPAN dirender lebih dulu dan jadi acuan untuk tujuh frame lainnya,
+   supaya kitnya sendiri konsisten satu sama lain. Rambut diikat di frame depan
+   dan kedua profil karena garis rambut, telinga, dan leher tidak pernah
+   terlihat di foto konten biasa — dan yang tidak pernah terlihat akan dikarang
+   ulang tiap kali render membutuhkannya.
+===================================================================== */
+const ACUAN=[
+  {id:'depan', sudut:'depan', label:'Depan netral · rambut diikat', aspek:'1:1', urut:0,
+   p:'a straight-on frontal head-and-shoulders photograph, eyes exactly level with the lens, neutral resting face with the lips closed and relaxed, hair fully tied back so the hairline, the forehead, both ears and the neck are completely visible and unobstructed'},
+  {id:'34kiri', sudut:'34', label:'Tiga perempat kiri', aspek:'1:1', urut:1,
+   p:'a head-and-shoulders photograph with the head turned about thirty-five degrees to her left, the far cheek and the bridge of the nose clearly readable against the background, eyes looking at the lens, neutral resting face'},
+  {id:'34kanan', sudut:'34', label:'Tiga perempat kanan', aspek:'1:1', urut:2,
+   p:'a head-and-shoulders photograph with the head turned about thirty-five degrees to her right, the far cheek and the bridge of the nose clearly readable against the background, eyes looking at the lens, neutral resting face'},
+  {id:'profilkiri', sudut:'profil', label:'Profil kiri', aspek:'1:1', urut:3,
+   p:'a strict ninety-degree left profile head-and-shoulders photograph, the whole outline of the nose, lips, chin and jawline readable as a silhouette against the wall, the ear fully visible, hair tied back'},
+  {id:'profilkanan', sudut:'profil', label:'Profil kanan', aspek:'1:1', urut:4,
+   p:'a strict ninety-degree right profile head-and-shoulders photograph, the whole outline of the nose, lips, chin and jawline readable as a silhouette against the wall, the ear fully visible, hair tied back'},
+  {id:'dongak', sudut:'dongak', label:'Mendongak (dagu naik)', aspek:'1:1', urut:5,
+   p:'a head-and-shoulders photograph taken from slightly below with the chin lifted, the underside of the jaw and the base of the nose visible, eyes looking down toward the lens, neutral face'},
+  {id:'tunduk', sudut:'tunduk', label:'Menunduk (dagu turun)', aspek:'1:1', urut:6,
+   p:'a head-and-shoulders photograph taken from slightly above with the chin lowered, the eyelids and the top of the head prominent, eyes glancing up toward the lens, neutral face'},
+  {id:'makro', sudut:'depan', label:'Makro tekstur & tanda', aspek:'1:1', urut:7,
+   p:'an extremely close macro photograph of the middle of the face filling the whole frame — the eyes, the bridge of the nose and the upper cheeks only — raking side light so every pore, fine line, stray eyebrow hair and skin blemish is unmistakable'},
+];
+const acuanDef=id=>ACUAN.find(a=>a.id===id)||null;
+const acuanFrame=id=>(state.acuan.frames||[]).find(f=>f.id===id)||null;
+const acuanImg=id=>{ const f=acuanFrame(id); return f&&f.img?f.img:null; };
+/* Sudut mana yang boleh dipinjam kalau sudut yang diminta belum dirender.
+   Urutannya dari yang paling dekat — profil lebih baik ditolong tiga-perempat
+   daripada frontal, karena frontal tidak memuat garis samping sama sekali. */
+const SUDUT_DEKAT={
+  depan:['depan','34','tunduk','dongak','profil'],
+  '34':['34','depan','profil','tunduk','dongak'],
+  profil:['profil','34','depan','tunduk','dongak'],
+  dongak:['dongak','depan','34','tunduk','profil'],
+  tunduk:['tunduk','depan','34','dongak','profil'],
+  belakang:['profil','34','depan','tunduk','dongak']
+};
+/* Acuan wajah terbaik untuk sudut tertentu. Kalau kit belum ada, jatuh ke
+   state.anchor seperti sebelumnya — fitur ini menambah, tidak menggantikan. */
+function anchorFor(sudut){
+  const urutan=SUDUT_DEKAT[sudut]||SUDUT_DEKAT.depan;
+  for(const s of urutan){
+    const hit=ACUAN.filter(a=>a.sudut===s).map(a=>acuanImg(a.id)).filter(Boolean)[0];
+    if(hit) return hit;
+  }
+  return state.anchor||null;
+}
+/* Sudut sebuah foto. Diambil dari field `sudut` kalau planner mengisinya,
+   kalau tidak ditebak dari kata kunci di prompt/pose — tebakan yang salah
+   hanya berarti acuan kurang optimal, bukan render gagal. */
+const SUDUT_KATA=[
+  /* Wajah yang menoleh KE kamera didahulukan: "head turned back to camera" dan
+     "glancing back over the shoulder" berarti wajahnya terlihat, bukan
+     membelakangi. Kalau 'belakang' diperiksa duluan, frasa itu salah terbaca
+     dan fotonya dapat acuan yang keliru. */
+  ['34',       /over the shoulder|glancing back|looking back|turned back to (?:the )?camera|head turned/i],
+  ['belakang', /from behind|seen from behind|walking away|membelakangi|back to (?:the )?camera/i],
+  ['profil',   /profile|side view|in profile|menyamping|silhouette/i],
+  ['dongak',   /chin lifted|from below|looking up|below eye level|mendongak/i],
+  ['tunduk',   /chin (?:down|lowered)|looking down|from above|above eye level|eyes lowered|menunduk/i],
+  ['34b',      /three-quarter|three quarter|turned .*degrees|angled away|menoleh/i]
+];
+/* '34b' adalah alias 34 yang sengaja diperiksa paling belakang supaya kata
+   "three-quarter" (yang sering menyebut BADAN, bukan wajah) tidak mengalahkan
+   petunjuk sudut wajah yang lebih spesifik di atasnya. */
+function sudutOf(sh){
+  const tag=String((sh&&sh.sudut)||'').trim().toLowerCase();
+  if(SUDUT_DEKAT[tag]) return tag;
+  const t=[(sh&&sh.prompt)||'', (sh&&sh.pose)||''].join(' ');
+  for(const [s,re] of SUDUT_KATA) if(re.test(t)) return s==='34b'?'34':s;
+  return 'depan';
+}
 const SHEET_PANELS=[
   {id:'turnaround', label:'Turnaround 4 sudut', aspek:'16:9',
    prompt:'character reference sheet: the same person photographed four times in a single row '+REF_BG+' — front view, three-quarter view, left profile view, and back view. Full body, standing relaxed with weight on one leg, wearing simple well-worn everyday clothes with real creases, exactly the same face, hairstyle and body proportions in every view. Each of the four frames is a separate real photograph taken in the same room, not a rendered turnaround.'},
@@ -941,11 +1042,43 @@ const GRID_BG={
   studio:'in front of a plain painted wall with real surface texture and a faint scuff, lit by directional daylight from one side so a soft shadow falls on the wall behind, nothing else in the frame',
   lifestyle:'in a real everyday location that suits the persona, with authentic imperfect background detail — worn surfaces, ordinary clutter, uneven light'
 };
+/* Grid kecil dulu mengambil POSE_LIB[0..11] berurutan — dan dua belas entri
+   pertama kebetulan hampir semuanya menghadap depan. Hasilnya lembar acuan yang
+   tidak memuat profil, tidak memuat sudut atas/bawah, dan tidak memuat punggung.
+   `poseUrut()` menyusun ulang urutannya supaya grid 3x4 atau 4x3 pun sudah
+   memuat sudut yang beragam; grid besar tetap kebagian semuanya. */
+const SUDUT_POSE=p=>{
+  const t=(p.p||'')+' '+(p.l||'');
+  for(const [sd,re] of SUDUT_KATA) if(re.test(t)) return sd==='34b'?'34':sd;
+  return 'depan';
+};
+function poseUrut(){
+  const bucket={};
+  POSE_LIB.forEach((p,i)=>{
+    const k=p.nf?'nf':SUDUT_POSE(p);
+    (bucket[k]=bucket[k]||[]).push(i);
+  });
+  /* Diselang-seling: depan, 34, profil, belakang, sudut, lalu detail tanpa
+     wajah — supaya dua belas sel pertama sudah mencakup semuanya. */
+  const urut=['depan','34','profil','belakang','tunduk','dongak','nf'];
+  const out=[];
+  let sisa=POSE_LIB.length, putar=0;
+  while(sisa>0&&putar<POSE_LIB.length*2){
+    urut.forEach(k=>{
+      const arr=bucket[k];
+      if(arr&&arr.length){ out.push(arr.shift()); sisa--; }
+    });
+    putar++;
+  }
+  return out;
+}
+let POSE_ORDER=null;
 function buildGridCells(cols, rows){
   const n=Math.max(1,cols*rows), out=[];
+  POSE_ORDER=POSE_ORDER||poseUrut();
   for(let i=0;i<n;i++){
-    const base=POSE_LIB[i%POSE_LIB.length];
-    const mod=POSE_MODS[Math.floor(i/POSE_LIB.length)%POSE_MODS.length];
+    const base=POSE_LIB[POSE_ORDER[i%POSE_ORDER.length]];
+    const mod=POSE_MODS[Math.floor(i/POSE_ORDER.length)%POSE_MODS.length];
     out.push({
       kat:base.k,
       nf:base.nf?1:0,
@@ -1631,7 +1764,16 @@ function kitabRefs(sh){
 /* Acuan untuk satu foto. Frame tanpa orang tidak menerima wajah sama sekali —
    tapi TETAP boleh menerima acuan benda/tempatnya, karena justru itu isinya. */
 function refsForShot(sh){
-  const out=peranDef(sh.peran).noIdentity?[]:refsForImage();
+  let out=[];
+  if(!peranDef(sh.peran).noIdentity){
+    /* Acuan wajah dipilih menurut SUDUT foto ini, bukan satu anchor untuk
+       semuanya. Frontal tidak memuat garis samping wajah sama sekali, jadi
+       memakainya sebagai acuan foto profil memaksa model mengarang. */
+    const a=anchorFor(sudutOf(sh));
+    if(a) out.push(a);
+    if(state.anchor&&state.anchor!==a) out.push(state.anchor);
+    if(state.talent.mode==='locked'&&state.talent.consent) out.push(...state.uploads.refs.slice(0,2));
+  }
   return out.concat(kitabRefs(sh)).slice(0,4);
 }
 /* Jumlah foto per sesi, dipakai UI dan ekspor. */
@@ -1644,6 +1786,7 @@ function adoptShoot(d){
   const mkShot=(s, sesiId, fallbackPeran)=>({
     id:shotId(), judul:s.judul||'', tujuan:s.tujuan||'',
     peran:(PERAN.find(p=>p.id===s.peran)||{}).id||fallbackPeran||'filler',
+    sudut:SUDUT_DEKAT[String(s.sudut||'').trim().toLowerCase()]?String(s.sudut).trim().toLowerCase():'',
     pose:s.pose||'', prompt:s.prompt||'', negative:s.negative||'',
     sesi:sesiId||'', imgs:[], konten:null
   });
@@ -1785,6 +1928,88 @@ async function renderKitabImg(k, e){
   e.kirim = k!=='tanda';
   return img;
 }
+/* ---- render kit acuan wajah ---- */
+function acuanPrompt(def){
+  return composePrompt({
+    scene:def.p+' '+REF_BG+'. This is an identity reference frame: plain everyday clothing, no props, nothing in the frame competing with the face. The same person as the reference, with exactly the same facial features, skin tone and permanent marks.',
+    negative:'different person, changed facial identity, altered face shape, heavy makeup, beauty filter, smoothed skin, studio seamless backdrop',
+    aspek:def.aspek
+  });
+}
+let acuanAbort=false;
+async function renderAcuan(id, refs){
+  const def=acuanDef(id); if(!def) return null;
+  const img=await generateImage(acuanPrompt(def), def.aspek, refs);
+  countCall('img');
+  const f=acuanFrame(id);
+  if(f) f.img=img;
+  else state.acuan.frames.push({id, img});
+  /* Frame depan juga jadi anchor umum, supaya jalur lama tetap punya acuan. */
+  if(id==='depan'&&img.data) state.anchor=img;
+  return img;
+}
+async function runAcuanAll(ulang){
+  if(busy) return;
+  if(!String(state.identity.identity_lock||'').trim()){
+    toast('Identity lock masih kosong — susun Tahap 02 dulu, kit ini diturunkan dari sana.','err'); return;
+  }
+  const todo=ACUAN.slice().sort((a,b)=>a.urut-b.urut).filter(a=>ulang||!acuanImg(a.id));
+  if(!todo.length){ toast('Kit acuan sudah lengkap. Pakai "Buat ulang semua" kalau mau menggantinya.','err'); return; }
+  const biaya=todo.length*(+state.usage.harga||0);
+  if(!confirm('Kit acuan wajah: '+todo.length+' frame'+(biaya>0?' (~$'+biaya.toFixed(2)+')':'')+'.\n\n'+
+    'Frame DEPAN dirender lebih dulu, lalu dipakai sebagai acuan untuk frame lainnya supaya kitnya konsisten satu sama lain.\n\n'+
+    'Setelah ini, tiap foto akan memakai acuan yang sudutnya paling dekat — profil pakai acuan profil, bukan acuan frontal.\n\nOK = buat, Cancel = batal')) return;
+  acuanAbort=false;
+  let ok=0, gagal=0, lastErr='';
+  try{
+    for(let n=0;n<todo.length;n++){
+      if(acuanAbort) break;
+      const def=todo[n];
+      setBusy(true,'Kit acuan '+(n+1)+'/'+todo.length+' — '+def.label+'…', n, todo.length);
+      /* Frame depan: pakai acuan yang ada (anchor / foto talent berizin).
+         Frame lain: pakai frame DEPAN, supaya semuanya orang yang sama. */
+      let refs;
+      if(def.id==='depan') refs=refsForImage();
+      else{
+        const dep=acuanImg('depan');
+        refs=dep?[dep]:refsForImage();
+      }
+      try{ await renderAcuan(def.id, refs); ok++; }
+      catch(err){ gagal++; lastErr=err.message; }
+      render();
+    }
+  }finally{
+    setBusy(false);
+    autosaveSoon(1200);
+    toast((acuanAbort?'Dihentikan. ':'')+ok+' frame acuan dibuat'+(gagal?', '+gagal+' gagal ('+lastErr+')':'.'), gagal?'err':'ok');
+    render();
+  }
+}
+function acuanCard(){
+  const ada=ACUAN.filter(a=>acuanImg(a.id)).length;
+  const sel=(a)=>{
+    const im=acuanImg(a.id);
+    return '<div class="acell'+(im?' done':'')+'">'+
+      (im?'<img src="'+esc(imgSrc(im))+'" alt="">'
+         :'<div class="aph">'+esc(a.label.split(' · ')[0])+'</div>')+
+      '<div class="alab">'+esc(a.label)+'</div>'+
+      '<div class="aact">'+
+        '<button class="btn small needidle" data-acuan1="'+a.id+'">'+(im?'✦ Ulangi':'✦ Buat')+'</button>'+
+        (im?'<button class="btn small danger" data-acuandel="'+a.id+'">Hapus</button>':'')+
+      '</div></div>';
+  };
+  return '<div class="card"><h3>🎯 Kit acuan wajah'+(ada?'<span class="stamp'+(ada===ACUAN.length?' done':'')+'">'+ada+'/'+ACUAN.length+'</span>':'')+'</h3>'+
+    '<p class="hint" style="margin:-6px 0 12px">Ini <b>bukan</b> pose konten — ini acuan identitas. Sistem lama memakai <b>satu</b> gambar sebagai acuan untuk semua render; kalau acuan itu frontal, foto yang minta profil atau dagu terangkat memaksa model <b>mengarang wajah dari sudut yang belum pernah ia lihat</b>. Di situlah morph dan wajah melenceng lahir — bukan di daftar posenya.</p>'+
+    '<div class="check ok"><span class="sym">✓</span><div>Begitu kit ini ada, tiap render memilih acuan yang <b>sudutnya paling dekat</b>: foto profil memakai acuan profil, foto mendongak memakai acuan mendongak. Frame <b>depan</b> dirender duluan lalu jadi acuan untuk tujuh frame lainnya, supaya kitnya sendiri konsisten.</div></div>'+
+    '<div class="check ok"><span class="sym">✓</span><div>Rambut <b>diikat</b> di frame depan dan kedua profil. Garis rambut, telinga, dan leher tidak pernah terlihat di foto konten biasa — dan apa yang tidak pernah terlihat akan dikarang ulang setiap kali render membutuhkannya.</div></div>'+
+    '<div class="agrid">'+ACUAN.slice().sort((a,b)=>a.urut-b.urut).map(sel).join('')+'</div>'+
+    '<div class="toolbar" style="margin-top:12px">'+
+      '<button class="btn primary needidle" data-acuanall="0">🎯 Buat frame yang kosong ('+(ACUAN.length-ada)+')</button>'+
+      '<button class="btn needidle" data-acuanall="1">↻ Buat ulang semua ('+ACUAN.length+')</button>'+
+      (busy?'<button class="btn danger" data-acuanstop="1">■ Hentikan</button>':'')+
+      '<div class="spacer"></div><span class="stamp">'+(ada?'acuan per sudut aktif':'belum aktif — masih 1 anchor untuk semua')+'</span></div>'+
+  '</div>';
+}
 let kitabAbort=false;
 async function runKitabImgAll(ulang){
   if(busy) return;
@@ -1866,6 +2091,7 @@ function promptShoot(fb){
     '\n- Field prompt milik foto DILARANG menyebut outfit, pakaian, warna baju, lokasi, latar tempat, gaya rambut, waktu, atau arah cahaya. Semua itu sudah dikunci di level sesi dan ditambahkan otomatis di depan prompt. Menulisnya ulang membuat outfit berubah pelan-pelan antar foto dan merusak seluruh sesi.'+
     '\n- Field prompt juga DILARANG mendeskripsikan wajah, umur, etnis, atau rambut — identitas dikunci terpisah.'+
     '\n- Jadi field prompt HANYA berisi: pose & aktivitas, mikro-aksi, ekspresi, jarak/sudut kamera, komposisi, dan satu detail lingkungan kecil. Bahasa Inggris, 30–60 kata.'+
+    '\n- Field sudut: arah wajah di foto itu — depan, 34 (tiga perempat), profil, dongak (dagu naik), tunduk (dagu turun), atau belakang. Ini dipakai aplikasi untuk memilih acuan wajah yang sudutnya cocok, jadi isi sejujurnya sesuai prompt yang kamu tulis. Variasikan antar foto; feed yang semua wajahnya menghadap depan terbaca sebagai sesi pas foto.'+
     '\n- Untuk foto berperan "objek": TIDAK ADA orang di frame. Tulis bendanya saja, tanpa tangan, tanpa tubuh. Contoh: cangkir kopi setengah kosong di meja kayu bercoret, kunci dan kacamata di sampingnya.'+
     '\n- Jangan tulis aspect ratio, setelan kamera, atau kata "photorealistic"; ketiganya ditambahkan otomatis.'+
     '\n\nSYARAT ANTI-KAKU untuk foto berisi orang. Setiap prompt harus memuat:'+
@@ -1881,7 +2107,7 @@ function promptShoot(fb){
     '\nBalas HANYA satu objek JSON valid:'+
     '\n{"sesi":[{"nama":"string","pakaiOutfit":"nama entri lemari pakaian atau string kosong","pakaiLokasi":"nama entri lokasi tetap atau string kosong",'+
     '"outfit":"string","lokasi":"string","waktu":"string","cahaya":"string","rambut":"string","catatan":"string",'+
-    '"shots":[{"judul":"string","tujuan":"string","peran":"hero|filler|objek|cermin","pose":"string","prompt":"string","negative":"string"}]}]}'+
+    '"shots":[{"judul":"string","tujuan":"string","peran":"hero|filler|objek|cermin","sudut":"depan|34|profil|dongak|tunduk|belakang","pose":"string","prompt":"string","negative":"string"}]}]}'+
     '\nTepat '+nSesi+' sesi, total '+n+' foto di seluruh sesi.';
 }
 function promptSheet(fb){
@@ -2808,6 +3034,7 @@ function viewSheet(){
     (nicheTable?'<div class="card"><h3>📚 Panduan per niche</h3>'+nicheTable+'</div>':'')+
     (platTable?'<div class="card"><h3>📱 Panduan per platform</h3>'+platTable+'</div>':'')+
     noRefWarn()+
+    acuanCard()+
     kitabCard()+
     gridCard()+
     '<div class="card"><h3>🖼 Panel referensi visual</h3>'+
@@ -4262,6 +4489,7 @@ function projectJSON(){
     const sg=(snap.sheet||{}).grid;
     if(sg){ (sg.cells||[]).forEach(c=>{ c.img=null; }); sg.sheetImg=null; }
     Object.values(snap.kitab||{}).forEach(arr=>(arr||[]).forEach(e=>{ e.img=null; e.kirim=false; }));
+    ((snap.acuan||{}).frames||[]).forEach(f=>{ f.img=null; });
     snap.anchor=null;
   }
   snap._app='ai-influencer-studio'; snap._v=1;
@@ -4275,6 +4503,7 @@ function imageCount(){
   n+=state.sheet.grid.cells.filter(c=>c.img).length;
   if(state.sheet.grid.sheetImg) n++;
   KITAB.forEach(({k})=>{ n+=kitabList(k).filter(e=>e.img).length; });
+  n+=(state.acuan.frames||[]).filter(f=>f.img).length;
   return n;
 }
 function saveProject(){
@@ -4303,7 +4532,7 @@ function saveProject(){
     : ' — TANPA gambar, hanya teks & rencana.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['projNama','talent','uploads','identity','persona','sheet','kalender','kitab','arc','patuh','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
+const KEEP=['projNama','talent','uploads','identity','persona','sheet','acuan','kalender','kitab','arc','patuh','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
 /* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
    dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
 function normalizeState(){
@@ -4332,6 +4561,9 @@ function normalizeState(){
   /* id sesi yang tidak dikenal (mis. sesi terhapus di file lama) dijadikan lepas. */
   const ids=new Set(state.sesi.map(x=>x.id));
   state.shots.forEach(sh=>{ if(sh.sesi&&!ids.has(sh.sesi)) sh.sesi=''; });
+  state.acuan=Object.assign({frames:[]}, state.acuan||{});
+  if(!Array.isArray(state.acuan.frames)) state.acuan.frames=[];
+  state.acuan.frames=state.acuan.frames.filter(f=>f&&ACUAN.some(a=>a.id===f.id));
   state.patuh=Object.assign({talentNama:'',talentKontak:'',talentTanggal:'',talentRuang:'',cek:{}}, state.patuh||{});
   if(!state.patuh.cek||typeof state.patuh.cek!=='object') state.patuh.cek={};
   state.arc=Object.assign({bulan:3,mulai:'',tema:'',babak:[]}, state.arc||{});
@@ -4455,6 +4687,7 @@ function imageWeight(){
   state.sheet.grid.cells.forEach(c=>add(c.img));
   add(state.sheet.grid.sheetImg);
   KITAB.forEach(({k})=>kitabList(k).forEach(e=>add(e.img)));
+  (state.acuan.frames||[]).forEach(f=>add(f.img));
   return n;
 }
 /* ---- roster: daftar influencer ----
@@ -4750,6 +4983,7 @@ function resetSummary(){
     ['Panel character sheet ter-render', s.sheet.panels.reduce((a,p)=>a+(p.imgs||[]).length,0)],
     ['Sel grid terisi',                  s.sheet.grid.cells.filter(c=>c.img).length],
     ['Kanvas grid gabungan',             s.sheet.grid.sheetImg?1:0],
+    ['Frame kit acuan wajah',            ((s.acuan||{}).frames||[]).filter(f=>f.img).length],
     ['Babak alur hidup',                 ((s.arc||{}).babak||[]).length],
     ['Centang kepatuhan',                Object.values((s.patuh||{}).cek||{}).filter(Boolean).length],
     ['Entri kitab kesinambungan',        KITAB.reduce((a,{k})=>a+(s.kitab[k]||[]).length,0)],
@@ -5108,6 +5342,27 @@ document.addEventListener('click', async e=>{
     autosaveSoon(); render(); return;
   }
   if(t.dataset.genkitab){ runKitab(); return; }
+  if(t.dataset.acuanall){ runAcuanAll(t.dataset.acuanall==='1'); return; }
+  if(t.dataset.acuanstop){ acuanAbort=true; toast('Berhenti setelah frame ini selesai.','ok'); return; }
+  if(t.dataset.acuandel){
+    state.acuan.frames=state.acuan.frames.filter(f=>f.id!==t.dataset.acuandel);
+    autosaveSoon(); render(); return;
+  }
+  if(t.dataset.acuan1){
+    const id=t.dataset.acuan1;
+    (async()=>{
+      if(busy) return;
+      if(!String(state.identity.identity_lock||'').trim()) return toast('Identity lock masih kosong — susun Tahap 02 dulu.','err');
+      try{
+        setBusy(true,'Membuat frame acuan — '+(acuanDef(id)||{}).label+'…');
+        const dep=id!=='depan'&&acuanImg('depan');
+        await renderAcuan(id, dep?[dep]:refsForImage());
+        toast('Frame acuan selesai.','ok');
+      }catch(err){ toast(err.message,'err'); }
+      finally{ setBusy(false); autosaveSoon(1200); render(); }
+    })();
+    return;
+  }
   if(t.dataset.kimgall){ runKitabImgAll(t.dataset.kimgall==='1'); return; }
   if(t.dataset.kimgstop){ kitabAbort=true; toast('Berhenti setelah foto ini selesai.','ok'); return; }
   if(t.dataset.kgen){

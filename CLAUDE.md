@@ -423,6 +423,44 @@ efek samping, itu alasan porsinya besar.
 Menghapus sesi **tidak** menghapus fotonya — foto berisi gambar hasil render yang
 mahal. Foto-fotonya dilepas jadi foto lepas; user yang memutuskan nasibnya.
 
+### Kit acuan wajah — satu acuan per sudut
+
+Sistem anchor lama memakai **satu** gambar sebagai acuan untuk semua render. Kalau
+anchor itu frontal — dan hampir selalu begitu, karena render pertama biasanya frontal —
+maka setiap foto yang minta profil, tiga-perempat, atau dagu terangkat memaksa model
+**mengarang wajah dari sudut yang belum pernah ia lihat**. Di situlah morph dan wajah
+melenceng lahir. Bukan di daftar posenya.
+
+`ACUAN` = 8 frame identitas (bukan pose konten): depan rambut diikat, 3/4 kiri & kanan,
+profil kiri & kanan, mendongak, menunduk, makro tekstur. `state.acuan.frames[]` menyimpan
+hasilnya.
+
+`anchorFor(sudut)` memilih acuan yang sudutnya paling dekat lewat `SUDUT_DEKAT`. Urutan
+kedekatannya bukan sembarang: profil ditolong tiga-perempat lebih dulu, **bukan** frontal,
+karena frontal tidak memuat garis samping wajah sama sekali. Kalau kit belum ada, ia jatuh
+ke `state.anchor` — fitur ini **menambah**, tidak menggantikan jalur lama.
+
+`sudutOf(sh)` memakai field `sudut` dari planner kalau ada, kalau tidak menebak dari kata
+kunci. Di `SUDUT_KATA`, pola **wajah menoleh ke kamera diperiksa lebih dulu** daripada
+'belakang': *"head turned back to camera"* dan *"glancing back over the shoulder"* berarti
+wajahnya terlihat. Kalau 'belakang' diperiksa duluan, frasa itu salah terbaca dan fotonya
+dapat acuan yang keliru. Alias `34b` sengaja paling belakang supaya kata *three-quarter*
+(yang biasanya menyebut BADAN) tidak mengalahkan petunjuk sudut wajah yang lebih spesifik.
+
+**Rambut diikat** di frame depan dan kedua profil. Garis rambut, telinga, dan leher tidak
+pernah terlihat di foto konten biasa — dan apa yang tidak pernah terlihat akan dikarang
+ulang setiap kali render membutuhkannya.
+
+`runAcuanAll()` merender frame **depan lebih dulu**, lalu memakainya sebagai acuan untuk
+tujuh frame lainnya supaya kitnya sendiri konsisten. Frame depan juga menjadi
+`state.anchor`.
+
+`poseUrut()` menyusun ulang urutan `POSE_LIB` untuk `buildGridCells()`. Dulu grid mengambil
+`POSE_LIB[0..n]` berurutan, dan dua belas entri pertama kebetulan hampir semuanya
+menghadap depan — jadi grid 4×3 tidak pernah memuat profil, sudut atas/bawah, maupun
+punggung. Sekarang sudut diselang-seling sejak sel pertama; grid besar tetap kebagian
+seluruh pustaka.
+
 ### Kitab kesinambungan — mengunci dunia, bukan cuma wajah
 
 `state.kitab` = `{outfit:[], lokasi:[], props:[], tanda:[]}`, tiap entri
