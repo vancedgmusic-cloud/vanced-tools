@@ -41,7 +41,7 @@ label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase
 a{color:var(--teal)}
 
 /* ---------- shell ---------- */
-.app{display:grid;grid-template-rows:auto 1fr;height:100vh}
+.app{display:grid;grid-template-rows:auto auto 1fr;height:100vh}
 header.top{
   display:flex;align-items:center;gap:14px;padding:10px 16px;
   border-bottom:1px solid var(--line);background:var(--panel);
@@ -194,6 +194,27 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
 
 /* ---------- tabel sheet / kalender ---------- */
 .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+/* --- Bar progres global --- */
+.prog{border-bottom:1px solid var(--line);background:var(--panel);padding:0}
+.progbar{height:3px;background:var(--line);overflow:hidden;position:relative}
+.progbar i{display:block;height:100%;width:0%;background:var(--violet);
+  transition:width .25s ease}
+/* Tanpa jumlah langkah yang diketahui, bar TIDAK boleh memasang angka palsu —
+   ia bergerak terus tanpa persentase, dan yang ditampilkan adalah detik
+   berjalan. Menebak persen di panggilan tunggal cuma memindahkan tebakan dari
+   user ke aplikasi. */
+.prog.indet .progbar i{width:34%;background:linear-gradient(90deg,transparent,var(--violet),transparent);
+  animation:slide 1.15s linear infinite}
+@keyframes slide{0%{transform:translateX(-120%)}100%{transform:translateX(400%)}}
+@media (prefers-reduced-motion:reduce){.prog.indet .progbar i{animation:none;width:100%;opacity:.5}}
+.progrow{display:flex;align-items:center;gap:10px;padding:5px 26px 6px;
+  font-family:var(--mono);font-size:11px;color:var(--muted)}
+#progPct{color:var(--violet);font-weight:700}
+#progTime{color:var(--faint)}
+@media (max-width:900px){ .progrow{padding:5px 14px 6px} }
+/* Langkah yang sedang diproses ikut berdenyut di rail supaya kelihatan
+   tahap mana yang sedang bekerja. */
+.step.working .led{background:var(--violet);animation:pulse 1s infinite}
 /* --- Kepatuhan: daftar centang --- */
 /* .pcheck adalah <label>, jadi ia perlu membatalkan gaya label global
    (uppercase, mono kecil, display:block) — kalau tidak, teksnya keluar kolom. */
@@ -413,6 +434,18 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
     </div>
   </header>
 
+  <!-- Bar progres global: berada di antara header dan body, jadi terlihat dari
+       tahap mana pun tanpa perlu diduplikasi di tiap view. -->
+  <div class="prog" id="prog" hidden>
+    <div class="progbar"><i id="progFill"></i></div>
+    <div class="progrow">
+      <span id="progText">Memproses…</span>
+      <span class="spacer"></span>
+      <span id="progPct"></span>
+      <span id="progTime"></span>
+    </div>
+  </div>
+
   <div class="body">
     <nav class="rail" id="rail"></nav>
     <main id="main"></main>
@@ -534,10 +567,54 @@ function usageText(){
   return '🖼 '+(u.img||0)+' · 💬 '+(u.txt||0)+(biaya>0?' · ~$'+biaya.toFixed(2):'');
 }
 let busy=false;
-function setBusy(b, text){
-  busy=b; $('#statusline').classList.toggle('busy',b);
-  $('#statustext').textContent = b ? (text||'Memproses…') : 'Siaga';
+/* Progres. `done`/`total` diisi HANYA oleh operasi yang benar-benar tahu jumlah
+   langkahnya (render semua, grid, panel, audit, konten, pengemasan ZIP). Untuk
+   panggilan tunggal, jumlah langkah di sisi server tidak bisa diketahui — jadi
+   bar-nya bergerak tanpa persentase dan yang ditampilkan detik berjalan.
+   Menampilkan persen karangan di situ hanya memindahkan tebakan dari user ke
+   aplikasi, dan itu justru yang mau kita hilangkan. */
+let busyT0=0, busyTimer=null, progDone=-1, progTotal=0;
+function busyElapsed(){
+  const el=$('#progTime'); if(!el) return;
+  const d=Math.round((Date.now()-busyT0)/1000);
+  el.textContent=d>=60?Math.floor(d/60)+' mnt '+(d%60)+' dtk':d+' dtk';
+}
+function setBusy(b, text, done, total){
+  busy=b;
+  $('#statusline').classList.toggle('busy',b);
+  /* Header sengaja ringkas: detailnya sudah dibawa bar di bawahnya, dan
+     mengulang kalimat panjang di sini membuat baris header melipat. */
+  $('#statustext').textContent = b
+    ? (+total>0 ? 'Memproses '+(Math.max(0,Math.min(+total,+done||0)))+'/'+(+total) : 'Memproses…')
+    : 'Siaga';
   $$('.needidle').forEach(el=>el.disabled=b);
+
+  const box=$('#prog');
+  if(box){
+    box.hidden=!b;
+    if(b){
+      /* Pesan tanpa hitungan (retry jaringan, render ulang gerbang QA) muncul
+         DI TENGAH batch. Kalau ia mengosongkan persentase, bar-nya berkedip
+         balik ke nol persis saat user paling butuh kepastian — jadi konteks
+         batch dipertahankan dan hanya labelnya yang berganti. */
+      if(+total>0){ progTotal=+total; progDone=Math.max(0,Math.min(+total,+done||0)); }
+      const tahu=progTotal>0;
+      const n=tahu?progDone:0;
+      const pct=tahu?Math.round(n/progTotal*100):0;
+      box.classList.toggle('indet',!tahu);
+      $('#progFill').style.width=tahu?pct+'%':'';
+      $('#progText').textContent=text||'Memproses…';
+      $('#progPct').textContent=tahu?pct+'% · '+n+'/'+progTotal:'';
+      if(!busyTimer){ busyT0=Date.now(); busyElapsed(); busyTimer=setInterval(busyElapsed,1000); }
+    }else{
+      clearInterval(busyTimer); busyTimer=null;
+      progDone=-1; progTotal=0;
+      $('#progFill').style.width='0%';
+      $('#progPct').textContent=''; $('#progTime').textContent='';
+    }
+  }
+  const st=$$('.step');
+  st.forEach(el=>el.classList.toggle('working', b&&el.dataset.go===current));
 }
 
 /* ---------------- state ---------------- */
@@ -1996,7 +2073,7 @@ async function runContentAll(){
   if(busy) return;
   try{
     for(let i=0;i<state.shots.length;i++){
-      setBusy(true,'Menulis konten foto '+(i+1)+'/'+state.shots.length+'…');
+      setBusy(true,'Menulis konten foto '+(i+1)+'/'+state.shots.length+'…', i, state.shots.length);
       await genContent(i,'');
     }
     delete state.dirty.content;
@@ -2072,7 +2149,7 @@ async function runPanelAll(){
   try{
     for(let n=0;n<order.length;n++){
       const def=panelDef(order[n]);
-      setBusy(true,'Merender panel '+(n+1)+'/'+order.length+' — '+def.label+'…');
+      setBusy(true,'Merender panel '+(n+1)+'/'+order.length+' — '+def.label+'…', n, order.length);
       try{
         const img=await generateImage(panelPrompt(def), def.aspek);
         countCall('img');
@@ -2118,7 +2195,7 @@ async function runGridAll(){
   try{
     for(let n=0;n<todo.length;n++){
       if(gridAbort){ toast('Dihentikan setelah '+ok+' sel. Sisanya bisa dilanjutkan kapan saja.','ok'); break; }
-      setBusy(true,'Merender sel '+(n+1)+'/'+todo.length+' — '+g.cells[todo[n]].label+'…');
+      setBusy(true,'Merender sel '+(n+1)+'/'+todo.length+' — '+g.cells[todo[n]].label+'…', n, todo.length);
       try{ await renderGridCell(todo[n]); ok++; if(n%4===3) render(); }
       catch(e){ fail++; lastErr=e.message; }
       if(n<todo.length-1) await sleep(600);
@@ -2154,7 +2231,7 @@ async function compositeGrid(){
     return;
   }
   try{
-    setBusy(true,'Menjahit '+filled.length+' sel jadi satu kanvas…');
+    setBusy(true,'Menjahit '+filled.length+' sel jadi satu kanvas…', 0, filled.length);
     const {w:cw, h:ch, lbl}=gridCellSize(g.cols, g.rows, g.label);
     const head=Math.round(cw*0.34);
     const c=document.createElement('canvas');
@@ -2273,7 +2350,7 @@ async function auditAll(ulang){
   try{
     for(let n=0;n<target.length;n++){
       if(auditAbort) break;
-      setBusy(true,'Audit '+(n+1)+'/'+target.length+'…');
+      setBusy(true,'Audit konsistensi '+(n+1)+'/'+target.length+'…', n, target.length);
       try{ await qaPair(target[n].im); countCall('txt'); ok++; }
       catch(e){ gagal++; lastErr=e.message; }
       render();
@@ -2342,7 +2419,7 @@ async function runQAAll(){
   let ok=0, fail=0, lastErr='';
   try{
     for(let n=0;n<jobs.length;n++){
-      setBusy(true,'Memeriksa gambar '+(n+1)+'/'+jobs.length+'…');
+      setBusy(true,'Memeriksa gambar '+(n+1)+'/'+jobs.length+'…', n, jobs.length);
       try{ await qaImage(state.shots[jobs[n][0]].imgs[jobs[n][1]]); ok++; }
       catch(e){ fail++; lastErr=e.message; }
     }
@@ -2394,7 +2471,7 @@ async function runRenderAll(){
   let ok=0, fail=0, lastErr='';
   try{
     for(let i=0;i<state.shots.length;i++){
-      setBusy(true,'Merender foto '+(i+1)+'/'+state.shots.length+'…');
+      setBusy(true,'Merender foto '+(i+1)+'/'+state.shots.length+'…', i, state.shots.length);
       try{ await renderShot(i); ok++; render(); }
       catch(e){ fail++; lastErr=e.message; }
       if(i<state.shots.length-1) await sleep(700);
@@ -3904,7 +3981,7 @@ async function runPostAll(){
   let ok=0;
   try{
     for(let n=0;n<jobs.length;n++){
-      setBusy(true,'Memproses '+(n+1)+'/'+jobs.length+'…');
+      setBusy(true,'Memproses realisme '+(n+1)+'/'+jobs.length+'…', n, jobs.length);
       try{
         const [i,j]=jobs[n];
         const out=await realismPass(state.shots[i].imgs[j], state.post);
@@ -4070,7 +4147,7 @@ async function exportZip(){
 
     if(!files.length){ toast('Belum ada apa pun untuk diarsipkan.','err'); return; }
     const blob=await makeZip(files,(n,tot)=>{
-      if(n%10===0||n===tot) setBusy(true,'Mengemas '+n+'/'+tot+' file…');
+      if(n%10===0||n===tot) setBusy(true,'Mengemas '+n+'/'+tot+' file…', n, tot);
     });
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);

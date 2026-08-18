@@ -211,6 +211,27 @@ Autosave IndexedDB bersifat **lokal per browser dan per mesin, tidak sinkron**.
 Satu-satunya cara memindahkan proyek antar komputer adalah file project (.json)
 atau arsip ZIP — tahap Ekspor memuat checklist langkahnya.
 
+### Bar progres
+
+`setBusy(b, text, done, total)` menggerakkan bar global di antara header dan body,
+jadi ia terlihat dari tahap mana pun tanpa perlu diduplikasi di tiap view.
+
+**`done`/`total` hanya boleh diisi operasi yang benar-benar tahu jumlah langkahnya** —
+render semua foto, grid, panel, audit, QA massal, pasca-proses massal, pengemasan ZIP.
+Untuk panggilan tunggal, kemajuan di sisi server tidak bisa diketahui, jadi bar-nya
+bergerak **tanpa persentase** dan yang ditampilkan adalah detik berjalan. Menampilkan
+persen karangan di situ hanya memindahkan tebakan dari user ke aplikasi — persis yang
+fitur ini ada untuk menghilangkan. Jangan pernah mengarang angka di jalur itu.
+
+`progDone`/`progTotal` bertahan selama batch berlangsung. Pesan tanpa hitungan yang
+muncul **di tengah** batch (retry jaringan di `postJSON`, render ulang gerbang QA di
+`renderShot`) hanya mengganti labelnya — kalau ia mengosongkan persentase, bar berkedip
+balik ke nol persis saat user paling butuh kepastian. Keduanya dinolkan di
+`setBusy(false)` supaya tidak bocor ke operasi tunggal berikutnya.
+
+Teks header sengaja diringkas jadi `Memproses n/total`: detailnya sudah dibawa bar, dan
+mengulang kalimat panjang di header membuat barisnya melipat.
+
 ### Kepatuhan & pelabelan
 
 Ada di kartu tahap Ekspor, dan dibelah dua **dengan sengaja**:
