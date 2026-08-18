@@ -926,7 +926,11 @@ const SHEET_PANELS=[
    prompt:'expression reference sheet: the same person photographed as six candid head-and-shoulders snapshots in a clean 3x2 grid '+REF_BG+' — neutral resting face, small closed-lip smile, laughing hard with the eyes squeezed shut, thinking while glancing away, caught mid-sentence with the mouth open, and quietly tired. Exactly the same face and hairstyle in every frame. Each frame is a real candid photo, slightly different distance and angle from the last, not a rendered expression sheet.'},
   {id:'wardrobe', label:'Lembar wardrobe', aspek:'16:9',
    prompt:'wardrobe reference sheet: the same person photographed four times in a single row '+REF_BG+', each time in a different complete head-to-toe outfit that fits their real life — everyday casual, smart casual for work, sporty activewear, and dressed up for an evening out. Full body front view, clothes creased and lived-in, exactly the same face in every version.'},
-  {id:'detail', label:'Detail wajah & rambut', aspek:'16:9',
+  /* Sudah sebagian besar digantikan Kit acuan wajah, yang menghasilkan frame
+     terpisah dan bisa langsung dipakai sebagai acuan per sudut. Panel ini
+     dipertahankan karena tetap enak dibaca manusia sebagai satu lembar — tapi
+     jangan mengandalkannya untuk konsistensi wajah. */
+  {id:'detail', label:'Detail wajah & rambut (lihat Kit acuan)', aspek:'16:9',
    prompt:'detail reference sheet '+REF_BG+', three panels side by side: a large sharp close-up of the face from the front showing skin texture and pores, a close-up of the same face in strict profile, and a close-up of the hair from behind showing its real length, frizz and loose strands. Exactly the same person in all three, side light raking across the skin so the texture is unmistakable.'},
   {id:'palette', label:'Papan warna & mood', aspek:'1:1',
    prompt:'a flat lay photographed from directly above on a worn wooden table: fabric swatches, accessories, and small everyday objects that represent this person\'s personal style and colour palette, arranged casually and slightly crooked. No people, no faces, no text, no lettering. Window light from one side casting soft real shadows.', noIdentity:1}
@@ -963,7 +967,20 @@ const realismDef=id=>REALISM.find(r=>r.id===id)||REALISM[0];
 
 /* Blok "jiwa" — ketidaksempurnaan yang membedakan manusia dari mannequin. */
 const LIFE_DEFAULT='This is an ordinary real person photographed casually, not a model and not a beauty campaign. Believable everyday attractiveness, never editorial perfection. SKIN, and this is mandatory: clearly visible pores across the nose, cheeks and forehead; uneven skin tone with faint redness around the nostrils, chin and the inner corners of the eyes; one or two small real blemishes or a faint old acne scar; slight natural shine only on the T-zone while the cheeks stay matte; fine peach fuzz catching the light along the jaw and upper lip; visible fine lines at the eye corners and a natural crease where the neck meets the jaw. ASYMMETRY, mandatory: the two halves of the face must not match — one eye slightly smaller and set a touch higher, one eyebrow shaped differently from the other, the smile pulling more to one side, the nose very slightly off the centre line. HAIR: not freshly styled — several loose strands escaping, a little frizz lifting away from the part, flyaways lit from behind. TEETH: real teeth, faintly off-white, not perfectly aligned. EYES: sharp catchlights showing the actual shape of the light source, visible lower waterline, slightly uneven eyelid folds. THE MOMENT: caught between expressions rather than posed, weight on one leg, hands doing something real, clothing creased and slightly out of place. Everything imperfect on purpose.';
-const ANTI_SLOP_DEFAULT='AI-generated look, CGI, 3d render, octane render, digital painting, illustration, cartoon, anime, video game character, uncanny valley, plastic skin, waxy skin, wax figure, mannequin, doll-like, porcelain skin, poreless airbrushed skin, beauty filter, face smoothing, skin retouching, frequency separation, glossy plastic sheen all over the face, dead eyes, vacant stare, blank soulless expression, perfectly symmetrical face, flawless veneer teeth, perfectly styled hair with no loose strands, professional studio lighting, softbox, ring light, beauty dish, seamless studio backdrop, smooth grey gradient background, evenly lit with no shadows, professional headshot, editorial magazine portrait, stock photography, catalogue model, glamour shot, HDR, oversaturated, overprocessed, clarity slider pushed, halo around the subject, everything in perfect focus, sterile clean image with no noise';
+/* =====================================================================
+   BLOK FISIKA ADEGAN
+
+   Riset deteksi 2026 mengubah prioritas: tanda-tanda lama (jari enam, teks
+   kacau, kulit lilin) sebagian besar SUDAH diperbaiki model. Yang masih
+   konsisten gagal — dan jadi sandaran pemeriksa sekarang — adalah FISIKA
+   ADEGAN: arah cahaya, kekonsistenan bayangan, pantulan, geometri latar, plus
+   komposisi yang terlalu rapi.
+
+   Blok ini menyerang tepat di sana. Ia berlaku untuk frame berisi orang MAUPUN
+   frame benda: bayangan dan pantulan yang salah sama menyoloknya di foto meja.
+===================================================================== */
+const PHYSICS_DEFAULT='LIGHT AND SHADOW, treat as physics not decoration: there is ONE dominant light source with a stated direction, and every shadow in the frame — under the chin, beside the nose, under the objects, on the wall behind — falls consistently away from that one source with the same softness and the same direction. Contact shadows exist wherever anything touches a surface. REFLECTIONS: anything reflective — glass, a screen, a mirror, a metal edge, the eyes — reflects the same room and the same light source, never a different scene. GEOMETRY: straight lines in the background stay straight and converge correctly for the camera position; nothing floats; objects behind the subject stay the right size for their distance. FRAMING, deliberately imperfect: the subject sits slightly off centre, the horizon or a vertical line is off by a degree or two, something is clipped by the frame edge, and the sharpest point of focus lands slightly off the nearest eye — a real person took this in a hurry, they did not compose it.';
+const ANTI_SLOP_DEFAULT='inconsistent shadow directions, shadows falling the wrong way, missing contact shadow, floating subject, reflections that do not match the room, warped or bending background lines, impossible perspective, perfectly centred symmetrical composition, AI-generated look, CGI, 3d render, octane render, digital painting, illustration, cartoon, anime, video game character, uncanny valley, plastic skin, waxy skin, wax figure, mannequin, doll-like, porcelain skin, poreless airbrushed skin, beauty filter, face smoothing, skin retouching, frequency separation, glossy plastic sheen all over the face, dead eyes, vacant stare, blank soulless expression, perfectly symmetrical face, flawless veneer teeth, perfectly styled hair with no loose strands, professional studio lighting, softbox, ring light, beauty dish, seamless studio backdrop, smooth grey gradient background, evenly lit with no shadows, professional headshot, editorial magazine portrait, stock photography, catalogue model, glamour shot, HDR, oversaturated, overprocessed, clarity slider pushed, halo around the subject, everything in perfect focus, sterile clean image with no noise';
 
 
 /* Nilai efektif: kalau user mengosongkan kolomnya, pakai default di atas. */
@@ -2099,6 +2116,7 @@ function promptShoot(fb){
     '\n  (b) satu INTERAKSI dengan lingkungan — bersandar di kusen, tangan menyentuh meja, kaki menginjak trotoar basah;'+
     '\n  (c) satu DETAIL LINGKUNGAN yang spesifik dan tidak sempurna — cat mengelupas, gelas kopi setengah kosong, kabel lampu menjuntai, bayangan daun;'+
     '\n  (d) jarak kamera yang bervariasi antar foto dalam sesi yang sama (close-up, medium, full body).'+
+    '\n\nCAHAYA WAJIB PUNYA GEOMETRI, bukan kata sifat. Field cahaya milik sesi harus menyebut SATU sumber dan ARAHNYA — mis. "soft daylight from a large window on her left, about 45 degrees behind her shoulder" atau "warm tungsten lamp above and slightly behind, kitchen light spilling in from the right". Jangan menulis "cahaya bagus", "pencahayaan natural", atau "golden hour" saja: itu tidak memberi model geometri untuk digambar, dan arah bayangan yang tidak konsisten adalah cacat yang paling gampang terlihat di gambar AI sekarang.'+
     '\nDILARANG: subjek berdiri tegak menghadap kamera dengan senyum netral, latar polos tanpa konteks, kata "perfect", "flawless", "beautiful", "stunning".'+
     '\n\nField berbahasa '+state.talent.bahasa+' dan singkat: nama sesi, judul, tujuan, pose. Field cahaya dan waktu boleh campuran, ditulis ringkas.'+
     '\nField outfit, lokasi, rambut milik sesi WAJIB bahasa Inggris dan konkret — keduanya masuk langsung ke prompt gambar. Contoh outfit: "an oversized cream linen shirt over a white tank top, faded straight-leg jeans, small gold hoop earrings". Contoh lokasi: "a small neighbourhood coffee shop with a chipped wooden counter and one large street-facing window".'+
@@ -2199,6 +2217,10 @@ function promptQA(){
     '   - latar mulus bergradien tanpa tekstur, atau latar studio seamless\n'+
     '   - cahaya rata tanpa arah yang jelas, tidak ada bayangan jatuh di latar\n'+
     '   - gambar terlalu bersih: tanpa butiran, tanpa noise di bayangan, tajam merata di seluruh frame\n'+
+    '   - BAYANGAN TIDAK KONSISTEN: bayangan di wajah, di badan, dan di latar tidak jatuh dari satu arah cahaya yang sama; benda menyentuh permukaan tanpa bayangan kontak\n'+
+    '   - PANTULAN SALAH: kaca, layar, cermin, atau pupil memantulkan ruangan yang berbeda dari yang terlihat di frame\n'+
+    '   - GEOMETRI LATAR RUSAK: garis lurus jadi bengkok, perspektif tidak masuk akal, benda melayang atau salah ukuran untuk jaraknya\n'+
+    '   - KOMPOSISI TERLALU RAPI: subjek persis di tengah, horizon lurus sempurna, tidak ada yang terpotong tepi frame\n'+
     '   - gigi terlalu putih dan terlalu rata, rambut terlalu rapi tanpa helai lepas\n'+
     '   - mata tanpa pantulan cahaya yang jelas bentuknya, ekspresi kaku menghadap kamera\n'+
     '   Kalau ada tiga gejala atau lebih, skor_realisme TIDAK BOLEH di atas 45.\n'+
@@ -2230,7 +2252,7 @@ function promptQAPair(){
       ? 'Sebagai konteks tambahan, identitas tertulisnya: "'+String(state.identity.identity_lock).trim()+'"\n\n' : '')+
     'Nilai TIGA hal terpisah.\n'+
     '1. skor_identitas (0–100): seberapa yakin kamu ini orang yang sama dengan FOTO 1. Di bawah 60 berarti kamu menduga ini orang lain. Sebutkan alasannya secara konkret dan berlokasi, mis. "hidung di foto 2 jelas lebih lebar dan pangkalnya lebih rendah", bukan "wajahnya agak beda".\n'+
-    '2. skor_realisme (0–100): seberapa meyakinkan FOTO 2 sebagai foto asli buatan manusia. Turunkan nilainya untuk tiap gejala: kulit mulus tanpa pori atau mengilap seperti lilin, wajah terlalu simetris, latar mulus bergradien, cahaya rata tanpa arah, gambar terlalu bersih tanpa noise di bayangan, gigi terlalu putih dan rata, rambut terlalu rapi, mata tanpa pantulan cahaya. Tiga gejala atau lebih: TIDAK BOLEH di atas 45.\n'+
+    '2. skor_realisme (0–100): seberapa meyakinkan FOTO 2 sebagai foto asli buatan manusia. Turunkan nilainya untuk gejala kulit dan rambut seperti biasa, TAPI periksa juga FISIKA-nya, karena itu yang paling sering meleset di gambar AI mutakhir: bayangan yang tidak jatuh dari satu arah cahaya yang sama, bayangan kontak yang hilang, pantulan di kaca atau pupil yang tidak cocok dengan ruangannya, garis latar yang bengkok, dan komposisi yang terlalu rapi persis di tengah. Tiga gejala atau lebih: TIDAK BOLEH di atas 45.\n'+
     '3. skor_teknis (0–100): cacat anatomi dan artefak — jumlah jari, bentuk tangan, telinga, gigi, aksesori menyatu dengan kulit, anggota badan hilang atau ganda, teks aneh.\n\n'+
     'Field skor: rata-rata ketiganya, dibulatkan.\n'+
     'Field beda: daftar perbedaan wajah yang kamu temukan antara FOTO 1 dan FOTO 2. Satu butir satu ciri, sebut bagian wajahnya. Kosongkan kalau benar-benar orang yang sama.\n'+
@@ -2270,7 +2292,7 @@ function lockLine(){
     ? 'SUBJECT — keep this exact same person in every image, identical facial identity: '
     : 'SUBJECT — a single consistent fictional person, identical facial identity in every image: ')+lock+tandaLine();
 }
-function composePrompt({scene, negative, aspek, tail, noIdentity, noLife, setting}){
+function composePrompt({scene, negative, aspek, tail, noIdentity, noLife, noPhysics, setting}){
   const P=[];
   if(!noIdentity){ const l=lockLine(); if(l) P.push(l); }
   /* Kunci sesi berdiri SETELAH identitas dan SEBELUM adegan: outfit dan lokasi
@@ -2280,6 +2302,9 @@ function composePrompt({scene, negative, aspek, tail, noIdentity, noLife, settin
   const tech=techOf(); if(tech) P.push('CAPTURE: '+tech+'.');
   /* Panel benda (mood board) tidak butuh blok jiwa yang bicara soal kulit. */
   if(!noLife) P.push('REALISM: '+lifeOf());
+  /* Fisika adegan berlaku untuk frame orang MAUPUN benda — bayangan dan
+     pantulan yang salah sama menyoloknya di foto meja seperti di potret. */
+  if(!noPhysics) P.push('PHYSICS: '+PHYSICS_DEFAULT);
   P.push('Aspect ratio '+(aspek||state.shoot.aspek)+'. '+
     (tail||'This is a real, unretouched photograph taken by a person — not a render, not an illustration, not a stock photo.'));
   const neg=[negative, negOf()].map(x=>String(x||'').trim()).filter(Boolean).join(', ');
@@ -2450,8 +2475,11 @@ async function runPanel(id){
     panelSlot(id).imgs.push(img);
     /* Turnaround adalah acuan wajah terbaik yang bisa dihasilkan aplikasi ini,
        jadi ia mengambil alih anchor begitu jadi. */
-    if(id==='turnaround' && img.data) state.anchor=img;
-    else if(!state.anchor && img.data && !def.noIdentity) state.anchor=img;
+    /* Panel adalah LEMBAR GABUNGAN — empat sampai enam wajah dalam satu frame.
+       Mengirimkannya sebagai acuan justru membingungkan model: ia melihat
+       beberapa wajah dan harus menebak yang mana. Anchor sekarang hanya boleh
+       datang dari frame berisi SATU subjek (kit acuan wajah atau hasil render
+       foto). Dulu turnaround merebut anchor dan itu ikut memperburuk drift. */
     toast('Panel '+def.label+' selesai.','ok'); render();
   }catch(e){ toast(e.message,'err'); }
   finally{ setBusy(false); }
@@ -2469,7 +2497,7 @@ async function runPanelAll(){
         const img=await generateImage(panelPrompt(def), def.aspek);
         countCall('img');
         panelSlot(def.id).imgs.push(img);
-        if(def.id==='turnaround' && img.data) state.anchor=img;
+        /* sama seperti runPanel: lembar gabungan tidak jadi anchor */
         ok++; render();
       }catch(e){ fail++; lastErr=e.message; }
       if(n<order.length-1) await sleep(700);
@@ -2491,7 +2519,9 @@ async function renderGridCell(i){
   const g=gridRef(), cell=g.cells[i];
   cell.img=await generateImage(gridCellPrompt(cell), g.aspek);
   countCall('img');
-  if(!state.anchor && cell.img.data) state.anchor=cell.img;
+  /* Sel ber-flag nf tidak memuat wajah (detail tangan, sepatu) — ia tidak boleh
+     jadi acuan wajah, sama seperti frame peran objek di tahap Render. */
+  if(!state.anchor && cell.img.data && !cell.nf) state.anchor=cell.img;
 }
 async function runGridOne(i){
   if(busy) return;

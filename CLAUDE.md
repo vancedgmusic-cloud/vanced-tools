@@ -612,6 +612,41 @@ foto, caption, dan kalender semuanya menurunkan diri dari sini.
   `geminiImage()`, dan `openaiImage()` menerima parameter `aspek` yang menimpa
   `state.shoot.aspek`.
 
+### Blok fisika adegan — target deteksi 2026
+
+Riset deteksi mutakhir mengubah prioritas: tanda-tanda lama (jari enam, teks kacau,
+kulit lilin) sebagian besar **sudah diperbaiki model**. Yang masih konsisten gagal dan
+jadi sandaran pemeriksa sekarang adalah **fisika adegan** — arah cahaya, kekonsistenan
+bayangan, pantulan, geometri latar — plus komposisi yang terlalu rapi.
+
+`PHYSICS_DEFAULT` masuk ke **setiap** prompt gambar lewat `composePrompt()` dan berlaku
+untuk frame berisi orang **maupun** frame benda: bayangan dan pantulan yang salah sama
+menyoloknya di foto meja seperti di potret. Hanya `noPhysics` yang mematikannya.
+
+`ANTI_SLOP_DEFAULT` diperluas dengan cacat fisika (bayangan arah kacau, bayangan kontak
+hilang, pantulan tidak cocok, garis latar bengkok, komposisi tengah sempurna) — daftar
+lama tetap dipertahankan karena masih relevan untuk model yang lebih lemah.
+
+`promptQA()` dan `promptQAPair()` ikut menilai fisika, bukan cuma kulit. `promptShoot()`
+mewajibkan field cahaya sesi punya **geometri** (satu sumber + arahnya), bukan kata sifat
+seperti "golden hour" — kata sifat tidak memberi model geometri untuk digambar.
+
+### Anchor: hanya dari frame satu subjek
+
+Beberapa tempat dulu berebut `state.anchor`, dan dua di antaranya menyetelnya ke **lembar
+gabungan** (panel turnaround, panel lain) — empat sampai enam wajah dalam satu frame.
+Mengirimkan itu sebagai acuan membuat model harus menebak wajah yang mana, dan itu ikut
+memperburuk drift. Sekarang anchor hanya boleh datang dari frame **satu subjek**:
+
+- `renderAcuan('depan')` — jalur resmi
+- `renderShot()` — hasil render foto, kecuali peran `objek`
+- `renderGridCell()` — kecuali sel ber-flag `nf` (detail tangan/sepatu tidak punya wajah)
+- tombol ⚓ manual
+
+Panel `detail` sebagian besar digantikan Kit acuan wajah; ia dipertahankan karena tetap
+enak dibaca manusia sebagai satu lembar, tapi labelnya menunjuk ke Kit acuan supaya user
+tidak mengandalkannya untuk konsistensi.
+
 ### Sistem realisme (aturan user: hasil tidak boleh terlihat AI slop)
 
 Tiga blok masuk ke **setiap** prompt gambar lewat `composePrompt()`:
