@@ -686,7 +686,7 @@ function freshProject(){
        dan lintas bulan. Wajah dikunci di identity lock; ini yang mengunci sisanya.
        Yang membuat orang percaya bukan wajah yang sama, melainkan cangkir yang
        sama muncul di dapur yang sama selama tiga bulan. */
-    kitab:{ outfit:[], lokasi:[], props:[], tanda:[] },
+    kitab:{ outfit:[], lokasi:[], props:[], tanda:[], produk:[] },
     /* Sesi pemotretan. Foto asli tidak dibuat satu-satu: orang memotret dalam
        sesi — satu hari, satu outfit, satu lokasi, satu kondisi cahaya, lalu
        5-12 frame. Feed yang tiap fotonya ganti baju dan pindah kota adalah
@@ -1719,9 +1719,15 @@ function sesiBaru(init){
   return Object.assign({
     id:'s'+(++sesiSeq)+'-'+Math.random().toString(36).slice(2,6),
     nama:'', outfit:'', lokasi:'', waktu:'', cahaya:'', rambut:'', catatan:'',
+    /* Setup kamera & tata ruang ikut DIKUNCI di level sesi. Contoh UGC kelas
+       produksi mendefinisikan keduanya sekali di awal lalu semua adegan mengacu
+       ke sana — hasilnya tiap frame terbaca sebagai satu ruangan nyata yang
+       dipotret dari satu setup nyata. Tanpa ini, tiap foto diam-diam
+       memindahkan kamera dan mengarang ulang ruangannya. */
+    kamera:'', ruang:'',
     /* Rujukan ke kitab. Sengaja rujukan, bukan salinan: mengedit satu entri
        lemari pakaian harus ikut memperbaiki semua sesi yang memakainya. */
-    outfitRef:'', lokasiRef:'', props:[], babak:''
+    outfitRef:'', lokasiRef:'', produkRef:'', produk:'', props:[], babak:''
   }, init||{});
 }
 const sesiOf=sh=>state.sesi.find(x=>x.id===(sh&&sh.sesi))||null;
@@ -1732,7 +1738,17 @@ const KITAB=[
   {k:'outfit', label:'Lemari pakaian', ikon:'👗', hint:'Satu set lengkap yang bisa dipakai ulang di banyak sesi. Tulis konkret dalam bahasa Inggris — teks ini masuk mentah ke prompt.'},
   {k:'lokasi', label:'Lokasi tetap',   ikon:'📍', hint:'Tempat yang berulang: kamarnya, dapurnya, kafe langganannya. Tempat yang sama muncul berkali-kali adalah penanda hidup yang nyata.'},
   {k:'props',  label:'Properti',       ikon:'🎒', hint:'Benda yang selalu ikut: case HP, tumbler, tas, kucingnya. Ini yang paling murah dan paling meyakinkan.'},
-  {k:'tanda',  label:'Tanda permanen', ikon:'🔖', hint:'Tato, tindik, tahi lalat, bentuk kuku. Menempel pada ORANGNYA — ikut di setiap foto berisi dia, tidak peduli sesinya.'}
+  {k:'tanda',  label:'Tanda permanen', ikon:'🔖', hint:'Tato, tindik, tahi lalat, bentuk kuku. Menempel pada ORANGNYA — ikut di setiap foto berisi dia, tidak peduli sesinya.'},
+  /* Produk sengaja BUKAN properti. Properti adalah barang milik influencer yang
+     boleh dikarang AI; produk adalah barang yang sedang dipromosikan — bentuk,
+     warna, dan tulisan kemasannya adalah DATA FAKTUAL yang tidak boleh dikarang.
+     Karena itu ia ber-noAI (tidak pernah diisi "Susun dari persona") dan
+     ber-noBulk (tidak ikut sapuan "buatkan foto acuan yang kosong"): menggambar
+     kemasan palsu untuk produk nyata lebih buruk daripada tidak punya acuan
+     sama sekali, karena acuan palsu itu ikut terkirim ke tiap render. */
+  {k:'produk',  label:'Produk yang dipromosikan', ikon:'📦', noAI:true, noBulk:true,
+   hint:'Barang yang dipromosikan di konten UGC/afiliasi. Ini data faktual — kamu yang isi, bukan AI. Kalau produknya nyata, upload foto aslinya lewat tombol + ; jangan biarkan aplikasi menggambar kemasannya.',
+   note:'Sosok ini tidak pernah benar-benar memakai produknya. Konten promosi darinya adalah <b>iklan</b>, bukan testimoni — dan di beberapa tempat testimoni palsu punya konsekuensi hukum yang lebih berat daripada pelabelan AI yang terlewat. Tandai sebagai konten berbayar, jangan menulis klaim khasiat, dan periksa daftar di Tahap 10.'}
 ];
 const kitabDef=k=>KITAB.find(x=>x.k===k);
 let kitabSeq=0;
@@ -1765,16 +1781,30 @@ function settingLine(se){
     se.rambut && 'hair '+se.rambut,
     se.waktu  && se.waktu,
     se.cahaya && se.cahaya,
+    se.kamera && 'camera setup: '+se.kamera,
+    se.ruang  && 'room layout: '+se.ruang,
     props.length && 'with '+props.join(', ')
   ].map(x=>String(x||'').trim()).filter(Boolean);
-  if(!P.length) return '';
-  return 'SETTING (identical in every frame of this session, do not vary): '+P.join(', ')+'.';
+  let out=P.length?'SETTING (identical in every frame of this session, do not vary): '+P.join(', ')+'.':'';
+  /* Produk mendapat bloknya sendiri, bukan diselipkan ke daftar "with …".
+     Alasannya bukan kerapian: kemasan adalah tempat model paling sering
+     mengarang — ia mendesain ulang botolnya dan menulis huruf-huruf palsu di
+     labelnya. Kalimat terpisah yang menyebut larangan itu terang-terangan jauh
+     lebih kuat daripada satu frasa yang tenggelam di tengah kalimat panjang. */
+  const produk=pakaiRef('produk', se.produkRef, se.produk);
+  if(produk) out+=(out?' ':'')+
+    'PRODUCT, factual and fixed — this is a real product, not a design to invent: '+produk+
+    '. In every frame where it appears it is exactly this product: the same package shape and proportions, the same colours, the same finish, the same label layout. Do not redesign it, do not restyle it, and do not put any words, letters or logos on it beyond what is described here — invented lettering on a package is the fastest thing a viewer spots as fake. It is being used or held low and close to the body, never presented to the camera.';
+  return out;
 }
 /* Foto acuan dari kitab: hanya entri yang aktif di sesi foto ini DAN ditandai
    "kirim". Anchor wajah tetap didahulukan; sisanya dipotong oleh refsForShot. */
 function kitabRefs(sh){
   const se=sesiOf(sh); if(!se) return [];
-  const ids=[['outfit',se.outfitRef],['lokasi',se.lokasiRef]]
+  /* Produk didahulukan di antara acuan kitab karena jatah acuan dipotong 4:
+     outfit yang melenceng sedikit tidak disadari siapa pun, kemasan yang salah
+     langsung terbaca — dan itu yang dilihat orang yang mau membeli. */
+  const ids=[['produk',se.produkRef],['outfit',se.outfitRef],['lokasi',se.lokasiRef]]
     .concat((se.props||[]).map(id=>['props',id]));
   return ids.map(([k,id])=>{ const e=id?kitabFind(k,id):null; return (e&&e.kirim&&e.img)?e.img:null; }).filter(Boolean);
 }
@@ -1824,7 +1854,9 @@ function adoptShoot(d){
       const rec=sesiBaru({
         nama:se.nama||'', outfit:se.outfit||'', lokasi:se.lokasi||'',
         outfitRef:cari('outfit', se.pakaiOutfit), lokasiRef:cari('lokasi', se.pakaiLokasi),
-        waktu:se.waktu||'', cahaya:se.cahaya||'', rambut:se.rambut||'', catatan:se.catatan||''
+        produkRef:cari('produk', se.pakaiProduk),
+        waktu:se.waktu||'', cahaya:se.cahaya||'', rambut:se.rambut||'',
+        kamera:se.kamera||'', ruang:se.ruang||'', catatan:se.catatan||''
       });
       sesi.push(rec);
       const arr=Array.isArray(se.shots)?se.shots:[];
@@ -1848,14 +1880,16 @@ function adoptShoot(d){
    orang sungguhan punya sedikit baju yang dipakai berulang. */
 function kitabBrief(){
   const baris=k=>kitabList(k).filter(e=>e.teks).map(e=>'    - '+(e.nama||'(tanpa nama)')+': '+e.teks).join('\n');
-  const o=baris('outfit'), l=baris('lokasi'), pr=baris('props');
-  if(!o&&!l&&!pr) return '';
+  const o=baris('outfit'), l=baris('lokasi'), pr=baris('props'), pd=baris('produk');
+  if(!o&&!l&&!pr&&!pd) return '';
   return '\n\nKITAB KESINAMBUNGAN — barang dan tempat yang SUDAH dimiliki influencer ini.'+
     '\nUtamakan MEMAKAI ULANG yang sudah ada daripada mengarang yang baru: orang sungguhan punya sedikit baju dan tempat yang dipakai berulang, dan pengulangan itulah yang membuat feed-nya dipercaya.'+
     (o?'\n  Lemari pakaian:\n'+o:'')+
     (l?'\n  Lokasi tetap:\n'+l:'')+
     (pr?'\n  Properti:\n'+pr:'')+
-    '\nKalau sesi memakai salah satunya, tulis NAMA entri itu persis di field pakaiOutfit / pakaiLokasi, dan biarkan field outfit/lokasi kosong. Kalau memang butuh yang baru, kosongkan pakaiOutfit/pakaiLokasi dan tulis deskripsi barunya di field outfit/lokasi.';
+    (pd?'\n  Produk yang dipromosikan (data faktual milik user — JANGAN mengarang produk lain, jangan mengubah deskripsinya):\n'+pd:'')+
+    '\nKalau sesi memakai salah satunya, tulis NAMA entri itu persis di field pakaiOutfit / pakaiLokasi, dan biarkan field outfit/lokasi kosong. Kalau memang butuh yang baru, kosongkan pakaiOutfit/pakaiLokasi dan tulis deskripsi barunya di field outfit/lokasi.'+
+    (pd?'\nUntuk produk: tulis NAMA entri produk di field pakaiProduk HANYA pada sesi yang memang mempromosikannya, dan kosongkan di sesi lain. Feed yang tiap sesinya menjual sesuatu terbaca sebagai akun iklan, bukan orang. Sisipkan produk di sepertiga sesi saja, sisanya konten biasa.':'');
 }
 function promptKitab(fb){
   return HEADER+'\n'+buildContext()+
@@ -1879,7 +1913,10 @@ async function runKitab(fb){
     setBusy(true,'Menyusun kitab kesinambungan…');
     const d=await callJSON(promptKitab(fb), 2600);
     let n=0;
-    KITAB.forEach(({k})=>{
+    KITAB.forEach(({k,noAI})=>{
+      /* Produk tidak pernah dikarang AI: bentuk dan tulisan kemasannya adalah
+         data faktual milik user, sama seperti harga dan rating di app sebelah. */
+      if(noAI) return;
       const arr=Array.isArray(d[k])?d[k]:[];
       if(!arr.length) return;
       /* Menambah, bukan menimpa: entri yang sudah dipakai sesi tidak boleh
@@ -1914,6 +1951,7 @@ const KITAB_TAIL={
   outfit:'A flat-lay reference photograph of these clothes laid out on a plain wooden floor or bed sheet, shot from directly above. The garments are worn-in and casually arranged, with natural creases and folds — not pressed, not styled for a catalogue. Daylight from a window on one side. NO PERSON in frame: no body, no face, no hands, no mannequin.',
   lokasi:'A reference photograph of this place with NOBODY in it — empty, as if the owner stepped out for a moment. Everyday clutter left where it is. Natural light from a real window or lamp, with visible direction and shadows. NO PERSON in frame: no body, no face, no hands.',
   props:'A reference photograph of this object resting on an ordinary surface, shot casually from slightly above at close range. It looks used, not new in a box. Natural indoor light with a visible shadow. NO PERSON in frame: no body, no face, no hands.',
+  produk:'A reference photograph of this product standing on an ordinary everyday surface — a wooden table, a bathroom shelf, a kitchen counter — shot close from slightly above. One soft light from the side with a clear contact shadow under it. The packaging is intact and readable, but the shot is casual and lived-in, not a catalogue packshot: the surface has ordinary marks, the product sits slightly off centre. NO PERSON in frame: no body, no face, no hands.',
   tanda:'An extreme macro reference photograph of this detail on human skin, filling the frame at very close range. Real skin texture with visible pores. NO FACE and no recognisable person in frame — only the small area of skin being described.'
 };
 function kitabImgPrompt(k, e){
@@ -1930,9 +1968,10 @@ function kitabImgPrompt(k, e){
 /* Entri yang layak dibuatkan foto: punya teks, dan belum punya gambar. */
 function kitabImgTodo(ulang){
   const out=[];
-  KITAB.forEach(({k})=>kitabList(k).forEach(e=>{
-    if(String(e.teks||'').trim() && (ulang||!e.img)) out.push({k, e});
-  }));
+  KITAB.forEach(({k,noBulk})=>{
+    if(noBulk) return;   /* produk: kemasan palsu tidak boleh dibuat diam-diam */
+    kitabList(k).forEach(e=>{ if(String(e.teks||'').trim() && (ulang||!e.img)) out.push({k, e}); });
+  });
   return out;
 }
 async function renderKitabImg(k, e){
@@ -2054,11 +2093,21 @@ async function runKitabImgAll(ulang){
   }
 }
 function kitabCard(){
-  const isi=k=>kitabList(k).map((e,i)=>
+  const isi=k=>{
+  /* Untuk produk, upload didahulukan dan ✦ diberi peringatan: menggambar
+     kemasan dari teks menghasilkan kemasan yang MIRIP, bukan kemasan itu —
+     dan acuan yang mirip-tapi-salah ikut terkirim ke setiap render. */
+  const nb=!!(kitabDef(k)||{}).noBulk;
+  const gen=e=>'<button class="kgen needidle" data-kgen="'+k+'|'+e.id+'" title="'+(nb
+      ?'Hanya untuk produk fiktif atau placeholder — kemasan yang digambar dari teks TIDAK akan sama dengan kemasan aslinya'
+      :'Biar aplikasi yang membuatkan foto acuannya dari teks entri ini')+'">✦</button>';
+  const up=e=>'<label class="kup" title="'+(nb
+      ?'Upload foto produk aslinya — ini jalur yang benar untuk produk nyata'
+      :'Atau upload foto sendiri')+'"><input type="file" accept="image/*" data-kimg="'+k+'|'+e.id+'" style="display:none">+</label>';
+  return kitabList(k).map((e,i)=>
     '<div class="kentry">'+
       (e.img?'<img class="kimg" src="'+esc(imgSrc(e.img))+'" alt="">'
-           :'<div class="kimg kadd"><button class="kgen needidle" data-kgen="'+k+'|'+e.id+'" title="Biar aplikasi yang membuatkan foto acuannya dari teks entri ini">✦</button>'+
-             '<label class="kup" title="Atau upload foto sendiri"><input type="file" accept="image/*" data-kimg="'+k+'|'+e.id+'" style="display:none">+</label></div>')+
+           :'<div class="kimg kadd">'+(nb?up(e)+gen(e):gen(e)+up(e))+'</div>')+
       '<div class="kbody">'+
         '<input class="knama" data-path="kitab.'+k+'.'+i+'.nama" value="'+esc(e.nama)+'" placeholder="nama pendek">'+
         '<textarea data-path="kitab.'+k+'.'+i+'.teks" rows="2" placeholder="deskripsi English, konkret — masuk mentah ke prompt">'+esc(e.teks)+'</textarea>'+
@@ -2070,19 +2119,20 @@ function kitabCard(){
                '<button class="btn small" data-kimgdel="'+k+'|'+e.id+'">Hapus foto</button>':'')+
         '<button class="btn small danger" data-kdel="'+k+'|'+e.id+'">Hapus</button>'+
       '</div>'+
-    '</div>').join('');
-  const seksi=KITAB.map(({k,label,ikon,hint})=>{
+    '</div>').join(''); };
+  const seksi=KITAB.map(({k,label,ikon,hint,note})=>{
     const n=kitabList(k).length;
     return '<div class="kseksi"><div class="kseksihead">'+ikon+' <b>'+esc(label)+'</b>'+
       '<span class="stamp'+(n?' done':'')+'">'+n+'</span><span class="spacer"></span>'+
       '<button class="btn small needidle" data-kadd="'+k+'">+ Tambah</button></div>'+
       '<p class="hint" style="margin:0 0 10px">'+esc(hint)+'</p>'+
+      (note&&n?'<div class="check warn"><span class="sym">!</span><div>'+note+'</div></div>':'')+
       (n?isi(k):'<div class="hint" style="opacity:.6">(kosong)</div>')+'</div>';
   }).join('');
   const total=KITAB.reduce((a,{k})=>a+kitabList(k).length,0);
   return '<div class="card"><h3>📚 Kitab kesinambungan'+(total?'<span class="stamp done">'+total+' entri</span>':'')+'</h3>'+
     '<p class="hint" style="margin:-6px 0 12px">Wajah dikunci di identity lock; <b>ini yang mengunci sisanya</b>. Kompetitor menjual karakter yang konsisten — yang membuat orang benar-benar percaya adalah <i>dunia</i> yang konsisten: cangkir yang sama di dapur yang sama selama tiga bulan.</p>'+
-    '<div class="check ok"><span class="sym">✓</span><div><b>Lemari pakaian, lokasi, dan properti</b> dirujuk dari sesi di tahap Rencana Foto — mengedit satu entri di sini ikut memperbaiki semua sesi yang memakainya. <b>Tanda permanen</b> berbeda: ia menempel pada orangnya, jadi otomatis ikut di setiap foto berisi dia.</div></div>'+
+    '<div class="check ok"><span class="sym">✓</span><div><b>Lemari pakaian, lokasi, dan properti</b> dirujuk dari sesi di tahap Rencana Foto — mengedit satu entri di sini ikut memperbaiki semua sesi yang memakainya. <b>Tanda permanen</b> berbeda: ia menempel pada orangnya, jadi otomatis ikut di setiap foto berisi dia. <b>Produk</b> juga dirujuk per sesi, tapi hanya di sesi yang memang konten jualan.</div></div>'+
     '<div class="toolbar" style="margin:12px 0">'+
       '<button class="btn primary needidle" data-genkitab="1">✦ Susun dari persona</button>'+
       '<button class="btn needidle" data-kimgall="0"'+(kitabImgTodo(false).length?'':' disabled')+
@@ -2116,11 +2166,17 @@ function promptShoot(fb){
     '\n  (b) satu INTERAKSI dengan lingkungan — bersandar di kusen, tangan menyentuh meja, kaki menginjak trotoar basah;'+
     '\n  (c) satu DETAIL LINGKUNGAN yang spesifik dan tidak sempurna — cat mengelupas, gelas kopi setengah kosong, kabel lampu menjuntai, bayangan daun;'+
     '\n  (d) jarak kamera yang bervariasi antar foto dalam sesi yang sama (close-up, medium, full body).'+
-    '\n\nGEOMETRI KAMERA — WAJIB, dan ini yang paling sering hilang. Tiap prompt foto harus menyatakan DI MANA kamera berada terhadap subjek, bukan cuma jaraknya. Sebut sisi dan sudutnya (mis. "camera resting on the desk to her left, offset about 35 degrees from the direction she is facing and angled back toward her, never straight in front of her"), lalu sebut ARAH PANDANGNYA terhadap lensa — apakah matanya ke lensa, atau ke arah lain dan barulah menoleh. "Close-up" saja tidak memberi tahu model di mana kamera berdiri, dan itu sebabnya hasilnya terlihat seperti pas foto.'+
+    '\n\nSETUP KAMERA & TATA RUANG DIKUNCI DI LEVEL SESI. Field kamera milik sesi menyatakan di mana alat perekam berada dan bagaimana ia menghadap subjek — satu kali, untuk seluruh sesi. Field ruang menyatakan apa yang mengisi frame-kiri dan frame-kanan serta apa yang ada di belakangnya. Semua foto dalam sesi itu dipotret dari SETUP YANG SAMA; yang boleh berubah antar foto hanya jarak/framing dan ke mana kepalanya menoleh. Kalau tiap foto memindahkan kameranya sendiri, ruangannya ikut berubah diam-diam dan sesi itu tidak lagi terbaca sebagai satu tempat nyata.'+
+    '\nKeduanya WAJIB bahasa Inggris dan konkret. Contoh kamera: "phone propped on the desk to her left, about 35 degrees off the direction she faces and angled back toward her, never straight in front of her". Contoh ruang: "frame-left is the wardrobe mirror edge in dark wood; frame-right is the balcony door with sheer curtains and two plants; behind her a plain wall with one crooked poster".'+
+    '\n\nPROGRESI DALAM SATU SESI. Foto-foto satu sesi diambil BERURUTAN dalam hitungan menit, bukan hari. Harus ada satu hal kecil yang BERLANJUT dari foto ke foto berikutnya: kopi yang berkurang, rambut yang makin berantakan, cahaya yang bergeser sedikit, kemasan yang tadi utuh kini terbuka, jaket yang tadi dipakai kini tersampir. Sebutkan perubahan berlanjut itu di prompt tiap foto sesuai urutannya. Feed yang tiap fotonya berdiri sendiri tanpa jejak waktu terbaca sebagai kumpulan render, bukan potongan satu sore.'+
+    '\n\nGEOMETRI KAMERA PER FOTO — WAJIB, dan ini yang paling sering hilang. Tiap prompt foto harus menyatakan DI MANA kamera berada terhadap subjek, bukan cuma jaraknya. Sebut sisi dan sudutnya (mis. "camera resting on the desk to her left, offset about 35 degrees from the direction she is facing and angled back toward her, never straight in front of her"), lalu sebut ARAH PANDANGNYA terhadap lensa — apakah matanya ke lensa, atau ke arah lain dan barulah menoleh. "Close-up" saja tidak memberi tahu model di mana kamera berdiri, dan itu sebabnya hasilnya terlihat seperti pas foto.'+
     '\nSebut juga apa yang mengisi FRAME-KIRI dan FRAME-KANAN (jendela, pintu, meja, tembok kosong). Ruang yang tidak disebut akan diisi model dengan latar generik.'+
     '\n\nSATU DETAIL AKIBAT — wajib satu per foto. Bukan cacat acak, melainkan bekas dari sesuatu yang baru saja terjadi di adegan itu: bekas tekanan kacamata di batang hidung setelah dilepas, satu helai rambut yang baru saja tertiup, lipatan bantal di lengan, bekas gelas basah di meja, ujung lengan baju yang tergulung tidak rapi karena tadi dipakai kerja. Ini yang membuat foto terasa punya sebelum-dan-sesudah, bukan pose yang muncul dari kekosongan.'+
     '\n\nDILARANG BERGAYA IKLAN. Kalau ada produk atau benda di frame, dia TIDAK boleh mengangkatnya ke arah kamera, tidak memamerkan labelnya, tidak memegangnya sejajar wajah. Benda dipegang rendah dan dekat badan, dipakai atau sedang dikerjakan — bukan disodorkan. Pose menyodorkan produk adalah penanda iklan paling cepat terbaca dan langsung menghapus kesan konten pribadi.'+
-    '\n\nKAMERA ADALAH PONSELNYA. Untuk foto bergaya selfie atau video-call, TIDAK BOLEH ada ponsel, layar, atau alat perekam yang terlihat di frame — lengan yang memegangnya memendek tajam di tepi frame dan tangannya di luar frame. Orang tidak bisa terlihat memegang ponsel sementara ponsel itu yang memotretnya.'+
+    '\n\nSESI YANG MEMBAWA PRODUK. Kalau kamu mengisi pakaiProduk, produk itu TIDAK muncul di semua foto sesi itu — hanya di sebagian, dan tetap sebagai bagian dari kegiatannya. Susun urutannya begini: satu foto sebelum produk dipakai (dia sedang melakukan hal lain, produknya belum kelihatan atau tergeletak di belakang), satu foto saat dipakai (tangannya sedang mengerjakan sesuatu dengan produk itu, bukan memegangnya untuk kamera), satu foto berperan "objek" yang isinya produk itu saja di antara barang-barangnya yang lain, dan sisanya foto biasa tanpa produk. Urutan itulah yang membuat konten terbaca sebagai orang yang memang memakainya, bukan sebagai iklan yang menyamar.'+
+    '\nJANGAN menulis deskripsi produknya di field prompt: bentuk, warna, dan tulisan kemasannya sudah dikunci di level sesi dan ditambahkan otomatis. Menulisnya ulang membuat model mendesain ulang kemasannya. Cukup sebut apa yang sedang dilakukan tangannya dengan produk itu.'+
+    '\nJANGAN pernah mengarang produk sendiri, mengganti mereknya, atau menambah klaim tentang khasiatnya. Kalau daftar produk di kitab kosong, kosongkan juga pakaiProduk di semua sesi.'+
+'\n\nKAMERA ADALAH PONSELNYA. Untuk foto bergaya selfie atau video-call, TIDAK BOLEH ada ponsel, layar, atau alat perekam yang terlihat di frame — lengan yang memegangnya memendek tajam di tepi frame dan tangannya di luar frame. Orang tidak bisa terlihat memegang ponsel sementara ponsel itu yang memotretnya.'+
     '\n\nCAHAYA WAJIB PUNYA GEOMETRI, bukan kata sifat. Field cahaya milik sesi harus menyebut SATU sumber dan ARAHNYA — mis. "soft daylight from a large window on her left, about 45 degrees behind her shoulder" atau "warm tungsten lamp above and slightly behind, kitchen light spilling in from the right". Jangan menulis "cahaya bagus", "pencahayaan natural", atau "golden hour" saja: itu tidak memberi model geometri untuk digambar, dan arah bayangan yang tidak konsisten adalah cacat yang paling gampang terlihat di gambar AI sekarang.'+
     '\nSebut juga lampu mana yang MATI kalau ada di ruangan itu ("lampu meja mati, lampu gantung mati"). Menyatakan sumber yang tidak menyala mencegah model menambahkan cahaya kedua yang membuat arah bayangan jadi berantakan.'+
     '\nDILARANG: subjek berdiri tegak menghadap kamera dengan senyum netral, latar polos tanpa konteks, kata "perfect", "flawless", "beautiful", "stunning".'+
@@ -2129,8 +2185,8 @@ function promptShoot(fb){
     '\nField negative: bahasa Inggris, hal spesifik yang harus dihindari di foto itu (boleh kosong).'+
     fbLine(fb)+
     '\nBalas HANYA satu objek JSON valid:'+
-    '\n{"sesi":[{"nama":"string","pakaiOutfit":"nama entri lemari pakaian atau string kosong","pakaiLokasi":"nama entri lokasi tetap atau string kosong",'+
-    '"outfit":"string","lokasi":"string","waktu":"string","cahaya":"string","rambut":"string","catatan":"string",'+
+    '\n{"sesi":[{"nama":"string","pakaiOutfit":"nama entri lemari pakaian atau string kosong","pakaiLokasi":"nama entri lokasi tetap atau string kosong","pakaiProduk":"nama entri produk atau string kosong",'+
+    '"outfit":"string","lokasi":"string","waktu":"string","cahaya":"string","rambut":"string","kamera":"string","ruang":"string","catatan":"string",'+
     '"shots":[{"judul":"string","tujuan":"string","peran":"hero|filler|objek|cermin","sudut":"depan|34|profil|dongak|tunduk|belakang","pose":"string","prompt":"string","negative":"string"}]}]}'+
     '\nTepat '+nSesi+' sesi, total '+n+' foto di seluruh sesi.';
 }
@@ -2276,15 +2332,24 @@ function refinePrompt(instruksi){
 }
 function promptContent(i, fb, adaFoto){
   const sh=state.shots[i], se=sesiOf(sh);
+  /* Sesi yang memakai entri kitab menyimpan teksnya di entri, bukan di sesi —
+     baca lewat pakaiRef supaya penulis caption tidak melihat "-" untuk outfit
+     dan lokasi yang sebenarnya sudah dikunci. */
+  const seOutfit=se?pakaiRef('outfit', se.outfitRef, se.outfit):'';
+  const seLokasi=se?pakaiRef('lokasi', se.lokasiRef, se.lokasi):'';
+  const seProduk=se?pakaiRef('produk', se.produkRef, se.produk):'';
   return HEADER+'\n'+buildContext()+
     '\n\nTAHAP: CAPTION & SCRIPT untuk FOTO '+(i+1)+'.'+
     (adaFoto?' Foto jadinya terlampir di pesan ini — sebut satu detail yang benar-benar terlihat di sana supaya caption terasa nyata, bukan tempelan.':'')+
     '\nDetail foto ini:\n- Judul: '+(sh.judul||'-')+'\n- Tujuan: '+(sh.tujuan||'-')+
     '\n- Peran di feed: '+peranDef(sh.peran).label+' ('+peranDef(sh.peran).rs+')'+
-    (se?'\n- Sesi: '+(se.nama||'-')+'\n- Outfit: '+(se.outfit||'-')+'\n- Lokasi: '+(se.lokasi||'-'):'')+
+    (se?'\n- Sesi: '+(se.nama||'-')+'\n- Outfit: '+(seOutfit||'-')+'\n- Lokasi: '+(seLokasi||'-'):'')+
+    (seProduk?'\n- Produk yang dipromosikan di sesi ini: '+seProduk:'')+
     '\n- Pose: '+(sh.pose||'-')+
     '\nTulis dengan suara persona di atas, dalam '+state.talent.bahasa+'. Hook maksimal 12 kata dan scroll-stopping. Caption 2–4 kalimat, terasa personal, bukan iklan. Hashtag 8–12 buah relevan dipisah spasi. Script video 15–20 detik dalam format bernomor per beat, siap dibaca.'+
     (state.persona.disclosure?'\nWAJIB: sertakan penanda konten AI (mis. "dibuat dengan AI" atau tagar #AIgenerated) di akhir caption dan di field hashtag.':'')+
+    (seProduk?'\nFoto ini konten promosi. WAJIB sertakan penanda promosi berbayar di caption dan hashtag (mis. "#ad", "#sponsored", "kerja sama berbayar", atau "link afiliasi") — ini kewajiban yang TERPISAH dari penanda konten AI, jadi keduanya harus ada.'+
+      '\nTetap tulis seperti orang yang memang memakainya: sebut satu hal spesifik yang dia rasakan atau lakukan dengan produk itu. JANGAN menulis klaim khasiat, angka, janji hasil, atau kata seperti "terbukti", "nomor satu", "pasti"; kamu tidak punya data untuk itu dan klaim palsu adalah risiko hukum, bukan cuma gaya bahasa yang buruk.':'')+
     fbLine(fb)+'\n'+JSON_RULE+
     '\nSkema: {"hook":"string","caption":"string","hashtag":"string","script":"string"}';
 }
@@ -3087,7 +3152,11 @@ function viewSheet(){
    tidak ada dua sumber kebenaran yang diam-diam berbeda. */
 function pilihKitab(k, idx, se){
   const ref=se[k+'Ref']||'', list=kitabList(k), e=ref?kitabFind(k,ref):null;
-  const L=k==='outfit'?'Outfit':'Lokasi';
+  /* Outfit & lokasi wajib ada di tiap sesi; produk tidak. Kebanyakan sesi bukan
+     konten jualan, jadi kolomnya baru muncul kalau memang ada yang bisa dipilih
+     atau sesi ini sudah pernah mengisinya. */
+  if(k==='produk'&&!list.length&&!ref&&!String(se.produk||'').trim()) return '';
+  const L={outfit:'Outfit', lokasi:'Lokasi', produk:'Produk yang dipromosikan'}[k]||k;
   return '<div class="kv full"><label>'+L+' — DIKUNCI (English, konkret)</label>'+
     (list.length
       ? '<select data-path="sesi.'+idx+'.'+k+'Ref" style="margin-bottom:6px">'+
@@ -3096,13 +3165,16 @@ function pilihKitab(k, idx, se){
           esc(x.nama||'(tanpa nama)')+'</option>').join('')+'</select>'
       : '')+
     '<textarea data-path="sesi.'+idx+'.'+k+'" rows="2"'+(e?' readonly':'')+
-      ' placeholder="'+(k==='outfit'
-        ? 'an oversized cream linen shirt over a white tank top, faded straight-leg jeans'
-        : 'a small neighbourhood coffee shop with a chipped wooden counter and one window')+'">'+
+      ' placeholder="'+({
+        outfit:'an oversized cream linen shirt over a white tank top, faded straight-leg jeans',
+        lokasi:'a small neighbourhood coffee shop with a chipped wooden counter and one window',
+        produk:'a 100 ml matte white cylindrical serum bottle with a thin black pump and a small sage-green band near the base'
+      }[k]||'')+'">'+
       esc(e?e.teks:se[k])+'</textarea>'+
     (e?'<div class="hint">Dari kitab: <b>'+esc(e.nama||'-')+'</b>. Edit teksnya di tahap Character Sheet — perubahannya ikut ke semua sesi yang memakai entri ini.'+
         (e.img?(e.kirim?' Foto acuannya ikut dikirim ke mesin gambar.':' Foto acuannya <b>tidak</b> dikirim — centang "kirim sbg acuan" di kitab kalau mau.'):'')+'</div>'
        :(list.length?'<div class="hint">Pilih dari kitab supaya bisa dipakai ulang di sesi lain, atau tulis sendiri di sini untuk sesi ini saja.</div>':''))+
+    (k==='produk'?'<div class="hint">Kosongkan di sesi yang bukan konten jualan. Sesi yang membawa produk otomatis mendapat blok <b>PRODUCT</b> di setiap prompt gambarnya — kemasannya dikunci, dan model dilarang menulis huruf yang tidak kamu sebutkan.</div>':'')+
   '</div>';
 }
 function propsKitab(idx, se){
@@ -3213,8 +3285,15 @@ function viewShoot(){
         '<div class="kv"><label>Waktu</label><input data-path="sesi.'+k+'.waktu" value="'+esc(se.waktu)+'" placeholder="mis. late morning"></div>'+
         pilihKitab('outfit', k, se)+
         pilihKitab('lokasi', k, se)+
+        pilihKitab('produk', k, se)+
         '<div class="kv"><label>Rambut</label><input data-path="sesi.'+k+'.rambut" value="'+esc(se.rambut)+'" placeholder="loosely tied back, a few strands loose"></div>'+
         '<div class="kv"><label>Cahaya</label><input data-path="sesi.'+k+'.cahaya" value="'+esc(se.cahaya)+'" placeholder="soft daylight from the window on her left"></div>'+
+        '<div class="kv full"><label>Setup kamera — DIKUNCI untuk seluruh sesi</label>'+
+          '<textarea data-path="sesi.'+k+'.kamera" rows="2" placeholder="phone propped on the desk to her left, about 35 degrees off the direction she faces, angled back toward her">'+esc(se.kamera||'')+'</textarea>'+
+          '<div class="hint">Di mana alat perekamnya berada dan bagaimana ia menghadap dia. Semua foto sesi ini dipotret dari setup yang sama — yang berubah cuma jarak dan ke mana kepalanya menoleh.</div></div>'+
+        '<div class="kv full"><label>Tata ruang — apa yang mengisi frame</label>'+
+          '<textarea data-path="sesi.'+k+'.ruang" rows="2" placeholder="frame-left is the mirror edge; frame-right is the balcony door with sheer curtains and two plants; behind her a plain wall">'+esc(se.ruang||'')+'</textarea>'+
+          '<div class="hint">Ruang yang tidak disebut akan diisi model dengan latar generik yang berganti-ganti tiap foto.</div></div>'+
         propsKitab(k, se)+
       '</div>'+
       (kunci
@@ -3763,6 +3842,28 @@ function patuhAudit(){
       : out.push(['err','Mode <b>wajah persis</b> aktif tapi catatan izin talent belum diisi. Memakai wajah orang nyata tanpa catatan izin adalah risiko terbesar di seluruh alur ini — isi di bawah, dan simpan bukti izinnya sendiri di luar aplikasi.']);
   }else{
     out.push(['ok','Mode wajah baru: tidak ada wajah orang nyata yang dipakai.']);
+  }
+  /* Konten yang membawa produk adalah promosi, dan penanda promosi berbayar
+     adalah kewajiban terpisah dari penanda konten AI — dua label berbeda untuk
+     dua hal berbeda. Ini dihitung dari isi proyek sendiri (sesi mana yang
+     memakai produk, caption mana yang memuat kata penandanya), jadi app boleh
+     memastikannya; yang app TIDAK boleh lakukan adalah mengklaim tahu aturan
+     platform mana yang berlaku hari ini. */
+  const sesiProduk=new Set(state.sesi.filter(se=>se.produkRef||String(se.produk||'').trim()).map(se=>se.id));
+  if(sesiProduk.size){
+    const kp=state.shots.filter(sh=>sesiProduk.has(sh.sesi)&&sh.konten&&sh.konten.caption);
+    const tanpaIklan=kp.filter(sh=>{
+      const t=((sh.konten.caption||'')+' '+(sh.konten.hashtag||'')).toLowerCase();
+      return !/(#ad\b|\bads\b|\bad\b|#sponsored|sponsor|berbayar|endorse|paid partnership|kerja ?sama|afiliasi|affiliate|#endorsement|dapat gratis|gifted)/.test(t);
+    });
+    out.push([tanpaIklan.length?'warn':'ok',
+      sesiProduk.size+' sesi membawa produk yang dipromosikan'+
+      (kp.length
+        ? (tanpaIklan.length
+            ? ', dan '+tanpaIklan.length+' dari '+kp.length+' caption-nya tidak memuat kata yang terbaca sebagai penanda promosi berbayar (foto '+
+              tanpaIklan.map(sh=>state.shots.indexOf(sh)+1).join(', ')+'). Penanda promosi berbayar adalah kewajiban yang <b>terpisah</b> dari penanda konten AI — satu foto bisa butuh keduanya.'
+            : ', dan semua '+kp.length+' caption-nya memuat penanda promosi berbayar.')
+        : '. Caption-nya belum dibuat; ingat penanda promosi berbayar adalah kewajiban terpisah dari penanda konten AI.')]);
   }
   const buruk=[];
   state.shots.forEach((sh,i)=>(sh.imgs||[]).forEach(im=>{ if(im.qa&&im.qa.skor<(+state.qaGate.min||70)) buruk.push(i+1); }));
@@ -4605,18 +4706,19 @@ function normalizeState(){
   state.arc=Object.assign({bulan:3,mulai:'',tema:'',babak:[]}, state.arc||{});
   if(!Array.isArray(state.arc.babak)) state.arc.babak=[];
   state.arc.babak=state.arc.babak.map(b=>babakBaru(b));
-  state.kitab=Object.assign({outfit:[],lokasi:[],props:[],tanda:[]}, state.kitab||{});
+  state.kitab=Object.assign({outfit:[],lokasi:[],props:[],tanda:[],produk:[]}, state.kitab||{});
   KITAB.forEach(({k})=>{
     if(!Array.isArray(state.kitab[k])) state.kitab[k]=[];
     state.kitab[k]=state.kitab[k].map(e=>kitabEntry(e));
   });
   state.sesi.forEach(se=>{
     if(!Array.isArray(se.props)) se.props=[];
-    ['outfitRef','lokasiRef'].forEach(r=>{ if(se[r]==null) se[r]=''; });
+    ['outfitRef','lokasiRef','produkRef','produk','kamera','ruang'].forEach(r=>{ if(se[r]==null) se[r]=''; });
     /* Rujukan ke entri yang sudah tidak ada dibuang, supaya tidak diam-diam
        mengunci ke teks kosong. Teks bebas sesi tetap jadi cadangannya. */
     if(se.outfitRef&&!kitabFind('outfit',se.outfitRef)) se.outfitRef='';
     if(se.lokasiRef&&!kitabFind('lokasi',se.lokasiRef)) se.lokasiRef='';
+    if(se.produkRef&&!kitabFind('produk',se.produkRef)) se.produkRef='';
     se.props=se.props.filter(id=>kitabFind('props',id));
     if(se.babak==null) se.babak='';
     /* Rujukan ke babak yang sudah tidak ada dilepas, bukan dibiarkan menggantung. */

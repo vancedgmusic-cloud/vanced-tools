@@ -389,9 +389,24 @@ waktu, atau arah cahaya di `shots[].prompt` — sama seperti larangan menulis wa
 `shots[].prompt` hanya boleh berisi pose, mikro-aksi, ekspresi, framing, dan satu
 detail lingkungan. Jangan longgarkan; ini poros seluruh fitur.
 
-`state.sesi[]` = `{id, nama, outfit, lokasi, waktu, cahaya, rambut, catatan}`.
+`state.sesi[]` = `{id, nama, outfit, lokasi, waktu, cahaya, rambut, kamera, ruang, catatan}`.
 `shots[].sesi` menyimpan id-nya; `''` berarti **foto lepas** — tetap bisa dirender,
 hanya tidak mendapat blok `SETTING`.
+
+**`kamera` dan `ruang` dikunci di level sesi dengan alasan yang sama.** Sebelumnya
+sesi mengunci outfit dan lokasi tapi tidak posisi kamera maupun isi frame-kiri/kanan,
+jadi tiap foto diam-diam memindahkan kameranya sendiri dan mengarang ulang ruangannya —
+tiga foto "di dapur yang sama" yang ternyata tiga dapur berbeda. `kamera` menyatakan di
+mana alat perekam berada dan bagaimana ia menghadap subjek; `ruang` menyatakan apa yang
+mengisi frame-kiri, frame-kanan, dan latar belakang. Keduanya masuk ke `settingLine()`
+sebagai `camera setup:` dan `room layout:`. Yang boleh berubah antar foto dalam satu
+sesi hanya jarak/framing dan ke mana kepalanya menoleh.
+
+**Progresi dalam satu sesi.** `promptShoot()` mewajibkan satu hal kecil yang BERLANJUT
+dari foto ke foto berikutnya — kopi berkurang, rambut makin berantakan, kemasan yang
+tadi utuh kini terbuka. Foto satu sesi diambil berurutan dalam hitungan menit; feed yang
+tiap fotonya berdiri sendiri tanpa jejak waktu terbaca sebagai kumpulan render, bukan
+potongan satu sore.
 
 **Peran foto (`PERAN`).** Feed asli bukan kumpulan foto juara semua — justru itu yang
 membuatnya terbaca sebagai katalog. Empat peran: `hero`, `filler`, `objek`, `cermin`,
@@ -463,16 +478,17 @@ seluruh pustaka.
 
 ### Kitab kesinambungan — mengunci dunia, bukan cuma wajah
 
-`state.kitab` = `{outfit:[], lokasi:[], props:[], tanda:[]}`, tiap entri
+`state.kitab` = `{outfit:[], lokasi:[], props:[], tanda:[], produk:[]}`, tiap entri
 `{id, nama, teks, catatan, img, kirim}`. `teks` **wajib bahasa Inggris** — ia masuk
 mentah ke prompt gambar; `nama` cuma label untuk daftar di UI.
 
-Empat kategori, **tiga titik suntik berbeda**, dan itu bukan detail sepele:
+Lima kategori, **tiga titik suntik berbeda**, dan itu bukan detail sepele:
 
 | kategori | masuk ke | ruang lingkup |
 |---|---|---|
 | `tanda` | `lockLine()` → blok **SUBJECT** | menempel pada orangnya, ikut di setiap foto berisi dia |
 | `outfit`, `lokasi`, `props` | `settingLine()` → blok **SETTING** | milik satu sesi |
+| `produk` | `settingLine()` → blok **PRODUCT** terpisah | milik sesi yang memang konten jualan |
 
 Tanda permanen sengaja **bukan** SETTING: tato tidak berganti waktu sesi berganti.
 Menaruhnya di SETTING berarti ia hilang di foto lepas dan di sesi yang lupa memilihnya.
@@ -498,7 +514,10 @@ Frame `objek` tidak menerima wajah sama sekali tapi **tetap** menerima acuan ben
 tempatnya — justru itu isinya.
 
 Gambar entri kitab ikut `imageCount()`, `imageWeight()`, penyaringan `projectJSON()`
-saat `withImages` mati, dan folder `04-kitab/` di ZIP. Batasnya 4 MB per entri (lebih
+saat `withImages` mati, dan folder `04-kitab/` di ZIP — semuanya mengiterasi `KITAB`
+atau `Object.values(state.kitab)`, jadi kategori baru ikut otomatis. Kalau menambah
+kategori, cukup satu baris di `KITAB` + default array di `freshProject()` dan
+`normalizeState()`. Batasnya 4 MB per entri (lebih
 kecil daripada foto talent) karena puluhan entri berfoto besar akan membengkakkan file
 project yang harus dibawa antar-komputer.
 
@@ -524,6 +543,56 @@ layar sibuk. Tombol `+` (upload manual) tetap ada untuk user yang punya foto asl
 
 `runKitab()` **menambah, tidak menimpa** — entri yang sudah dipakai sesi tidak boleh
 hilang hanya karena tombolnya ditekan dua kali; duplikat disaring lewat `teks` yang sama.
+
+#### Kategori `produk` — data faktual, bukan properti
+
+Properti adalah barang milik influencer dan AI boleh mengarangnya. **Produk adalah
+barang yang sedang dipromosikan, dan bentuk, warna, serta tulisan kemasannya adalah
+data faktual** — persis kedudukan `state.remotion` di `index.html`. Karena itu
+entrinya diberi dua penjaga yang tidak dimiliki kategori lain:
+
+- **`noAI`** — `runKitab()` melewatinya dan `promptKitab()` tidak memintanya, jadi
+  "Susun dari persona" tidak pernah mengarang produk. Balasan AI yang tetap
+  menyelipkan `produk` diabaikan.
+- **`noBulk`** — `kitabImgTodo()` melewatinya, jadi tombol "buatkan foto acuan yang
+  kosong" tidak menyapunya. Menggambar kemasan dari teks menghasilkan kemasan yang
+  MIRIP, bukan kemasan itu — dan acuan yang mirip-tapi-salah ikut terkirim ke setiap
+  render, jadi lebih buruk daripada tidak punya acuan. Untuk produk nyata, jalur yang
+  benar adalah upload foto aslinya (tombol `+`, yang karena itu ditaruh **sebelum** ✦
+  di kategori ini). Tombol ✦ tetap ada untuk produk fiktif/placeholder, dengan
+  peringatan di `title`-nya.
+
+**Blok `PRODUCT` sengaja terpisah dari daftar SETTING**, bukan diselipkan sebagai
+`with …`. Alasannya bukan kerapian: kemasan adalah tempat model paling sering
+mengarang — ia mendesain ulang botolnya dan menulis huruf-huruf palsu di labelnya.
+Kalimat terpisah yang menyebut larangan itu terang-terangan jauh lebih kuat daripada
+satu frasa yang tenggelam di tengah kalimat panjang. Bloknya melarang: mendesain ulang,
+mengubah proporsi/warna/finish, **dan menulis huruf, kata, atau logo yang tidak
+disebutkan** — lettering karangan adalah hal tercepat yang terbaca sebagai palsu.
+
+`kitabRefs()` menaruh acuan produk **paling depan** di antara acuan kitab. Jatah acuan
+dipotong 4: outfit yang melenceng sedikit tidak disadari siapa pun, kemasan yang salah
+langsung terbaca — dan itu yang dilihat orang yang mau membeli. Frame `objek` tidak
+menerima wajah tapi **tetap** menerima acuan produk; justru itu isinya.
+
+`promptShoot()` mengatur ritme jualannya: produk hanya di **sepertiga sesi**, dan di
+dalam sesi itu hanya di sebagian foto, dengan urutan sebelum-dipakai → sedang-dipakai →
+frame `objek` berisi produknya saja. Feed yang tiap sesinya menjual sesuatu terbaca
+sebagai akun iklan, bukan orang. Prompt foto **dilarang** menulis deskripsi produknya
+(sudah dikunci di level sesi) dan dilarang mengarang produk, mengganti merek, atau
+menambah klaim khasiat.
+
+**Kolom produk di kartu sesi disembunyikan** kalau kitab tidak punya produk dan sesi itu
+belum pernah mengisinya. Kebanyakan sesi bukan konten jualan; menampilkan kolom kosong
+di setiap kartu hanya jadi beban.
+
+Sisi kepatuhan digarap terpisah dan sengaja: **penanda promosi berbayar adalah kewajiban
+yang berbeda dari penanda konten AI**, dan satu foto bisa butuh keduanya. `promptContent()`
+mewajibkan penanda berbayar hanya untuk foto di sesi berproduk, dan melarang klaim khasiat
+(itu risiko hukum, bukan sekadar gaya bahasa). `patuhAudit()` menghitungnya sebagai temuan
+tersendiri — dari isi proyek, bukan dari klaim tentang aturan platform. Kartu kitab juga
+menyatakan hal yang tidak enak tapi benar: sosok ini tidak pernah benar-benar memakai
+produknya, jadi kontennya **iklan, bukan testimoni**.
 
 ### Audit konsistensi menyeluruh
 
@@ -635,6 +704,18 @@ Yang **bisa dipindahkan ke pipeline gambar diam** sudah diserap:
   sementara ponsel itu yang memotretnya.
 - **Sebut lampu yang MATI.** Menyatakan sumber yang tidak menyala mencegah model
   menambahkan cahaya kedua yang mengacaukan arah bayangan.
+
+Tiga hal lagi diserap belakangan, dan dua di antaranya struktural — contoh itu mengunci
+**setup kamera, tata ruang, dan produk sekali di awal** lalu semua adegan mengacu ke sana,
+bukan mendefinisikan ulang di tiap adegan:
+
+- **Setup kamera & tata ruang jadi milik sesi**, bukan milik foto → `sesi.kamera` /
+  `sesi.ruang`, lihat *Sesi pemotretan* di atas.
+- **Gambar acuan produk** → kategori `produk` di kitab, lihat *Kitab kesinambungan*.
+  Contoh itu memakai tiga gambar acuan dan salah satunya packshot produk; kita dulu tidak
+  punya tempat untuk itu sama sekali.
+- **Progresi waktu di dalam satu pengambilan** — satu hal kecil yang berlanjut dari frame
+  ke frame.
 
 Yang **tidak** bisa dipindahkan: koreografi berstempel waktu sub-detik dan aturan "tidak
 ada dead air" — keduanya milik ranah video. Jangan menyalinnya ke prompt gambar diam.
