@@ -612,6 +612,33 @@ foto, caption, dan kalender semuanya menurunkan diri dari sini.
   `geminiImage()`, dan `openaiImage()` menerima parameter `aspek` yang menimpa
   `state.shoot.aspek`.
 
+### Disiplin prompt adegan — dipelajari dari prompt UGC kelas produksi
+
+Sebuah contoh iklan UGC AI (arcads.ai, model video, 3 gambar acuan + satu prompt panjang)
+memperlihatkan disiplin yang jauh lebih ketat daripada yang dulu dihasilkan `promptShoot()`.
+Yang **bisa dipindahkan ke pipeline gambar diam** sudah diserap:
+
+- **Geometri kamera, bukan cuma jarak.** Prompt harus menyatakan di mana kamera berada
+  terhadap subjek (sisi + derajat + apakah di depan atau menyerong), lalu arah pandang
+  terhadap lensa. `"close-up"` saja tidak memberi tahu model di mana kamera berdiri —
+  itu sebabnya hasil lama terlihat seperti pas foto.
+- **Isi frame-kiri dan frame-kanan.** Ruang yang tidak disebut akan diisi model dengan
+  latar generik.
+- **Satu detail akibat per foto** — bukan cacat acak, melainkan bekas dari sesuatu yang
+  baru saja terjadi di adegan itu (bekas kacamata di batang hidung, helai yang baru
+  tertiup). Ini yang membuat foto punya sebelum-dan-sesudah, bukan pose dari kekosongan.
+- **Dilarang bergaya iklan.** Produk tidak diangkat ke kamera, tidak dipamerkan labelnya,
+  tidak sejajar wajah — dipegang rendah dan dekat badan. Pose menyodorkan produk adalah
+  penanda iklan yang paling cepat terbaca.
+- **Kamera adalah ponselnya.** Foto bergaya selfie tidak boleh menampilkan ponsel; lengan
+  pemegangnya memendek tajam di tepi frame. Orang tidak bisa terlihat memegang ponsel
+  sementara ponsel itu yang memotretnya.
+- **Sebut lampu yang MATI.** Menyatakan sumber yang tidak menyala mencegah model
+  menambahkan cahaya kedua yang mengacaukan arah bayangan.
+
+Yang **tidak** bisa dipindahkan: koreografi berstempel waktu sub-detik dan aturan "tidak
+ada dead air" — keduanya milik ranah video. Jangan menyalinnya ke prompt gambar diam.
+
 ### Blok fisika adegan — target deteksi 2026
 
 Riset deteksi mutakhir mengubah prioritas: tanda-tanda lama (jari enam, teks kacau,
