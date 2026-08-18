@@ -194,6 +194,9 @@ main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
 
 /* ---------- tabel sheet / kalender ---------- */
 .scroll-x{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-sm);margin-top:10px}
+/* --- Alur hidup --- */
+.card.babak{border-left:2px solid var(--amber)}
+.bno{font-family:var(--mono);font-size:11px;color:var(--faint);margin-right:2px}
 /* --- Roster influencer --- */
 .prow{display:flex;gap:11px;align-items:center;padding:10px;border:1px solid var(--line);
   border-radius:var(--r-sm);background:var(--panel2);margin-bottom:8px}
@@ -556,6 +559,11 @@ function freshProject(){
     sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[],
             grid:{ cols:4, rows:3, aspek:'2:3', latar:'studio', label:true, cells:[], sheetImg:null } },
     kalender:{ hari:14, mulai:'', rows:[] },
+    /* Alur hidup. Wajah dikunci, dunia dikunci, feed disusun — yang belum
+       dikunci adalah WAKTU. Orang yang penampilan dan hidupnya sama persis
+       selama enam bulan sama mencurigakannya dengan wajah yang berubah-ubah:
+       manusia sungguhan pindah, bepergian, ganti potongan rambut, punya musim. */
+    arc:{ bulan:3, mulai:'', tema:'', babak:[] },
     /* Kitab kesinambungan — dunia milik influencer ini, dipakai ulang lintas sesi
        dan lintas bulan. Wajah dikunci di identity lock; ini yang mengunci sisanya.
        Yang membuat orang percaya bukan wajah yang sama, melainkan cangkir yang
@@ -615,14 +623,15 @@ const STEPS=[
   {id:'identity', no:'02', label:'Identitas Visual', ai:true},
   {id:'persona',  no:'03', label:'Persona & Brand',  ai:true},
   {id:'sheet',    no:'04', label:'Character Sheet',  ai:true},
-  {id:'shoot',    no:'05', label:'Rencana Foto',     ai:true},
-  {id:'render',   no:'06', label:'Render Foto'},
-  {id:'feed',     no:'07', label:'Simulasi Feed'},
-  {id:'content',  no:'08', label:'Caption & Script', ai:true},
-  {id:'export',   no:'09', label:'Ekspor'}
+  {id:'arc',      no:'05', label:'Alur Hidup',       ai:true},
+  {id:'shoot',    no:'06', label:'Rencana Foto',     ai:true},
+  {id:'render',   no:'07', label:'Render Foto'},
+  {id:'feed',     no:'08', label:'Simulasi Feed'},
+  {id:'content',  no:'09', label:'Caption & Script', ai:true},
+  {id:'export',   no:'10', label:'Ekspor'}
 ];
 /* Tahap yang jadi kotor ketika tahap di kirinya di-regenerate. */
-const REGEN_ORDER=['identity','persona','sheet','shoot','content'];
+const REGEN_ORDER=['identity','persona','sheet','arc','shoot','content'];
 let current='talent';
 
 /* ---------------- definisi field ---------------- */
@@ -1459,7 +1468,7 @@ function sesiBaru(init){
     nama:'', outfit:'', lokasi:'', waktu:'', cahaya:'', rambut:'', catatan:'',
     /* Rujukan ke kitab. Sengaja rujukan, bukan salinan: mengedit satu entri
        lemari pakaian harus ikut memperbaiki semua sesi yang memakainya. */
-    outfitRef:'', lokasiRef:'', props:[]
+    outfitRef:'', lokasiRef:'', props:[], babak:''
   }, init||{});
 }
 const sesiOf=sh=>state.sesi.find(x=>x.id===(sh&&sh.sesi))||null;
@@ -1669,7 +1678,7 @@ function promptShoot(fb){
     '\nAntar sesi HARUS berbeda jelas (outfit, lokasi, waktu, mood). Di DALAM satu sesi, outfit/lokasi/rambut/cahaya WAJIB sama persis — yang berubah hanya pose, aktivitas, jarak kamera, dan ekspresi.'+
     '\n\nPERAN FOTO. Feed asli bukan kumpulan foto juara semua; justru itu yang membuatnya terbaca sebagai katalog. Setiap foto diberi salah satu peran: '+mix+'.'+
     '\nSetiap sesi minimal punya satu foto berperan "objek" — frame tanpa orang sama sekali (benda, sudut ruangan, makanan, sepatu di lantai). Itu yang paling meyakinkan sebagai potongan hidup seseorang.'+
-    kitabBrief()+
+    kitabBrief()+ arcBrief()+
     '\n\nATURAN PENULISAN PROMPT (paling penting, jangan dilanggar):'+
     '\n- Field outfit, lokasi, rambut, waktu, cahaya ditulis SEKALI di level SESI, bukan di tiap foto.'+
     '\n- Field prompt milik foto DILARANG menyebut outfit, pakaian, warna baju, lokasi, latar tempat, gaya rambut, waktu, atau arah cahaya. Semua itu sudah dikunci di level sesi dan ditambahkan otomatis di depan prompt. Menulisnya ulang membuat outfit berubah pelan-pelan antar foto dan merusak seluruh sesi.'+
@@ -1705,12 +1714,67 @@ function promptSheet(fb){
     fbLine(fb)+'\n'+JSON_RULE+
     '\nSkema: {"brand":'+schemaOf(F.sheet)+',"niche_rows":[{"niche":"string","sudut_pandang":"string","format":"string","hook":"string","props":"string","hindari":"string"}],"platform_rows":[{"platform":"string","jenis_konten":"string","gaya_hook":"string","panjang_caption":"string","frekuensi":"string","cta":"string"}]}';
 }
+/* =====================================================================
+   ALUR HIDUP — mengunci waktu
+
+   Wajah dikunci lewat identity lock, dunia lewat kitab, komposisi lewat feed.
+   Yang tersisa adalah WAKTU. Akun yang isinya sama persis selama enam bulan —
+   outfit itu-itu saja, tidak pernah ke mana-mana, tidak pernah terjadi apa-apa —
+   sama mencurigakannya dengan wajah yang berubah-ubah. Manusia sungguhan pindah,
+   bepergian, ganti potongan rambut, dan hidup di dalam musim.
+
+   Babak juga memberi konten ALASAN untuk ada. Feed tanpa alur cuma tumpukan
+   postingan; feed dengan alur punya sesuatu yang diikuti orang.
+===================================================================== */
+let babakSeq=0;
+const babakId=()=>'b'+(++babakSeq)+'-'+Math.random().toString(36).slice(2,5);
+const babakList=()=>((state.arc&&state.arc.babak)||[]);
+const babakFind=id=>babakList().find(x=>x.id===id)||null;
+function babakBaru(init){
+  return Object.assign({id:babakId(), nama:'', minggu:'', cerita:'', perubahan:'', konten:'', musim:''}, init||{});
+}
+function promptArc(fb){
+  const bulan=Math.max(1,Math.min(12,+state.arc.bulan||3));
+  const mulai=String(state.arc.mulai||'').trim();
+  const tema=String(state.arc.tema||'').trim();
+  return HEADER+'\n'+buildContext()+
+    '\n\nTAHAP: ALUR HIDUP '+bulan+' BULAN. Susun busur cerita untuk hidup influencer ini selama '+bulan+' bulan ke depan.'+
+    (mulai?'\nMulai dari: '+mulai+'. Perhitungkan musim, cuaca, dan hari besar yang jatuh di rentang itu.':'')+
+    (tema?'\nBenang merah yang diminta user: '+tema:'')+
+    '\n\nKENAPA INI ADA. Akun yang isinya sama persis selama berbulan-bulan — outfit itu-itu saja, tidak pernah ke mana-mana, tidak pernah terjadi apa pun — terbaca palsu, sama seperti wajah yang berubah-ubah. Orang sungguhan pindah, bepergian, ganti potongan rambut, kehabisan uang, dapat kabar baik, dan hidup di dalam musim. Alur juga memberi konten ALASAN untuk ada: feed tanpa alur cuma tumpukan postingan.'+
+    '\n\nBagi jadi 4–6 BABAK berurutan yang menutup seluruh '+bulan+' bulan tanpa celah.'+
+    '\nTiap babak harus punya:'+
+    '\n- nama: pendek dan mudah diingat.'+
+    '\n- minggu: rentangnya, mis. "Minggu 1–3".'+
+    '\n- cerita: 1–2 kalimat, apa yang sedang terjadi di hidupnya. Sesuatu yang biasa dan bisa dipercaya, BUKAN drama besar. Tidak ada patah hati sinetron, tidak ada mendadak kaya.'+
+    '\n- perubahan: apa yang BERUBAH DAN TERLIHAT di foto pada babak ini — potongan atau warna rambut, satu barang baru, lokasi baru, warna dominan yang bergeser, cuaca. Ini bagian terpenting: kalau tidak ada yang berubah secara visual, alurnya tidak akan terasa di feed. Sebut satu sampai tiga perubahan konkret saja; jangan mengubah wajah, bentuk tubuh, atau tanda permanen.'+
+    '\n- konten: 3–4 ide konten yang hanya masuk akal DI BABAK INI, dipisah baris baru.'+
+    '\n- musim: musim/cuaca/hari besar yang relevan di rentang itu, atau kosong.'+
+    '\n\nKONTEKS INDONESIA. Kalau tanggalnya menyentuh Ramadan, Idulfitri, Natal, tahun baru, 17 Agustus, musim hujan, atau musim kemarau, manfaatkan — audiens lokal langsung merasakannya, dan mengabaikannya membuat akun terasa tidak hidup di tempat yang sama dengan mereka.'+
+    '\n\nSemua dalam '+state.talent.bahasa+', konkret, tanpa kata-kata pemasaran.'+
+    fbLine(fb)+'\n'+JSON_RULE+
+    '\nSkema: {"tema":"string","babak":[{"nama":"string","minggu":"string","cerita":"string","perubahan":"string","konten":"string","musim":"string"}]}';
+}
+/* Babak yang sedang berjalan disodorkan ke perencana sesi & kalender, supaya
+   foto dan postingan ikut alurnya alih-alih mengambang di luar waktu. */
+function arcBrief(){
+  const b=babakList().filter(x=>x.nama||x.cerita);
+  if(!b.length) return '';
+  const tema=String(state.arc.tema||'').trim();
+  return '\n\nALUR HIDUP '+(+state.arc.bulan||3)+' BULAN'+(tema?' — benang merah: '+tema:'')+'.'+
+    '\nFoto dan konten harus terasa berada DI DALAM alur ini, bukan mengambang di luar waktu.'+
+    b.map(x=>'\n  • '+(x.nama||'(tanpa nama)')+(x.minggu?' ['+x.minggu+']':'')+
+      (x.cerita?' — '+x.cerita:'')+
+      (x.perubahan?' | yang berubah & terlihat: '+x.perubahan:'')+
+      (x.musim?' | musim: '+x.musim:'')).join('');
+}
 function promptKalender(fb){
   const hari=Math.max(3,Math.min(30,+state.kalender.hari||14));
   const p=state.sheet.platforms.map(id=>(PLATFORMS.find(x=>x.id===id)||{}).label).filter(Boolean);
   return HEADER+'\n'+buildContext()+
     '\n\nTAHAP: KALENDER KONTEN '+hari+' HARI.'+
     (p.length?' Sebar merata di platform: '+p.join(', ')+'.':'')+
+    arcBrief()+
     '\nAturan: jangan jualan tiap hari — maksimal 1 dari 4 post bersifat promosi. Selingi konten edukasi, hiburan, dan personal. Variasikan format. Hook harus spesifik, bukan template.'+
     '\nSemua dalam '+state.talent.bahasa+'.'+
     fbLine(fb)+'\n'+JSON_RULE+
@@ -1853,6 +1917,7 @@ const HAS={
   persona: ()=>filled(F.persona,state.persona),
   sheet:   ()=>filled(F.sheet,state.sheet)||state.sheet.niche_rows.length>0||
                state.sheet.panels.some(p=>p.imgs.length)||state.sheet.grid.cells.some(c=>c.img),
+  arc:     ()=>babakList().length>0,
   shoot:   ()=>state.shots.length>0||state.sesi.length>0,
   feed:    ()=>state.shots.some(sh=>(sh.imgs||[]).length>0),
   render:  ()=>state.shots.some(s=>s.imgs.length),
@@ -1880,6 +1945,15 @@ async function runStage(id, fb){
       F.sheet.forEach(f=>{ if(b[f.k]!=null) state.sheet[f.k]=String(b[f.k]); });
       if(Array.isArray(d.niche_rows)) state.sheet.niche_rows=d.niche_rows;
       if(Array.isArray(d.platform_rows)) state.sheet.platform_rows=d.platform_rows;
+    }else if(id==='arc'){
+      const d=await callJSON(promptArc(fb), 3000);
+      const arr=Array.isArray(d.babak)?d.babak:(Array.isArray(d)?d:[]);
+      if(!arr.length) throw new Error('AI tidak mengembalikan babak. Coba lagi.');
+      if(d.tema&&!String(state.arc.tema||'').trim()) state.arc.tema=String(d.tema);
+      state.arc.babak=arr.map(b=>babakBaru({
+        nama:String(b.nama||''), minggu:String(b.minggu||''), cerita:String(b.cerita||''),
+        perubahan:String(b.perubahan||''), konten:String(b.konten||''), musim:String(b.musim||'')
+      }));
     }else if(id==='shoot'){
       const d=await callJSON(promptShoot(fb), 4200);
       adoptShoot(d);
@@ -2595,6 +2669,55 @@ function propsKitab(idx, se){
       esc(x.nama||'(tanpa nama)')+'</button>').join('')+'</div>'+
     '<div class="hint">Benda yang muncul berulang adalah penanda hidup nyata yang paling murah — dan paling gampang terlewat.</div></div>';
 }
+function viewArc(){
+  const a=state.arc, B=babakList();
+  const sesiDari=id=>state.sesi.filter(x=>x.babak===id).length;
+  const kartu=(b,i)=>{
+    const n=sesiDari(b.id);
+    return '<div class="card babak"><h3><span class="bno">'+String(i+1).padStart(2,'0')+'</span> '+
+      esc(b.nama||'(tanpa nama)')+
+      (b.minggu?'<span class="stamp">'+esc(b.minggu)+'</span>':'')+
+      (b.musim?'<span class="stamp done">'+esc(b.musim)+'</span>':'')+
+      '</h3><div class="kvgrid">'+
+        '<div class="kv"><label>Nama babak</label><input data-path="arc.babak.'+i+'.nama" value="'+esc(b.nama)+'"></div>'+
+        '<div class="kv"><label>Rentang</label><input data-path="arc.babak.'+i+'.minggu" value="'+esc(b.minggu)+'" placeholder="Minggu 1–3"></div>'+
+        '<div class="kv full"><label>Apa yang sedang terjadi</label>'+
+          '<textarea data-path="arc.babak.'+i+'.cerita" rows="2">'+esc(b.cerita)+'</textarea></div>'+
+        '<div class="kv full"><label>Yang berubah &amp; TERLIHAT di foto</label>'+
+          '<textarea data-path="arc.babak.'+i+'.perubahan" rows="2" placeholder="mis. rambut dipotong sebahu, tote bag baru warna hitam, lebih sering di dalam ruangan karena musim hujan">'+esc(b.perubahan)+'</textarea>'+
+          '<div class="hint">Ini bagian yang menentukan. Kalau tidak ada yang berubah secara visual, alurnya tidak akan terasa di feed — cuma jadi catatan yang tidak pernah terlihat siapa pun.</div></div>'+
+        '<div class="kv full"><label>Ide konten khas babak ini</label>'+
+          '<textarea data-path="arc.babak.'+i+'.konten" rows="3">'+esc(b.konten)+'</textarea></div>'+
+        '<div class="kv"><label>Musim / hari besar</label><input data-path="arc.babak.'+i+'.musim" value="'+esc(b.musim)+'"></div>'+
+      '</div>'+
+      '<div class="toolbar" style="margin-top:10px">'+
+        '<button class="btn small needidle" data-babaksesi="'+esc(b.id)+'">+ Buat sesi dari babak ini</button>'+
+        (n?'<span class="stamp done">'+n+' sesi memakai babak ini</span>':'')+
+        '<div class="spacer"></div>'+
+        '<button class="btn small danger needidle" data-rmbabak="'+i+'">Hapus babak</button></div>'+
+    '</div>';
+  };
+  const kosong='<div class="empty"><div class="big">Belum ada alur</div>'+
+    '<p>Isi durasi dan tanggal mulai di atas lalu klik “Susun alur”. AI akan membagi bulan-bulan ke depan jadi beberapa babak — masing-masing dengan cerita, perubahan yang terlihat di foto, dan ide konten yang hanya masuk akal di babak itu.</p></div>';
+  return head('Tahap 05','Alur Hidup',
+    'Wajah sudah dikunci, dunianya sudah dikunci. Yang belum: waktu. Akun yang isinya sama persis selama berbulan-bulan terbaca palsu — orang sungguhan pindah, bepergian, ganti potongan rambut, dan hidup di dalam musim.')+
+    '<div class="card"><h3>🗓 Rentang &amp; benang merah</h3><div class="kvgrid">'+
+      '<div class="kv"><label>Durasi (bulan)</label><input type="number" min="1" max="12" data-path="arc.bulan" value="'+esc(a.bulan)+'"></div>'+
+      '<div class="kv"><label>Mulai</label><input type="date" data-path="arc.mulai" value="'+esc(a.mulai)+'"></div>'+
+      '<div class="kv full"><label>Benang merah (opsional)</label>'+
+        '<input data-path="arc.tema" value="'+esc(a.tema)+'" placeholder="mis. pindah ke Jakarta dan pelan-pelan membangun rutinitas baru">'+
+        '<div class="hint">Kosongkan kalau mau AI yang mengusulkan. Isi tanggal mulai supaya musim, cuaca, dan hari besar (Ramadan, Lebaran, 17 Agustus, musim hujan) ikut diperhitungkan.</div></div>'+
+    '</div>'+
+    '<div class="check ok"><span class="sym">✓</span><div>Alur ini otomatis disodorkan ke <b>Rencana Foto</b> dan <b>Kalender konten</b>, jadi sesi dan postingan menurunkan diri dari babak yang sedang berjalan — bukan mengambang di luar waktu.</div></div>'+
+    '<div class="toolbar" style="margin-top:12px">'+stampHTML('arc')+'<div class="spacer"></div>'+
+      '<button class="btn primary needidle" data-gen="arc">✦ '+(B.length?'Susun ulang alur':'Susun alur')+'</button></div>'+
+    '</div>'+
+    (B.length?B.map(kartu).join('')+
+      '<div class="toolbar"><button class="btn needidle" data-addbabak="1">+ Tambah babak</button><div class="spacer"></div></div>'+
+      reviseHTML('arc','mis. bikin babak 3 lebih tenang, tambahkan babak liburan singkat')
+      :kosong)+
+    (B.length?'<div class="toolbar"><div class="spacer"></div><button class="btn go needidle" data-go="shoot">Lanjut ke rencana foto →</button></div>':'');
+}
 function viewShoot(){
   const s=state.shoot;
   /* Foto dirender per sesi. Nomor global tetap dipertahankan karena tahap
@@ -2634,8 +2757,11 @@ function viewShoot(){
   const sesiCard=(se,k)=>{
     const mine=shotsOfSesi(se.id);
     const kunci=settingLine(se);
+    const bb=se.babak?babakFind(se.babak):null;
     return '<div class="card sesi"><h3>🎬 Sesi '+(k+1)+' · '+esc(se.nama||'(tanpa nama)')+
+      (bb?'<span class="stamp done">'+esc(bb.nama||'babak')+'</span>':'')+
       '<span class="stamp'+(kunci?' done':'')+'">'+mine.length+' foto</span></h3>'+
+      (bb&&bb.perubahan?'<div class="check ok"><span class="sym">↗</span><div>Dari babak <b>'+esc(bb.nama||'-')+'</b> — yang berubah di babak ini: '+esc(bb.perubahan)+'</div></div>':'')+
       '<p class="hint" style="margin:-6px 0 12px">Semua foto di sesi ini memakai outfit, lokasi, rambut, dan cahaya yang sama persis. Itu yang membuat feed-nya terbaca sebagai satu hari yang nyata, bukan katalog.</p>'+
       '<div class="kvgrid">'+
         '<div class="kv"><label>Nama sesi</label><input data-path="sesi.'+k+'.nama" value="'+esc(se.nama)+'" placeholder="mis. Pagi di kafe"></div>'+
@@ -2676,7 +2802,7 @@ function viewShoot(){
       '<div class="hint">Menyalin sudut pandang & props niche itu ke kolom tema/outfit/mood di bawah.</div>' : '';
   const nSesi=state.sesi.length, nShot=state.shots.length;
   const nObjek=state.shots.filter(sh=>peranDef(sh.peran).noIdentity).length;
-  return head('Tahap 05','Rencana Photoshoot','Foto disusun per SESI: satu hari, satu outfit, satu lokasi, beberapa frame. Outfit & lokasi dikunci di level sesi; wajah dikunci di level proyek. Prompt tiap foto hanya berisi pose dan aksi.')+
+  return head('Tahap 06','Rencana Photoshoot','Foto disusun per SESI: satu hari, satu outfit, satu lokasi, beberapa frame. Outfit & lokasi dikunci di level sesi; wajah dikunci di level proyek. Prompt tiap foto hanya berisi pose dan aksi.')+
     (nShot?'<div class="estimate"><span>Sesi: <b>'+nSesi+'</b></span><span>Foto: <b>'+nShot+'</b></span>'+
       '<span>Tanpa wajah: <b>'+nObjek+'</b> ('+Math.round(nObjek/nShot*100)+'%)</span>'+
       '<span>Panggilan API: <b>'+nShot+'</b></span></div>':'')+
@@ -2852,7 +2978,7 @@ function viewRender(){
       '<div class="hint">Varian terakhir dari tiap foto. Kalau ada satu yang warnanya lompat sendiri, revisi foto itu supaya feed-nya nyambung.</div></div>'
     : '';
 
-  return head('Tahap 06','Render Foto','Identity lock + prompt adegan + setelan teknis digabung otomatis. Foto pertama yang jadi otomatis dipakai sebagai anchor wajah untuk foto-foto berikutnya.')+
+  return head('Tahap 07','Render Foto','Identity lock + prompt adegan + setelan teknis digabung otomatis. Foto pertama yang jadi otomatis dipakai sebagai anchor wajah untuk foto-foto berikutnya.')+
     auditCard()+
     (!lock?'<div class="check err"><span class="sym">✕</span><div>IDENTITY LOCK masih kosong. Isi tahap 02 dulu, kalau tidak setiap foto akan menghasilkan orang yang berbeda.</div></div>':'')+
     (manual?'<div class="check warn"><span class="sym">!</span><div>Mesin gambar diset “Tanpa render”. Salin prompt di bawah ke tool gambar pilihanmu, atau pilih mesin gambar lewat ⚙ API.</div></div>'
@@ -3033,7 +3159,7 @@ function viewFeed(){
   const semua=feedOrder(), items=feedItems();
   const belum=semua.length-items.length;
   if(!items.length){
-    return head('Tahap 07','Simulasi Feed','Melihat hasil render sebagai satu grid — cacat yang cuma muncul di hubungan antar-foto, bukan di masing-masing foto.')+
+    return head('Tahap 08','Simulasi Feed','Melihat hasil render sebagai satu grid — cacat yang cuma muncul di hubungan antar-foto, bukan di masing-masing foto.')+
       '<div class="empty"><div class="big">Belum ada foto yang bisa ditampilkan</div>'+
       '<p>Render dulu beberapa foto di tahap sebelumnya. Feed baru berarti kalau sudah ada minimal 6–9 foto — di bawah itu polanya belum kelihatan.</p>'+
       '<div class="toolbar" style="justify-content:center;margin-top:14px"><button class="btn go" data-go="render">← Ke tahap render</button></div></div>';
@@ -3068,7 +3194,7 @@ function viewFeed(){
   const auditHTML=temuan.map(([t,m])=>'<div class="check '+(t==='ok'?'ok':'warn')+'"><span class="sym">'+
     (t==='ok'?'✓':'!')+'</span><div>'+m+'</div></div>').join('');
 
-  return head('Tahap 07','Simulasi Feed','Feed dibaca sebagai satu kesatuan, bukan foto per foto. Dua cacat di bawah hanya kelihatan di tampilan grid — tidak pernah kelihatan saat memeriksa gambar satu per satu.')+
+  return head('Tahap 08','Simulasi Feed','Feed dibaca sebagai satu kesatuan, bukan foto per foto. Dua cacat di bawah hanya kelihatan di tampilan grid — tidak pernah kelihatan saat memeriksa gambar satu per satu.')+
     '<div class="card"><h3>📱 Pratinjau grid</h3>'+
       '<div class="toolbar" style="margin:-4px 0 12px">'+
         '<button class="btn needidle" data-feedauto="1">🔀 Susun otomatis</button>'+
@@ -3117,7 +3243,7 @@ function viewContent(){
     (kal||'<div class="hint">Rencana posting harian lintas platform, memakai pilar konten dan panduan niche dari character sheet. Maksimal 1 dari 4 post bersifat promosi.</div>')+
     (K.rows.length?reviseHTML('kalender','mis. lebih banyak konten edukasi, kurangi promosi'):'')+'</div>';
 
-  return head('Tahap 08','Caption & Script','Ditulis dengan suara persona, per foto, siap tempel — plus kalender posting lintas platform.')+
+  return head('Tahap 09','Caption & Script','Ditulis dengan suara persona, per foto, siap tempel — plus kalender posting lintas platform.')+
     kalCard+
     (!state.shots.length
       ? '<div class="empty"><div class="big">Belum ada foto</div><p>Susun rencana photoshoot dulu di tahap 05.</p><button class="btn primary" data-go="shoot">← Ke rencana foto</button></div>'
@@ -3141,7 +3267,7 @@ function viewExport(){
   if(state.talent.mode==='locked') push('warn','!','Mode wajah persis aktif. Pastikan izin talent masih berlaku sebelum kontennya dipublikasikan.');
   if(!state.persona.disclosure) push('warn','!','Penanda konten AI dimatikan. Cek dulu aturan pelabelan media sintetis di platform tujuanmu.');
 
-  return head('Tahap 09','Ekspor','Semua hasil bisa dibawa keluar. File project menyimpan semuanya kecuali API key.')+
+  return head('Tahap 10','Ekspor','Semua hasil bisa dibawa keluar. File project menyimpan semuanya kecuali API key.')+
     '<div class="card"><h3>✅ Pemeriksaan</h3>'+checks.join('')+'</div>'+
     '<div class="card"><h3>🗄 Arsip lengkap</h3>'+
       '<p class="hint" style="margin:-6px 0 12px">Satu file .zip berisi semua hasil proyek ini — foto, character sheet, prompt, caption, kalender, laporan QA, dan project.json yang bisa dimuat ulang. Dipakai untuk menyimpan proyek yang sudah selesai.</p>'+
@@ -3187,7 +3313,7 @@ function viewExport(){
     '</div>';
 }
 
-const VIEWS={talent:viewTalent, identity:viewIdentity, persona:viewPersona, sheet:viewSheet, shoot:viewShoot, render:viewRender, feed:viewFeed, content:viewContent, export:viewExport};
+const VIEWS={talent:viewTalent, identity:viewIdentity, persona:viewPersona, sheet:viewSheet, arc:viewArc, shoot:viewShoot, render:viewRender, feed:viewFeed, content:viewContent, export:viewExport};
 const mb=n=>(n/1048576).toFixed(n<10485760?2:1)+' MB';
 function restoreBanner(){
   if(!pendingRestore) return '';
@@ -3405,6 +3531,7 @@ function sheetHTML(){
     '<h2>Identitas visual</h2><dl>'+defList(F.identity.filter(f=>f.k!=='identity_lock'),id)+'</dl>'+
     (id.identity_lock?'<h2>Identity lock</h2><pre>'+esc(id.identity_lock)+'</pre>':'')+
     '<h2>Brand kit</h2><dl>'+defList(F.sheet,S)+'</dl>'+
+    arcHTML()+
     kitabHTML()+
     '<h2>Panduan per niche</h2>'+tbl(['Niche','Sudut pandang','Format','Contoh hook','Props','Hindari'],
       S.niche_rows.map(r=>row([r.niche,r.sudut_pandang,r.format,r.hook,r.props,r.hindari])))+
@@ -3427,6 +3554,35 @@ function kitabHTML(){
       '</tbody></table>';
   }).filter(Boolean).join('');
   return seksi;
+}
+function arcText(){
+  const B=babakList().filter(b=>b.nama||b.cerita);
+  if(!B.length) return '';
+  const a=state.arc;
+  const L=['# Alur hidup — '+(state.persona.nama||'AI Influencer'),
+    '# Durasi: '+(a.bulan||3)+' bulan'+(a.mulai?' · mulai '+a.mulai:''),
+    a.tema?'# Benang merah: '+a.tema:'', ''].filter(x=>x!=='' || true);
+  B.forEach((b,i)=>{
+    L.push('=== BABAK '+String(i+1).padStart(2,'0')+' — '+(b.nama||'-')+(b.minggu?' ('+b.minggu+')':'')+' ===');
+    if(b.musim)     L.push('musim/hari besar : '+b.musim);
+    if(b.cerita)    L.push('yang terjadi     : '+b.cerita);
+    if(b.perubahan) L.push('berubah & terlihat: '+b.perubahan);
+    if(b.konten)    L.push('ide konten       :\n  '+String(b.konten).split('\n').join('\n  '));
+    const se=state.sesi.filter(x=>x.babak===b.id);
+    if(se.length)   L.push('sesi terkait     : '+se.map(x=>x.nama||'(tanpa nama)').join(', '));
+    L.push('');
+  });
+  return L.join('\n');
+}
+function arcHTML(){
+  const B=babakList().filter(b=>b.nama||b.cerita);
+  if(!B.length) return '';
+  return '<h2>Alur hidup — '+esc((state.arc.bulan||3)+' bulan')+
+    (state.arc.tema?' · '+esc(state.arc.tema):'')+'</h2>'+
+    '<table><thead><tr><th>Babak</th><th>Rentang</th><th>Yang terjadi</th><th>Berubah &amp; terlihat</th><th>Musim</th></tr></thead><tbody>'+
+    B.map(b=>'<tr><td>'+esc(b.nama||'-')+'</td><td>'+esc(b.minggu||'')+'</td><td>'+esc(b.cerita||'')+
+      '</td><td>'+esc(b.perubahan||'')+'</td><td>'+esc(b.musim||'')+'</td></tr>').join('')+
+    '</tbody></table>';
 }
 function kitabText(){
   const L=['# Kitab kesinambungan — '+(state.persona.nama||'AI Influencer'),
@@ -3699,6 +3855,7 @@ async function exportZip(){
 
     addText('README.txt', zipReadme(nImg));
     addText('identity-lock.txt', String(state.identity.identity_lock||''));
+    addText('alur-hidup.txt', arcText());
     addText('kitab-kesinambungan.txt', kitabText());
     KITAB.forEach(({k})=>kitabList(k).forEach((e,i)=>{
       if(e.img) addImg('04-kitab/'+k+'-'+String(i+1).padStart(2,'0')+'-'+slug(e.nama||k)+'.'+imgExt(e.img), e.img);
@@ -3780,7 +3937,7 @@ function saveProject(){
     : ' — TANPA gambar, hanya teks & rencana.'),'ok');
 }
 /* Whitelist top-level: kalau menambah key baru di state, daftarkan juga di sini. */
-const KEEP=['projNama','talent','uploads','identity','persona','sheet','kalender','kitab','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
+const KEEP=['projNama','talent','uploads','identity','persona','sheet','kalender','kitab','arc','shoot','sesi','shots','feed','anchor','stampAI','qaGate','usage','post','withImages','dirty'];
 /* Dipakai oleh loadProject DAN pemulihan autosave: project lama atau snapshot
    dari versi sebelumnya tidak boleh membuat aplikasi error karena field baru. */
 function normalizeState(){
@@ -3809,6 +3966,9 @@ function normalizeState(){
   /* id sesi yang tidak dikenal (mis. sesi terhapus di file lama) dijadikan lepas. */
   const ids=new Set(state.sesi.map(x=>x.id));
   state.shots.forEach(sh=>{ if(sh.sesi&&!ids.has(sh.sesi)) sh.sesi=''; });
+  state.arc=Object.assign({bulan:3,mulai:'',tema:'',babak:[]}, state.arc||{});
+  if(!Array.isArray(state.arc.babak)) state.arc.babak=[];
+  state.arc.babak=state.arc.babak.map(b=>babakBaru(b));
   state.kitab=Object.assign({outfit:[],lokasi:[],props:[],tanda:[]}, state.kitab||{});
   KITAB.forEach(({k})=>{
     if(!Array.isArray(state.kitab[k])) state.kitab[k]=[];
@@ -3822,6 +3982,9 @@ function normalizeState(){
     if(se.outfitRef&&!kitabFind('outfit',se.outfitRef)) se.outfitRef='';
     if(se.lokasiRef&&!kitabFind('lokasi',se.lokasiRef)) se.lokasiRef='';
     se.props=se.props.filter(id=>kitabFind('props',id));
+    if(se.babak==null) se.babak='';
+    /* Rujukan ke babak yang sudah tidak ada dilepas, bukan dibiarkan menggantung. */
+    if(se.babak&&!babakFind(se.babak)) se.babak='';
   });
   state.feed=Object.assign({urutan:[],label:true}, state.feed||{});
   if(!Array.isArray(state.feed.urutan)) state.feed.urutan=[];
@@ -4219,6 +4382,7 @@ function resetSummary(){
     ['Panel character sheet ter-render', s.sheet.panels.reduce((a,p)=>a+(p.imgs||[]).length,0)],
     ['Sel grid terisi',                  s.sheet.grid.cells.filter(c=>c.img).length],
     ['Kanvas grid gabungan',             s.sheet.grid.sheetImg?1:0],
+    ['Babak alur hidup',                 ((s.arc||{}).babak||[]).length],
     ['Entri kitab kesinambungan',        KITAB.reduce((a,{k})=>a+(s.kitab[k]||[]).length,0)],
     ['Sesi pemotretan',                  s.sesi.length],
     ['Rencana foto',                     s.shots.length],
@@ -4509,6 +4673,30 @@ document.addEventListener('click', async e=>{
   if(t.dataset.rmref!=null){ state.uploads.refs.splice(+t.dataset.rmref,1); render(); return; }
   if(t.dataset.rmshot!=null){ state.shots.splice(+t.dataset.rmshot,1); autosaveSoon(); render(); return; }
   if(t.dataset.addsesi){ state.sesi.push(sesiBaru({nama:'Sesi '+(state.sesi.length+1)})); autosaveSoon(); render(); return; }
+  if(t.dataset.addbabak){ state.arc.babak.push(babakBaru({nama:'Babak '+(babakList().length+1)})); autosaveSoon(); render(); return; }
+  if(t.dataset.rmbabak!=null){
+    const b=state.arc.babak[+t.dataset.rmbabak]; if(!b) return;
+    const n=state.sesi.filter(x=>x.babak===b.id).length;
+    if(n&&!confirm('Babak ini dipakai '+n+' sesi. Sesinya TIDAK ikut terhapus, hanya lepas dari babak.\n\nOK = hapus babak, Cancel = batal')) return;
+    state.sesi.forEach(x=>{ if(x.babak===b.id) x.babak=''; });
+    state.arc.babak.splice(+t.dataset.rmbabak,1);
+    autosaveSoon(); render(); return;
+  }
+  /* Babak jadi sesi: inilah yang membuat alur bisa ditindaklanjuti, bukan cuma
+     catatan. Konteks babak disalin ke catatan sesi supaya ikut terbaca planner. */
+  if(t.dataset.babaksesi){
+    const b=babakFind(t.dataset.babaksesi); if(!b) return;
+    const se=sesiBaru({
+      nama:(b.nama||'Babak')+' — sesi '+(state.sesi.filter(x=>x.babak===b.id).length+1),
+      babak:b.id,
+      catatan:[b.cerita,b.perubahan&&('yang berubah: '+b.perubahan),b.musim&&('musim: '+b.musim)]
+        .filter(Boolean).join(' | ')
+    });
+    state.sesi.push(se);
+    autosaveSoon(); go('shoot');
+    toast('Sesi dibuat dari babak "'+(b.nama||'-')+'". Isi outfit & lokasinya di tahap Rencana Foto.','ok');
+    return;
+  }
   if(t.dataset.feedmove){
     const [i,d]=t.dataset.feedmove.split('|').map(Number);
     const list=feedItems(), j=i+d;

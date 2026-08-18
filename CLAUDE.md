@@ -91,7 +91,7 @@ telemetry, atau logging yang menyentuh key.
 
 ## `influencer.html` — AI Influencer Studio
 
-Pipeline: `talent → identity → persona → sheet → shoot → render → feed → content → export`.
+Pipeline: `talent → identity → persona → sheet → arc → shoot → render → feed → content → export`.
 Bikin virtual influencer dari foto talent: baca fotonya, kunci identitas, susun
 persona, bikin character sheet, rencanakan sesi foto, render gambarnya, tulis caption.
 
@@ -210,6 +210,40 @@ juga di `projectJSON()` dan di `imageCount()`.
 Autosave IndexedDB bersifat **lokal per browser dan per mesin, tidak sinkron**.
 Satu-satunya cara memindahkan proyek antar komputer adalah file project (.json)
 atau arsip ZIP — tahap Ekspor memuat checklist langkahnya.
+
+### Tahap `arc` — alur hidup, mengunci waktu
+
+Wajah dikunci lewat identity lock, dunia lewat kitab, komposisi lewat simulasi feed.
+Yang tersisa adalah **waktu**. Akun yang isinya sama persis selama berbulan-bulan —
+outfit itu-itu saja, tidak pernah ke mana-mana, tidak pernah terjadi apa pun — sama
+mencurigakannya dengan wajah yang berubah-ubah.
+
+`state.arc` = `{bulan, mulai, tema, babak:[]}`; babak =
+`{id, nama, minggu, cerita, perubahan, konten, musim}`.
+
+Field **`perubahan`** adalah porosnya: apa yang berubah **dan terlihat di foto** pada
+babak itu (potongan rambut, satu barang baru, warna dominan, cuaca). Tanpa itu alurnya
+cuma catatan yang tidak pernah terlihat siapa pun. `promptArc()` mewajibkannya, sekaligus
+**melarang** mengubah wajah, bentuk tubuh, dan tanda permanen — perubahan waktu tidak
+boleh menabrak kunci identitas.
+
+Prompt-nya juga melarang drama besar (patah hati sinetron, mendadak kaya) dan
+memerintahkan memanfaatkan konteks Indonesia — Ramadan, Idulfitri, 17 Agustus, musim
+hujan — kalau `mulai` menyentuh rentangnya. Mengabaikan musim membuat akun terasa tidak
+hidup di tempat yang sama dengan audiensnya.
+
+`arcBrief()` menyodorkan seluruh babak ke `promptShoot()` **dan** `promptKalender()`,
+jadi sesi dan postingan menurunkan diri dari alur alih-alih mengambang di luar waktu.
+
+`sesi.babak` menyimpan id babak asalnya. Tombol "buat sesi dari babak ini" menyalin
+cerita/perubahan/musim ke `sesi.catatan` — itu yang membuat alur bisa ditindaklanjuti,
+bukan cuma dibaca. Menghapus babak **tidak** menghapus sesinya; sesinya dilepas
+(`babak=''`), dan `normalizeState()` membersihkan rujukan yatim.
+
+Menambah tahap berarti **menomori ulang** `head('Tahap NN', …)` di semua view sesudahnya.
+Lakukan menurun (10→9→8…) supaya penggantian tidak saling tabrak, dan ingat sebagian view
+punya dua `head()` (kondisi kosong + normal). smoke19 memeriksa nomor di judul tiap view
+cocok dengan `STEPS[].no`, jadi kelalaian di sini ketahuan.
 
 ### Roster — banyak influencer di satu browser
 
