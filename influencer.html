@@ -689,7 +689,7 @@ function freshProject(){
       realisme:'phone', kamera:'', jiwa:'', negatif:''
     },
     sheet:{ niches:[], platforms:[], panels:[], niche_rows:[], platform_rows:[],
-            grid:{ cols:4, rows:3, aspek:'2:3', latar:'studio', label:true, cells:[], sheetImg:null } },
+            grid:{ cols:4, rows:3, aspek:'2:3', latar:'studio', label:true, baju:'', rambut:'', cells:[], sheetImg:null } },
     kalender:{ hari:14, mulai:'', rows:[] },
     /* Kit acuan wajah. Anchor tunggal tidak cukup: kalau acuannya frontal, foto
        yang minta profil atau mendongak memaksa model MENGARANG wajah dari sudut
@@ -883,19 +883,19 @@ const ACUAN=[
   {id:'depan', sudut:'depan', label:'Depan netral · rambut diikat', aspek:'1:1', urut:0,
    p:'a straight-on frontal head-and-shoulders photograph, eyes exactly level with the lens, neutral resting face with the lips closed and relaxed, hair fully tied back so the hairline, the forehead, both ears and the neck are completely visible and unobstructed'},
   {id:'34kiri', sudut:'34', label:'Tiga perempat kiri', aspek:'1:1', urut:1,
-   p:'a head-and-shoulders photograph with the head turned about thirty-five degrees to her left, the far cheek and the bridge of the nose clearly readable against the background, eyes looking at the lens, neutral resting face'},
+   p:'a head-and-shoulders photograph with the head turned about thirty-five degrees to her left, the far cheek and the bridge of the nose clearly readable against the background, eyes looking at the lens, neutral resting face, hair tied back so the hairline, both ears and the jawline stay completely visible'},
   {id:'34kanan', sudut:'34', label:'Tiga perempat kanan', aspek:'1:1', urut:2,
-   p:'a head-and-shoulders photograph with the head turned about thirty-five degrees to her right, the far cheek and the bridge of the nose clearly readable against the background, eyes looking at the lens, neutral resting face'},
+   p:'a head-and-shoulders photograph with the head turned about thirty-five degrees to her right, the far cheek and the bridge of the nose clearly readable against the background, eyes looking at the lens, neutral resting face, hair tied back so the hairline, both ears and the jawline stay completely visible'},
   {id:'profilkiri', sudut:'profil', label:'Profil kiri', aspek:'1:1', urut:3,
    p:'a strict ninety-degree left profile head-and-shoulders photograph, the whole outline of the nose, lips, chin and jawline readable as a silhouette against the wall, the ear fully visible, hair tied back'},
   {id:'profilkanan', sudut:'profil', label:'Profil kanan', aspek:'1:1', urut:4,
    p:'a strict ninety-degree right profile head-and-shoulders photograph, the whole outline of the nose, lips, chin and jawline readable as a silhouette against the wall, the ear fully visible, hair tied back'},
   {id:'dongak', sudut:'dongak', label:'Mendongak (dagu naik)', aspek:'1:1', urut:5,
-   p:'a head-and-shoulders photograph taken from slightly below with the chin lifted, the underside of the jaw and the base of the nose visible, eyes looking down toward the lens, neutral face'},
+   p:'a head-and-shoulders photograph taken from slightly below with the chin lifted, the underside of the jaw and the base of the nose visible, eyes looking down toward the lens, neutral face, hair tied back so the jawline and the neck stay completely visible'},
   {id:'tunduk', sudut:'tunduk', label:'Menunduk (dagu turun)', aspek:'1:1', urut:6,
-   p:'a head-and-shoulders photograph taken from slightly above with the chin lowered, the eyelids and the top of the head prominent, eyes glancing up toward the lens, neutral face'},
+   p:'a head-and-shoulders photograph taken from slightly above with the chin lowered, the eyelids and the top of the head prominent, eyes glancing up toward the lens, neutral face, hair tied back off the face'},
   {id:'makro', sudut:'depan', label:'Makro tekstur & tanda', aspek:'1:1', urut:7,
-   p:'an extremely close macro photograph of the middle of the face filling the whole frame — the eyes, the bridge of the nose and the upper cheeks only — raking side light so every pore, fine line, stray eyebrow hair and skin blemish is unmistakable'},
+   p:'an extremely close macro photograph of the middle of the face filling the whole frame — the eyes, the bridge of the nose and the upper cheeks only — raking side light so every pore, fine line, stray eyebrow hair and skin blemish is unmistakable, hair tied back and out of frame'},
   /* Tiga frame di bawah mengunci BADAN, bukan wajah. Kit lama seluruhnya
      kepala-dan-bahu, jadi tinggi, bentuk tubuh, lebar bahu, dan bentuk tangan
      tidak pernah punya acuan sama sekali — tiap foto badan penuh mengarangnya
@@ -1069,55 +1069,61 @@ const ANTI_SLOP_DEFAULT='inconsistent shadow directions, shadows falling the wro
    grid tidak mirip. Kategori 'FB' (badan utuh) muncul paling sering karena
    itu yang paling sering dibutuhkan sebagai acuan.
 ===================================================================== */
+/* Pose HANYA menjelaskan BADAN dan FRAMING. Lokasi, pakaian, dan properti
+   sengaja dikeluarkan dari sini: dulu entri seperti "looking down the street"
+   dan "hands in jacket pockets" menyeret model ke luar ruangan dan memakaikan
+   jaket, mengalahkan latar studio yang dipilih user dan mengganti outfit di
+   tengah lembar. Latar datang dari GRID_BG, outfit dan rambut dari gridLook().
+   Kalau menambah pose baru, jangan menyebut tempat, pakaian, atau tas. */
 const POSE_LIB=[
   {k:'FB', l:'Berdiri netral',      p:'full body, standing relaxed with weight on one leg, arms loose at the sides'},
   {k:'CU', l:'Close-up tenang',     p:'tight head-and-shoulders close-up, chin slightly down, calm resting face'},
   {k:'AC', l:'Menyibak rambut',     p:'medium shot, one hand tucking hair behind the ear mid-motion'},
-  {k:'FB', l:'Melangkah',           p:'full body, walking toward the camera mid-stride, one foot lifted, bag swinging'},
-  {k:'ST', l:'Duduk bersandar',     p:'seated on a chair leaning back, one arm draped over the backrest, legs crossed'},
+  {k:'FB', l:'Melangkah',           p:'full body, walking toward the camera mid-stride, one foot lifted'},
+  {k:'ST', l:'Duduk bersandar',     p:'seated on a plain chair leaning back, one arm draped over the backrest, legs crossed'},
   {k:'SO', l:'Mirror selfie',       p:'full body mirror selfie, phone held at chest height partially covering the frame, casual stance'},
-  {k:'MD', l:'Menyesap minuman',    p:'waist-up, holding a cup with both hands and taking a sip, eyes lowered'},
-  {k:'FB', l:'Bersandar dinding',   p:'full body, leaning back against a wall with one knee bent and the sole against the wall'},
-  {k:'HD', nf:1, l:'Detail tangan',       p:'close-up of the hands only, fingers interlaced, resting on the lap, jewelry visible'},
+  {k:'MD', l:'Menyesap minuman',    p:'waist-up, holding a plain mug with both hands and taking a sip, eyes lowered'},
+  {k:'FB', l:'Bersandar dinding',   p:'full body, leaning back against the wall with one knee bent and the sole against the wall'},
+  {k:'HD', nf:1, l:'Detail tangan', p:'close-up of the hands only, fingers interlaced, resting on the lap'},
   {k:'34', l:'Tiga perempat',       p:'three-quarter body from the knees up, torso angled away, head turned back to camera'},
   {k:'AC', l:'Tertawa lepas',       p:'medium shot, head thrown slightly back caught mid-laugh, shoulders raised'},
-  {k:'FB', l:'Berdiri menyamping',  p:'full body in profile, standing still and looking down the street, hands in pockets'},
+  {k:'FB', l:'Berdiri menyamping',  p:'full body in profile, standing still and looking off to one side, hands loose at the sides'},
   {k:'ST', l:'Duduk di lantai',     p:'seated on the floor with knees pulled up, arms wrapped around the shins'},
   {k:'CU', l:'Close-up menoleh',    p:'close-up, head turned sharply to look off-frame, neck extended'},
-  {k:'SO', l:'POV memegang produk', p:'waist-up, holding an unbranded product up toward the camera, other hand gesturing at it'},
-  {k:'FB', l:'Berputar',            p:'full body caught mid-turn, skirt or fabric swinging outward, hair lifting'},
-  {k:'MD', l:'Bertopang dagu',      p:'waist-up, elbow on a table, chin resting on the back of the hand, looking away'},
-  {k:'34', l:'Merapikan lengan',    p:'three-quarter body, adjusting a sleeve or a watch strap, head tilted down at the wrist'},
-  {k:'FB', l:'Menaiki tangga',      p:'full body from below, climbing a few steps, one hand on the railing'},
+  {k:'SO', l:'Memegang produk',     p:'waist-up, holding a small plain unbranded object low near the waist, the other hand resting on it'},
+  {k:'FB', l:'Berputar',            p:'full body caught mid-turn, the hem of the clothing swinging outward, hair lifting'},
+  {k:'MD', l:'Bertopang dagu',      p:'waist-up, elbow on a plain table, chin resting on the back of the hand, looking away'},
+  {k:'34', l:'Merapikan lengan',    p:'three-quarter body, adjusting a sleeve, head tilted down toward the wrist'},
+  {k:'FB', l:'Menaiki tangga',      p:'full body from below, stepping up onto a step, one hand reaching for a railing'},
   {k:'AC', l:'Menunjuk',            p:'medium shot, pointing off-frame at something with an interested expression'},
   {k:'CU', l:'Profil samping',      p:'strict side profile close-up, jaw and neckline clearly visible'},
-  {k:'ST', l:'Duduk di kursi kafe', p:'seated at a small cafe table, forearms on the table, leaning into the conversation'},
-  {k:'FB', l:'Berdiri membelakangi',p:'full body seen from behind, standing and looking out at the view, weight on one hip'},
+  {k:'ST', l:'Duduk di meja',       p:'seated at a plain table, forearms on the table, leaning in as if talking to someone'},
+  {k:'FB', l:'Berdiri membelakangi',p:'full body seen from behind, standing still, weight on one hip'},
   {k:'SO', l:'GRWM di cermin',      p:'waist-up in front of a mirror, applying something to the face, elbow raised'},
   {k:'MD', l:'Melipat lengan',      p:'waist-up, arms folded loosely, shoulders relaxed, slight lean to one side'},
-  {k:'HD', nf:1, l:'Memegang cangkir',    p:'close-up of hands wrapped around a warm mug on a table, steam rising'},
+  {k:'HD', nf:1, l:'Memegang cangkir', p:'close-up of hands wrapped around a plain warm mug, steam rising'},
   {k:'FB', l:'Jongkok',             p:'full body crouching down on the balls of the feet, forearms resting on the knees'},
   {k:'AC', l:'Menoleh dipanggil',   p:'medium shot, caught turning toward the camera as if someone just called their name'},
-  {k:'34', l:'Tangan di saku',      p:'three-quarter body, both hands in jacket pockets, shoulders slightly hunched'},
+  {k:'34', l:'Tangan di saku',      p:'three-quarter body, both hands tucked into the trouser pockets, shoulders slightly hunched'},
   {k:'CU', l:'Menunduk tersenyum',  p:'close-up looking down with a small private smile, eyelashes catching the light'},
-  {k:'ST', l:'Duduk di anak tangga',p:'seated on outdoor steps, one leg extended, leaning back on both hands'},
-  {k:'SO', l:'Berjalan menjauh',    p:'full body seen from behind walking away down a path, glancing back over the shoulder'},
+  {k:'ST', l:'Duduk di anak tangga',p:'seated on a step, one leg extended, leaning back on both hands'},
+  {k:'SO', l:'Berjalan menjauh',    p:'full body seen from behind walking away, glancing back over the shoulder toward the lens'},
   {k:'MD', l:'Merentangkan tangan', p:'waist-up, arms opening outward in an expressive gesture mid-sentence'},
-  {k:'FB', l:'Berdiri di pintu',    p:'full body framed in a doorway, one hand on the door frame, half stepping through'},
-  {k:'HD', nf:1, l:'Menulis',             p:'close-up of hands writing in a notebook, pen mid-stroke, sleeve pushed up'},
+  {k:'FB', l:'Berdiri di pintu',    p:'full body framed in a plain doorway, one hand on the door frame, half stepping through'},
+  {k:'HD', nf:1, l:'Menulis',       p:'close-up of hands writing in a plain notebook, pen mid-stroke, sleeve pushed up'},
   {k:'AC', l:'Mengecek ponsel',     p:'medium shot, looking down at a phone with a small reaction forming on the face'},
   {k:'34', l:'Menoleh ke bahu',     p:'three-quarter body, back to camera, head turned over the shoulder toward the lens'},
   {k:'CU', l:'Mata terpejam',       p:'close-up with eyes closed and face tilted toward the light, calm breath'},
-  {k:'FB', l:'Duduk di kursi panjang',p:'full body seated on a bench, one arm along the backrest, ankles crossed'},
-  {k:'SO', l:'Unboxing',            p:'waist-up at a table opening a plain box, both hands busy, leaning in with curiosity'},
-  {k:'MD', l:'Menyandarkan kepala', p:'waist-up leaning the head against a window or a pole, gaze unfocused'},
-  {k:'FB', l:'Berdiri di tepi jalan',p:'full body standing at a curb waiting to cross, bag on one shoulder, looking left'},
-  {k:'HD', nf:1, l:'Detail sepatu',       p:'low close-up of the feet and shoes on the ground, one foot mid-step'},
+  {k:'FB', l:'Duduk di bangku',     p:'full body seated on a plain bench, one arm along the backrest, ankles crossed'},
+  {k:'SO', l:'Unboxing',            p:'waist-up at a plain table opening a plain box, both hands busy, leaning in with curiosity'},
+  {k:'MD', l:'Menyandarkan kepala', p:'waist-up leaning the head against the wall, gaze unfocused'},
+  {k:'FB', l:'Menunggu berdiri',    p:'full body standing still as if waiting, weight shifted onto one leg, looking to the left'},
+  {k:'HD', nf:1, l:'Detail sepatu', p:'low close-up of the feet and shoes on the ground, one foot mid-step'},
   {k:'AC', l:'Merapikan rambut',    p:'medium shot, both hands gathering hair back, elbows raised, head tilted'},
-  {k:'34', l:'Membawa belanjaan',   p:'three-quarter body carrying a tote bag, other hand holding a drink, walking'},
+  {k:'34', l:'Membawa sesuatu',     p:'three-quarter body walking while carrying something in one hand, the other arm swinging'},
   {k:'CU', l:'Senyum lebar',        p:'close-up with a wide genuine smile, crinkles at the corners of the eyes'},
   {k:'ST', l:'Bersila',             p:'full body sitting cross-legged on the floor, hands resting on the ankles, back straight'},
-  {k:'FB', l:'Merentang di jendela',p:'full body standing at a large window, one hand on the glass, looking outside'}
+  {k:'FB', l:'Menyentuh dinding',   p:'full body standing side-on, one hand flat against the wall, looking along it'}
 ];
 /* Pengali variasi supaya grid besar (sampai 12x12 = 144 sel) tetap unik. */
 const POSE_MODS=[
@@ -1172,15 +1178,33 @@ function buildGridCells(cols, rows){
   for(let i=0;i<n;i++){
     const base=POSE_LIB[POSE_ORDER[i%POSE_ORDER.length]];
     const mod=POSE_MODS[Math.floor(i/POSE_ORDER.length)%POSE_MODS.length];
+    const pose=base.p+(mod.p?', '+mod.p:'');
     out.push({
       kat:base.k,
       nf:base.nf?1:0,
+      /* Sudut disimpan supaya renderGridCell bisa memilih acuan wajah yang
+         cocok. Dihitung dari pose GABUNGAN, karena modifier ikut mengubah
+         sudut kamera (mis. "sudut atas" / "sudut rendah"). */
+      sudut:SUDUT_POSE({p:pose, l:base.l}),
       label:base.l+(mod.l?' · '+mod.l:''),
-      pose:base.p+(mod.p?', '+mod.p:''),
+      pose,
       img:null
     });
   }
   return out;
+}
+const GRID_BAJU='a plain cream crew-neck cotton t-shirt and straight-leg mid-blue jeans, no jacket, no cardigan, no scarf, no bag, no visible logos or prints';
+const GRID_RAMBUT='hair worn exactly the same way in every frame: parted the same side and loosely gathered at the nape, with the same few strands escaping at the temples';
+/* Lembar acuan yang ganti baju dan ganti rambut di tiap sel bukan lembar acuan —
+   itu justru cacat yang paling cepat terbaca saat dua belas sel dilihat
+   bersamaan. Ini padanan settingLine() untuk grid: satu penampilan, dikunci di
+   kode, sama persis di seluruh lembar. */
+function gridLook(){
+  const g=gridRef();
+  const baju=String(g.baju||'').trim()||GRID_BAJU;
+  const rambut=String(g.rambut||'').trim()||GRID_RAMBUT;
+  return 'LOOK — identical in every frame of this sheet, do not vary: she is wearing '+baju+
+    '. '+rambut+'. Same clothes, same hair, same day, same room. Only the pose, the camera distance and the angle change between frames.';
 }
 function gridCellPrompt(cell){
   const bg=GRID_BG[state.sheet.grid.latar]||GRID_BG.studio;
@@ -1192,15 +1216,15 @@ function gridCellPrompt(cell){
     return composePrompt({
       noIdentity:1,
       scene:'DETAIL SHOT, the face and head are completely outside the frame: '+cell.pose+', '+bg+
-        '. Same person as the rest of the set — same skin tone, same nail shape, same jewellery, same sleeve fabric.',
-      negative:'face, head, portrait, eyes, smile, looking at camera, grid, collage, multiple people, split frame, text labels, borders',
+        '. '+gridLook()+' Same person as the rest of the set — same skin tone, same nail shape, same sleeve fabric.',
+      negative:'face, head, portrait, eyes, smile, looking at camera, grid, collage, multiple people, split frame, text labels, borders, changed outfit, different clothes, added jacket, different hairstyle, different location',
       aspek:state.sheet.grid.aspek,
       tail:'One single real photograph, cropped so that no face is visible anywhere in the frame.'
     });
   }
   return composePrompt({
-    scene:cell.pose+', '+bg,
-    negative:'grid, collage, multiple people, split frame, text labels, borders',
+    scene:cell.pose+', '+bg+'. '+gridLook(),
+    negative:'grid, collage, multiple people, split frame, text labels, borders, changed outfit, different clothes, added jacket, different hairstyle, different location',
     aspek:state.sheet.grid.aspek,
     tail:'One single person, one single frame. A real, unretouched photograph — not a render, not an illustration.'
   });
@@ -2131,6 +2155,10 @@ async function renderKitabImg(k, e){
    frame badan penuh butuh lantai yang terlihat — tanpa itu model memotong
    kakinya atau menggantungkan orangnya di ruang kosong, dan bayangan kontak
    di kaki hilang. */
+/* Kit yang gantung baju di tengah jalan tidak terbaca sebagai satu sesi, dan
+   memberi model kebebasan yang tidak ada gunanya di lembar acuan identitas.
+   Satu setelan polos, disebut di setiap frame. */
+const REF_BAJU='She is wearing a plain cream crew-neck cotton t-shirt — the same garment in every frame of this kit, no jacket, no pattern, no logo, no jewellery.';
 const REF_BG_BADAN='in the corner of a plain room with a real painted wall behind and an ordinary floor clearly visible underneath, lit by soft directional daylight from one window at the side, so a visible shadow falls on the wall behind her and a contact shadow sits under both shoes';
 function acuanPrompt(def){
   if(def.id==='tangan') return composePrompt({
@@ -2140,13 +2168,13 @@ function acuanPrompt(def){
     noIdentity:true   /* blok identitas mendeskripsikan WAJAH; di frame ini ia justru menariknya masuk */
   });
   if(def.badan) return composePrompt({
-    scene:def.p+' '+REF_BG_BADAN+'. This is an identity reference frame for the BODY: plain clothing, no props, nothing else in the room competing for attention. The same person as the reference, with exactly the same face, skin tone and permanent marks. Her proportions are ordinary and specific to her, not idealised or lengthened.',
-    negative:'different person, changed facial identity, changed body proportions, idealised model proportions, elongated legs, cropped feet, cropped head, heavy makeup, beauty filter, smoothed skin, studio seamless backdrop',
+    scene:def.p+' '+REF_BG_BADAN+'. '+REF_BAJU+' This is an identity reference frame for the BODY: plain clothing, no props, nothing else in the room competing for attention. The same person as the reference, with exactly the same face, skin tone and permanent marks. Her proportions are ordinary and specific to her, not idealised or lengthened.',
+    negative:'different person, changed facial identity, changed body proportions, idealised model proportions, elongated legs, cropped feet, cropped head, different shirt, changed clothing, jacket, heavy makeup, beauty filter, smoothed skin, studio seamless backdrop',
     aspek:def.aspek
   });
   return composePrompt({
-    scene:def.p+' '+REF_BG+'. This is an identity reference frame: plain everyday clothing, no props, nothing in the frame competing with the face. The same person as the reference, with exactly the same facial features, skin tone and permanent marks.',
-    negative:'different person, changed facial identity, altered face shape, heavy makeup, beauty filter, smoothed skin, studio seamless backdrop',
+    scene:def.p+' '+REF_BG+'. '+REF_BAJU+' This is an identity reference frame: no props, nothing in the frame competing with the face. The same person as the reference, with exactly the same facial features, skin tone and permanent marks.',
+    negative:'different person, changed facial identity, altered face shape, loose hair covering the jaw or ears, different shirt, changed clothing, jacket, heavy makeup, beauty filter, smoothed skin, studio seamless backdrop',
     aspek:def.aspek
   });
 }
@@ -2749,18 +2777,31 @@ async function runPanelAll(){
    baru digabung di browser lewat canvas. Hasil akhirnya tetap satu file PNG. */
 function gridRef(){ return state.sheet.grid; }
 function gridEmptyCount(){ return gridRef().cells.filter(c=>!c.img).length; }
-async function renderGridCell(i){
-  const g=gridRef(), cell=g.cells[i];
+/* Acuan untuk satu sel grid. Sebelumnya grid memakai satu anchor untuk SEMUA
+   sel — kit acuan per sudut yang susah payah dibangun tidak pernah menyentuh
+   tahap ini. Akibatnya sel "Profil samping" dan "Menoleh ke bahu" mendapat
+   acuan frontal dan modelnya mengarang sisi wajah yang belum pernah ia lihat,
+   persis kegagalan yang kit itu ada untuk mencegah. */
+function refsForCell(cell){
   /* Sel detail (nf) tidak memuat wajah, jadi anchor wajah justru memaksa wajah
      masuk frame — aturan yang sama seperti frame peran objek. Yang berguna di
      situ adalah frame TANGAN dari kit acuan, kalau posenya memang tangan. */
-  let refs;
   if(cell.nf){
-    const t=fokusTangan({prompt:cell.pose});
-    const im=t?acuanImg('tangan'):null;
-    refs=im?[im]:[];
+    const im=fokusTangan({prompt:cell.pose})?acuanImg('tangan'):null;
+    return im?[im]:[];
   }
-  cell.img=await generateImage(gridCellPrompt(cell), g.aspek, refs);
+  const sudut=cell.sudut||SUDUT_POSE({p:cell.pose, l:cell.label});
+  const out=[];
+  const a=anchorFor(sudut);
+  if(a) out.push(a);
+  /* Sel badan utuh ikut mendapat acuan perawakan, sesudah wajahnya. */
+  if(cell.kat==='FB'||cell.kat==='ST'){ const b=badanFor(sudut); if(b) out.push(b); }
+  if(state.anchor&&out.indexOf(state.anchor)<0) out.push(state.anchor);
+  return out.slice(0,4);
+}
+async function renderGridCell(i){
+  const g=gridRef(), cell=g.cells[i];
+  cell.img=await generateImage(gridCellPrompt(cell), g.aspek, refsForCell(cell));
   countCall('img');
   /* Sel ber-flag nf tidak memuat wajah (detail tangan, sepatu) — ia tidak boleh
      jadi acuan wajah, sama seperti frame peran objek di tahap Render. */
@@ -3232,6 +3273,11 @@ function gridCard(){
       '</select></div>'+
       '<div class="kv"><label>Rasio sel</label><select data-path="sheet.grid.aspek">'+
         ASPECTS.map(a=>'<option value="'+a.id+'"'+(g.aspek===a.id?' selected':'')+'>'+esc(a.label)+'</option>').join('')+'</select></div>'+
+      '<div class="kv full"><label>Pakaian — DIKUNCI untuk seluruh lembar (English)</label>'+
+        '<textarea data-path="sheet.grid.baju" rows="2" placeholder="'+esc(GRID_BAJU)+'">'+esc(g.baju||'')+'</textarea></div>'+
+      '<div class="kv full"><label>Rambut — DIKUNCI untuk seluruh lembar (English)</label>'+
+        '<textarea data-path="sheet.grid.rambut" rows="2" placeholder="'+esc(GRID_RAMBUT)+'">'+esc(g.rambut||'')+'</textarea>'+
+        '<div class="hint">Kosongkan = pakai bawaan. Lembar acuan yang ganti baju dan ganti rambut di tiap sel bukan lembar acuan — dan justru itu cacat yang paling cepat terbaca saat semua sel dilihat bersamaan.</div></div>'+
     '</div>'+
     '<div class="mini">Ukuran cepat</div><div class="chips">'+
       presets.map(([c,r])=>'<button class="chip'+(g.cols===c&&g.rows===r?' sel':'')+'" data-gridsize="'+c+'x'+r+'">'+c+'×'+r+
@@ -4910,8 +4956,11 @@ function normalizeState(){
     if(!Array.isArray(state.sheet[k])) state.sheet[k]=[];
   });
   state.sheet.panels.forEach(pn=>{ if(!Array.isArray(pn.imgs)) pn.imgs=[]; });
-  state.sheet.grid=Object.assign({cols:4,rows:3,aspek:'2:3',latar:'studio',label:true,cells:[],sheetImg:null}, state.sheet.grid||{});
+  state.sheet.grid=Object.assign({cols:4,rows:3,aspek:'2:3',latar:'studio',label:true,baju:'',rambut:'',cells:[],sheetImg:null}, state.sheet.grid||{});
   if(!Array.isArray(state.sheet.grid.cells)) state.sheet.grid.cells=[];
+  /* Sel dari project lama belum menyimpan sudutnya — ditambal supaya acuan
+     wajah per sudut ikut berlaku tanpa membangun ulang grid. */
+  state.sheet.grid.cells.forEach(c=>{ if(!c.sudut) c.sudut=SUDUT_POSE({p:c.pose||'', l:c.label||''}); });
   state.shoot=Object.assign({jumlah:8,sesiJumlah:2,aspek:'2:3',tema:'',outfit:'',mood:'',
     platform:'Instagram feed + Reels cover',realisme:'phone',kamera:'',jiwa:'',negatif:''}, state.shoot||{});
   state.kalender=Object.assign({hari:14,mulai:'',rows:[]}, state.kalender||{});

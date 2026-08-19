@@ -499,9 +499,18 @@ wajahnya terlihat. Kalau 'belakang' diperiksa duluan, frasa itu salah terbaca da
 dapat acuan yang keliru. Alias `34b` sengaja paling belakang supaya kata *three-quarter*
 (yang biasanya menyebut BADAN) tidak mengalahkan petunjuk sudut wajah yang lebih spesifik.
 
-**Rambut diikat** di frame depan dan kedua profil. Garis rambut, telinga, dan leher tidak
-pernah terlihat di foto konten biasa — dan apa yang tidak pernah terlihat akan dikarang
-ulang setiap kali render membutuhkannya.
+**Rambut diikat di SEMUA frame wajah.** Awalnya hanya frame depan dan kedua profil, dan
+hasilnya terlihat langsung: frame tiga-perempat keluar dengan rambut tergerai bergelombang
+yang menutupi rahang dan telinga — persis bagian yang kit ini ada untuk mengunci. Garis
+rambut, telinga, dan leher tidak pernah terlihat di foto konten biasa, dan apa yang tidak
+pernah terlihat akan dikarang ulang setiap kali render membutuhkannya. Tidak ada satu pun
+frame acuan yang diuntungkan oleh rambut tergerai.
+
+**Satu pakaian untuk seluruh kit** (`REF_BAJU`). Sebelumnya `acuanPrompt()` cuma menulis
+"plain everyday clothing", jadi model mengganti kaus di tengah kit — putih di sebagian
+frame, abu di frame lain. Kit yang ganti baju tidak terbaca sebagai satu sesi dan memberi
+model kebebasan yang tidak ada gunanya di lembar acuan identitas. Frame `tangan`
+dikecualikan: tidak ada orang di frame itu.
 
 `runAcuanAll()` merender frame **depan lebih dulu**, lalu memakainya sebagai acuan untuk
 tujuh frame lainnya supaya kitnya sendiri konsisten. Frame depan juga menjadi
@@ -935,6 +944,27 @@ satu kali generate, jadi **tiap sel dirender terpisah** pada resolusi penuh
   lock. Blok itu mendeskripsikan wajah, dan model akan memaksa wajah masuk frame
   sehingga sel "Detail tangan" keluar sebagai potret. Identitas untuk frame itu
   dijaga lewat warna kulit, bentuk kuku, dan aksesori — bukan wajah.
+- **`gridLook()` mengunci pakaian dan rambut untuk SELURUH lembar.** Ini padanan
+  `settingLine()` untuk grid, dan sebelumnya tidak ada sama sekali: `gridCellPrompt()`
+  cuma menggabungkan pose + latar, jadi tiap sel mengarang bajunya sendiri. Hasil nyata
+  di lembar 4×3: kaus putih → jaket hijau → lengan cokelat → lengan abu, dan rambut
+  berganti sanggul/tergerai/diikat di tiap sel. Lembar acuan yang ganti baju tiap sel
+  bukan lembar acuan — dan itu justru cacat yang paling cepat terbaca ketika semua sel
+  dilihat bersamaan. `grid.baju` / `grid.rambut` bisa diedit user; kosong = bawaan.
+- **`refsForCell(cell)` memakai kit acuan per sudut.** Sebelumnya grid memakai satu
+  anchor untuk semua sel — kit acuan yang susah payah dibangun **tidak pernah menyentuh
+  tahap ini**. Akibatnya sel "Profil samping" dan "Menoleh ke bahu" mendapat acuan
+  frontal dan modelnya mengarang sisi wajah yang belum pernah ia lihat, persis kegagalan
+  yang kit itu ada untuk mencegah. Sel `FB`/`ST` ikut mendapat acuan badan; sel `nf`
+  mendapat frame tangan dan tidak pernah wajah. `cell.sudut` disimpan `buildGridCells()`
+  dari pose GABUNGAN (modifier ikut mengubah sudut kamera) dan ditambal
+  `normalizeState()` untuk grid lama.
+- **`POSE_LIB` hanya boleh menjelaskan BADAN dan FRAMING.** Entri lama menyelipkan
+  lokasi (`looking down the street`, `outdoor steps`, `cafe table`, `a path`), pakaian
+  (`jacket pockets`, `skirt`), dan properti tak berdasar (`tote bag`, `jewelry visible`).
+  Semuanya mengalahkan `GRID_BG` yang dipilih user — user memilih "studio" dan mendapat
+  jalanan beraspal, tangga kayu, dan meja kafe. Kalau menambah pose, jangan menyebut
+  tempat, pakaian, atau tas.
 - Tombol ⚓ per sel menyetel `state.anchor` tanpa merender ulang, supaya user bisa
   memilih sel yang wajahnya paling pas sebagai acuan render berikutnya.
 - `gridCellSize()` menghitung mundur ukuran sel dari batas 36 juta piksel.
