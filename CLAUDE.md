@@ -446,9 +446,9 @@ maka setiap foto yang minta profil, tiga-perempat, atau dagu terangkat memaksa m
 **mengarang wajah dari sudut yang belum pernah ia lihat**. Di situlah morph dan wajah
 melenceng lahir. Bukan di daftar posenya.
 
-`ACUAN` = 8 frame identitas (bukan pose konten): depan rambut diikat, 3/4 kiri & kanan,
-profil kiri & kanan, mendongak, menunduk, makro tekstur. `state.acuan.frames[]` menyimpan
-hasilnya.
+`ACUAN` = 8 frame **wajah** (bukan pose konten): depan rambut diikat, 3/4 kiri & kanan,
+profil kiri & kanan, mendongak, menunduk, makro tekstur — plus 3 frame **badan/tangan**
+(lihat di bawah). `state.acuan.frames[]` menyimpan hasilnya.
 
 `anchorFor(sudut)` memilih acuan yang sudutnya paling dekat lewat `SUDUT_DEKAT`. Urutan
 kedekatannya bukan sembarang: profil ditolong tiga-perempat lebih dulu, **bukan** frontal,
@@ -470,11 +470,78 @@ ulang setiap kali render membutuhkannya.
 tujuh frame lainnya supaya kitnya sendiri konsisten. Frame depan juga menjadi
 `state.anchor`.
 
+#### Badan dan tangan — celah yang tidak pernah tertutup
+
+Kit lama seluruhnya kepala-dan-bahu. Artinya **tinggi, perawakan, lebar bahu, panjang
+anggota badan, dan bentuk tangan tidak pernah punya acuan sama sekali** — tiap foto badan
+penuh mengarangnya ulang. Perawakan yang berubah-ubah antar postingan terbaca palsu persis
+seperti wajah yang berubah-ubah, dan tidak ada bagian lain di pipeline ini yang
+menyentuhnya.
+
+Tiga frame ditambahkan: `badan` (depan, 2:3), `badan34` (menyerong, 2:3), `tangan`
+(dua telapak, 1:1). Semuanya ber-**`noFace`**, dan itu bukan label kosmetik:
+
+- `anchorFor()` **menyaringnya** — frame badan tidak memuat wajah untuk ditiru, jadi
+  mengirimkannya sebagai acuan wajah justru memaksa model mengarang.
+- `renderAcuan()` tidak pernah menjadikannya `state.anchor`. Anchor harus selalu wajah.
+
+`badanFor(sudut)` memilih di antara keduanya: menyerong/profil/belakang ditolong `badan34`,
+sisanya `badan`. Dikirim **sesudah** acuan wajah di `refsForShot()` — jatah acuan dipotong 4,
+dan yang harus selamat saat penuh adalah wajahnya.
+
+`jarakOf(sh)` menentukan apakah acuan badan perlu ikut sama sekali. Bentuknya sengaja meniru
+`sudutOf()`: field `jarak` dari planner (`dekat`/`medium`/`penuh`) kalau ada, kalau tidak
+ditebak dari kata kunci lewat `JARAK_KATA`. **Foto dekat tidak memperlihatkan badan**, jadi
+mengirim acuan badan di situ cuma membuang satu slot dari empat. `'penuh'` diperiksa lebih
+dulu di daftar kata kunci karena *"full body shot from across the room"* memuat kata yang
+juga muncul di deskripsi medium.
+
+Project lama mendapat `jarak:''`, **bukan tebakan yang dibekukan** — `jarakOf()` menebak
+ulang tiap kali dipakai, jadi tebakan yang meleset bisa diperbaiki dengan mengedit prompt.
+
+Frame `tangan` diperlakukan seperti frame `objek`: **tanpa identity lock** (blok itu
+mendeskripsikan wajah dan akan menariknya masuk frame) dan tanpa anchor wajah. Ia dikirim
+untuk foto yang prompt-nya memang soal tangan (`fokusTangan()`) dan untuk sel grid ber-flag
+`nf` — dua tempat yang selama ini hanya mengandalkan teks "warna kulit dan bentuk kuku".
+
+Latar frame badan **tidak boleh** memakai `REF_BG` apa adanya: kalimat itu bicara soal
+bayangan di WAJAH dan tidak menyebut lantai sama sekali, sementara badan penuh butuh lantai
+terlihat — tanpa itu model memotong kakinya atau menggantungkan orangnya di ruang kosong.
+`REF_BG_BADAN` menyebutnya, lengkap dengan bayangan kontak di sepatu. Negatifnya juga
+melarang `idealised model proportions` dan `elongated legs`: acuan yang perawakannya sudah
+dipercantik tidak mengunci apa pun.
+
 `poseUrut()` menyusun ulang urutan `POSE_LIB` untuk `buildGridCells()`. Dulu grid mengambil
 `POSE_LIB[0..n]` berurutan, dan dua belas entri pertama kebetulan hampir semuanya
 menghadap depan — jadi grid 4×3 tidak pernah memuat profil, sudut atas/bawah, maupun
 punggung. Sekarang sudut diselang-seling sejak sel pertama; grid besar tetap kebagian
 seluruh pustaka.
+
+### Probe video — diagnostik, bukan mesin
+
+App ini **tidak bisa merender video**, dan bagian ini ada supaya keadaan itu tidak
+tertutupi. Katalog user (Dinoiki + KoboiLLM, dari screenshot) sudah diperiksa: Dinoiki
+tidak punya model video sama sekali; KoboiLLM mendaftarkan Veo 3.1 sebagai tujuh baris
+alias, tapi **enam di antaranya `(DISABLED)`** dan satu juga `(MAINTENANCE)`. Yang tersisa
+cuma `veo-3.1-lite-generate-001-preview` — itulah default `api.vidModel`.
+
+`probeVideo()` melakukan dua langkah dan **berhenti di situ**:
+
+1. `GET {base}/models` — gratis. Memeriksa apakah nama modelnya benar-benar disajikan,
+   lalu menyaring semua nama bernuansa video yang ada.
+2. `POST {base}/videos` — **digerbang `confirm()` yang menyebut bahwa ini bisa memulai job
+   berbayar**, karena video ditagih per detik. Balasan mentahnya ditampilkan apa adanya.
+
+Ia berhenti di balasan submit dengan sengaja: video di gateway ala OpenAI adalah **job
+panjang** (submit → polling → ambil hasil), bukan satu request yang membalas byte seperti
+seluruh lapisan mesin gambar kita. Yang ingin diketahui probe adalah **bentuk balasannya**,
+bukan videonya — itu yang menentukan jalur polling yang harus dibangun nanti. Membangun
+mesin penuh di atas model yang statusnya belum pasti hanya menghasilkan kode yang tidak
+pernah bisa diuji.
+
+Semua kegagalan **ditulis ke keluaran, bukan dilempar** — kegagalan justru informasinya,
+dan CORS disebut sebagai penyebab tersering. Kredensialnya `api.vidKey`, berakhiran `Key`
+supaya kena filter ekspor yang sama.
 
 ### Kitab kesinambungan — mengunci dunia, bukan cuma wajah
 

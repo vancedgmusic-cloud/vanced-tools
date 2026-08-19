@@ -280,6 +280,9 @@ label.pcheck span{flex:1;min-width:0}
 .kadd .kup{font-size:17px}
 .kadd .kup:hover{color:var(--txt);background:var(--panel2)}
 .kadd .kgen:disabled{opacity:.4;cursor:default}
+.probeout{margin:10px 0 0;padding:10px 12px;border:1px solid var(--line2);border-radius:8px;
+  background:#0000000f;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+  white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto}
 .kbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
 .kbody .knama{font-weight:600}
 .kbody .kcat{font-size:12px}
@@ -492,6 +495,19 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
       <div class="provgrid" id="imgGrid"></div>
       <div id="imgFields"></div>
       <div class="keynote" id="imgNote"></div>
+    </div>
+
+    <div class="seg">
+      <h3>3 · Probe video <span class="stamp">diagnostik</span></h3>
+      <div class="sub">Ini <b>bukan</b> mesin video — aplikasi belum bisa merender video. Tombol di bawah cuma menanyakan ke gateway-mu apakah model video itu ada dan mau menerima permintaan, lalu menampilkan jawaban mentahnya apa adanya.</div>
+      <div id="vidFields"></div>
+      <div class="keynote" id="vidNote"></div>
+      <div class="toolbar" style="margin-top:10px">
+        <button class="btn ghost needidle" id="btnProbeVid">▶ Jalankan probe</button>
+        <div class="spacer"></div>
+        <button class="btn small" id="btnCopyVid" style="display:none">Salin hasil</button>
+      </div>
+      <pre id="vidOut" class="probeout" style="display:none"></pre>
     </div>
 
     <div class="foot">
@@ -715,7 +731,10 @@ const state=Object.assign(freshProject(),{
     imgGeminiKey:'', imgGeminiModel:'gemini-2.5-flash-image',
     imgOaBase:'https://api.openai.com/v1', imgOaKey:'', imgOaModel:'gpt-image-1',
     imgXaiBase:'https://api.x.ai/v1', imgXaiKey:'', imgXaiModel:'grok-imagine-image-2.0',
-    imgFreeModel:'flux'
+    imgFreeModel:'flux',
+    /* Probe video. Bukan mesin — lihat probeVideo(). vidKey berakhiran Key
+       supaya kena filter ekspor yang sama seperti kredensial lain. */
+    vidBase:'https://lite.koboillm.com/v1', vidKey:'', vidModel:'veo-3.1-lite-generate-001-preview'
   },
   stampAI:false,
   /* Gerbang mutu otomatis: render → periksa → ulangi kalau di bawah ambang. */
@@ -869,6 +888,21 @@ const ACUAN=[
    p:'a head-and-shoulders photograph taken from slightly above with the chin lowered, the eyelids and the top of the head prominent, eyes glancing up toward the lens, neutral face'},
   {id:'makro', sudut:'depan', label:'Makro tekstur & tanda', aspek:'1:1', urut:7,
    p:'an extremely close macro photograph of the middle of the face filling the whole frame — the eyes, the bridge of the nose and the upper cheeks only — raking side light so every pore, fine line, stray eyebrow hair and skin blemish is unmistakable'},
+  /* Tiga frame di bawah mengunci BADAN, bukan wajah. Kit lama seluruhnya
+     kepala-dan-bahu, jadi tinggi, bentuk tubuh, lebar bahu, dan bentuk tangan
+     tidak pernah punya acuan sama sekali — tiap foto badan penuh mengarangnya
+     ulang. Feed yang perawakannya berubah-ubah terbaca palsu persis seperti
+     feed yang wajahnya berubah-ubah, dan tidak ada bagian lain di pipeline ini
+     yang menyentuhnya.
+
+     Ber-`noFace`: mereka TIDAK boleh dipilih `anchorFor()` sebagai acuan wajah
+     dan tidak boleh jadi `state.anchor` — anchor harus selalu wajah. */
+  {id:'badan', sudut:'', noFace:true, badan:true, label:'Badan penuh · depan', aspek:'2:3', urut:8,
+   p:'a full-length standing photograph of the whole person from the top of the head to the shoes, both feet inside the frame, arms relaxed at her sides, weight resting on one leg, facing the camera. Plain fitted everyday clothing that shows the actual shape of the shoulders, waist and legs — not loose or draped. This frame exists to fix her HEIGHT, BUILD, SHOULDER WIDTH, LIMB LENGTH and POSTURE'},
+  {id:'badan34', sudut:'', noFace:true, badan:true, label:'Badan penuh · tiga perempat', aspek:'2:3', urut:9,
+   p:'a full-length standing photograph of the whole person turned about forty degrees away from the camera, from the top of the head to the shoes, showing the depth of the body — the line of the back, the profile of the shoulders and the hips. Plain fitted everyday clothing, arms relaxed, weight on one leg'},
+  {id:'tangan', sudut:'', noFace:true, label:'Tangan (dua telapak)', aspek:'1:1', urut:10,
+   p:'a close photograph of BOTH of her hands only, resting side by side on a plain wooden surface, palms down, fingers slightly apart and relaxed, shot from directly above at close range. Every knuckle, vein, cuticle and nail is readable, the nails at their natural length and shape. NO FACE and no other part of the body in frame'},
 ];
 const acuanDef=id=>ACUAN.find(a=>a.id===id)||null;
 const acuanFrame=id=>(state.acuan.frames||[]).find(f=>f.id===id)||null;
@@ -889,10 +923,20 @@ const SUDUT_DEKAT={
 function anchorFor(sudut){
   const urutan=SUDUT_DEKAT[sudut]||SUDUT_DEKAT.depan;
   for(const s of urutan){
-    const hit=ACUAN.filter(a=>a.sudut===s).map(a=>acuanImg(a.id)).filter(Boolean)[0];
+    /* noFace disaring di sini, bukan cuma diandalkan lewat `sudut` kosong:
+       frame badan & tangan tidak memuat wajah untuk ditiru, dan mengirimnya
+       sebagai acuan wajah justru memaksa model mengarang. */
+    const hit=ACUAN.filter(a=>!a.noFace&&a.sudut===s).map(a=>acuanImg(a.id)).filter(Boolean)[0];
     if(hit) return hit;
   }
   return state.anchor||null;
+}
+/* Acuan BADAN, dipilih menurut sudut foto. Tiga-perempat dan profil lebih
+   ditolong frame badan34; sisanya frame depan. */
+function badanFor(sudut){
+  const urut=(sudut==='34'||sudut==='profil'||sudut==='belakang')?['badan34','badan']:['badan','badan34'];
+  for(const id of urut){ const im=acuanImg(id); if(im) return im; }
+  return null;
 }
 /* Sudut sebuah foto. Diambil dari field `sudut` kalau planner mengisinya,
    kalau tidak ditebak dari kata kunci di prompt/pose — tebakan yang salah
@@ -918,6 +962,30 @@ function sudutOf(sh){
   const t=[(sh&&sh.prompt)||'', (sh&&sh.pose)||''].join(' ');
   for(const [s,re] of SUDUT_KATA) if(re.test(t)) return s==='34b'?'34':s;
   return 'depan';
+}
+/* Jarak framing sebuah foto — dipakai untuk memutuskan apakah acuan BADAN
+   perlu ikut dikirim. Bentuknya sengaja meniru sudutOf(): field dari planner
+   kalau ada, kalau tidak ditebak dari kata kunci, dan tebakan yang meleset
+   hanya berarti satu slot acuan terpakai kurang optimal — bukan render gagal.
+   'penuh' diperiksa lebih dulu karena "full body shot from across the room"
+   memuat kata 'room' yang juga muncul di deskripsi medium. */
+const JARAK_SAH={dekat:1, medium:1, penuh:1};
+const JARAK_KATA=[
+  ['penuh',  /full[- ]length|full body|head to toe|head-to-toe|whole body|from across the room|standing in the doorway|walking (?:down|along|through)|seluruh badan|badan penuh/i],
+  ['dekat',  /close[- ]up|macro|extreme close|detail of her (?:hand|face|eye)|tight crop|only her (?:hands|face)/i],
+  ['medium', /medium shot|waist[- ]up|from the waist|half body|seated at|mid[- ]shot/i]
+];
+function jarakOf(sh){
+  const tag=String((sh&&sh.jarak)||'').trim().toLowerCase();
+  if(JARAK_SAH[tag]) return tag;
+  const t=[(sh&&sh.prompt)||'', (sh&&sh.pose)||''].join(' ');
+  for(const [j,re] of JARAK_KATA) if(re.test(t)) return j;
+  return 'medium';
+}
+/* Foto yang isinya tangan: frame tangan jauh lebih berguna daripada wajah. */
+const TANGAN_KATA=/\bher hands?\b|\bboth hands\b|fingers|fingertips|knuckle|nails?\b|palms?\b|holding .* in her hand/i;
+function fokusTangan(sh){
+  return TANGAN_KATA.test([(sh&&sh.prompt)||'', (sh&&sh.pose)||''].join(' '));
 }
 const SHEET_PANELS=[
   {id:'turnaround', label:'Turnaround 4 sudut', aspek:'16:9',
@@ -1818,7 +1886,13 @@ function refsForShot(sh){
        memakainya sebagai acuan foto profil memaksa model mengarang. */
     const a=anchorFor(sudutOf(sh));
     if(a) out.push(a);
-    if(state.anchor&&state.anchor!==a) out.push(state.anchor);
+    /* Acuan BADAN, hanya untuk foto yang memang memperlihatkan badannya.
+       Dikirim SESUDAH acuan wajah: kalau jatah 4 habis, yang harus selamat
+       adalah wajahnya. Untuk foto dekat, badan tidak terlihat sama sekali dan
+       mengirimnya cuma membuang satu slot. */
+    if(jarakOf(sh)==='penuh'){ const b=badanFor(sudutOf(sh)); if(b) out.push(b); }
+    if(fokusTangan(sh)){ const t=acuanImg('tangan'); if(t) out.push(t); }
+    if(state.anchor&&out.indexOf(state.anchor)<0) out.push(state.anchor);
     if(state.talent.mode==='locked'&&state.talent.consent) out.push(...state.uploads.refs.slice(0,2));
   }
   return out.concat(kitabRefs(sh)).slice(0,4);
@@ -1834,6 +1908,7 @@ function adoptShoot(d){
     id:shotId(), judul:s.judul||'', tujuan:s.tujuan||'',
     peran:(PERAN.find(p=>p.id===s.peran)||{}).id||fallbackPeran||'filler',
     sudut:SUDUT_DEKAT[String(s.sudut||'').trim().toLowerCase()]?String(s.sudut).trim().toLowerCase():'',
+    jarak:JARAK_SAH[String(s.jarak||'').trim().toLowerCase()]?String(s.jarak).trim().toLowerCase():'',
     pose:s.pose||'', prompt:s.prompt||'', negative:s.negative||'',
     sesi:sesiId||'', imgs:[], konten:null
   });
@@ -1985,7 +2060,24 @@ async function renderKitabImg(k, e){
   return img;
 }
 /* ---- render kit acuan wajah ---- */
+/* Latar frame badan tidak bisa memakai REF_BG apa adanya: kalimat itu bicara
+   soal bayangan DI WAJAH dan tidak menyebut lantai sama sekali, sementara
+   frame badan penuh butuh lantai yang terlihat — tanpa itu model memotong
+   kakinya atau menggantungkan orangnya di ruang kosong, dan bayangan kontak
+   di kaki hilang. */
+const REF_BG_BADAN='in the corner of a plain room with a real painted wall behind and an ordinary floor clearly visible underneath, lit by soft directional daylight from one window at the side, so a visible shadow falls on the wall behind her and a contact shadow sits under both shoes';
 function acuanPrompt(def){
+  if(def.id==='tangan') return composePrompt({
+    scene:def.p+'. Plain ordinary indoor daylight from one side with a visible contact shadow under the hands. This is an identity reference frame for the HANDS: the same skin tone, the same nail shape and the same permanent marks as the reference person.',
+    negative:'face, head, portrait, extra fingers, missing fingers, fused fingers, gloves, jewellery not described, plastic skin, seamless studio backdrop',
+    aspek:def.aspek,
+    noIdentity:true   /* blok identitas mendeskripsikan WAJAH; di frame ini ia justru menariknya masuk */
+  });
+  if(def.badan) return composePrompt({
+    scene:def.p+' '+REF_BG_BADAN+'. This is an identity reference frame for the BODY: plain clothing, no props, nothing else in the room competing for attention. The same person as the reference, with exactly the same face, skin tone and permanent marks. Her proportions are ordinary and specific to her, not idealised or lengthened.',
+    negative:'different person, changed facial identity, changed body proportions, idealised model proportions, elongated legs, cropped feet, cropped head, heavy makeup, beauty filter, smoothed skin, studio seamless backdrop',
+    aspek:def.aspek
+  });
   return composePrompt({
     scene:def.p+' '+REF_BG+'. This is an identity reference frame: plain everyday clothing, no props, nothing in the frame competing with the face. The same person as the reference, with exactly the same facial features, skin tone and permanent marks.',
     negative:'different person, changed facial identity, altered face shape, heavy makeup, beauty filter, smoothed skin, studio seamless backdrop',
@@ -2000,7 +2092,8 @@ async function renderAcuan(id, refs){
   const f=acuanFrame(id);
   if(f) f.img=img;
   else state.acuan.frames.push({id, img});
-  /* Frame depan juga jadi anchor umum, supaya jalur lama tetap punya acuan. */
+  /* Frame depan juga jadi anchor umum, supaya jalur lama tetap punya acuan.
+     Frame ber-noFace (badan, tangan) TIDAK pernah — anchor harus selalu wajah. */
   if(id==='depan'&&img.data) state.anchor=img;
   return img;
 }
@@ -2012,9 +2105,11 @@ async function runAcuanAll(ulang){
   const todo=ACUAN.slice().sort((a,b)=>a.urut-b.urut).filter(a=>ulang||!acuanImg(a.id));
   if(!todo.length){ toast('Kit acuan sudah lengkap. Pakai "Buat ulang semua" kalau mau menggantinya.','err'); return; }
   const biaya=todo.length*(+state.usage.harga||0);
-  if(!confirm('Kit acuan wajah: '+todo.length+' frame'+(biaya>0?' (~$'+biaya.toFixed(2)+')':'')+'.\n\n'+
+  const nBadan=todo.filter(a=>a.noFace).length;
+  if(!confirm('Kit acuan: '+todo.length+' frame'+(biaya>0?' (~$'+biaya.toFixed(2)+')':'')+
+    (nBadan?' — '+(todo.length-nBadan)+' frame wajah + '+nBadan+' frame badan/tangan.':'.')+'\n\n'+
     'Frame DEPAN dirender lebih dulu, lalu dipakai sebagai acuan untuk frame lainnya supaya kitnya konsisten satu sama lain.\n\n'+
-    'Setelah ini, tiap foto akan memakai acuan yang sudutnya paling dekat — profil pakai acuan profil, bukan acuan frontal.\n\nOK = buat, Cancel = batal')) return;
+    'Setelah ini, tiap foto memakai acuan yang sudutnya paling dekat — profil pakai acuan profil, bukan acuan frontal — dan foto badan penuh ikut mendapat acuan badan.\n\nOK = buat, Cancel = batal')) return;
   acuanAbort=false;
   let ok=0, gagal=0, lastErr='';
   try{
@@ -2054,10 +2149,11 @@ function acuanCard(){
         (im?'<button class="btn small danger" data-acuandel="'+a.id+'">Hapus</button>':'')+
       '</div></div>';
   };
-  return '<div class="card"><h3>🎯 Kit acuan wajah'+(ada?'<span class="stamp'+(ada===ACUAN.length?' done':'')+'">'+ada+'/'+ACUAN.length+'</span>':'')+'</h3>'+
+  return '<div class="card"><h3>🎯 Kit acuan identitas'+(ada?'<span class="stamp'+(ada===ACUAN.length?' done':'')+'">'+ada+'/'+ACUAN.length+'</span>':'')+'</h3>'+
     '<p class="hint" style="margin:-6px 0 12px">Ini <b>bukan</b> pose konten — ini acuan identitas. Sistem lama memakai <b>satu</b> gambar sebagai acuan untuk semua render; kalau acuan itu frontal, foto yang minta profil atau dagu terangkat memaksa model <b>mengarang wajah dari sudut yang belum pernah ia lihat</b>. Di situlah morph dan wajah melenceng lahir — bukan di daftar posenya.</p>'+
     '<div class="check ok"><span class="sym">✓</span><div>Begitu kit ini ada, tiap render memilih acuan yang <b>sudutnya paling dekat</b>: foto profil memakai acuan profil, foto mendongak memakai acuan mendongak. Frame <b>depan</b> dirender duluan lalu jadi acuan untuk tujuh frame lainnya, supaya kitnya sendiri konsisten.</div></div>'+
     '<div class="check ok"><span class="sym">✓</span><div>Rambut <b>diikat</b> di frame depan dan kedua profil. Garis rambut, telinga, dan leher tidak pernah terlihat di foto konten biasa — dan apa yang tidak pernah terlihat akan dikarang ulang setiap kali render membutuhkannya.</div></div>'+
+    '<div class="check ok"><span class="sym">✓</span><div>Tiga frame terakhir mengunci <b>badan dan tangan</b>, bukan wajah. Tinggi, bentuk tubuh, dan lebar bahu tidak pernah punya acuan di kit lama, jadi tiap foto badan penuh mengarangnya ulang — dan perawakan yang berubah-ubah terbaca palsu persis seperti wajah yang berubah-ubah. Ketiganya <b>tidak pernah</b> dipakai sebagai acuan wajah; foto badan penuh menerimanya sebagai acuan <i>tambahan</i>, setelah wajahnya.</div></div>'+
     '<div class="agrid">'+ACUAN.slice().sort((a,b)=>a.urut-b.urut).map(sel).join('')+'</div>'+
     '<div class="toolbar" style="margin-top:12px">'+
       '<button class="btn primary needidle" data-acuanall="0">🎯 Buat frame yang kosong ('+(ACUAN.length-ada)+')</button>'+
@@ -2158,6 +2254,7 @@ function promptShoot(fb){
     '\n- Field prompt milik foto DILARANG menyebut outfit, pakaian, warna baju, lokasi, latar tempat, gaya rambut, waktu, atau arah cahaya. Semua itu sudah dikunci di level sesi dan ditambahkan otomatis di depan prompt. Menulisnya ulang membuat outfit berubah pelan-pelan antar foto dan merusak seluruh sesi.'+
     '\n- Field prompt juga DILARANG mendeskripsikan wajah, umur, etnis, atau rambut — identitas dikunci terpisah.'+
     '\n- Jadi field prompt HANYA berisi: pose & aktivitas, mikro-aksi, ekspresi, jarak/sudut kamera, komposisi, dan satu detail lingkungan kecil. Bahasa Inggris, 30–60 kata.'+
+    '\n- Field jarak: seberapa banyak badannya masuk frame — dekat (kepala/bahu atau detail), medium (pinggang ke atas), penuh (seluruh badan sampai kaki). Aplikasi memakai ini untuk memutuskan apakah acuan BADAN perlu ikut dikirim ke mesin gambar, jadi isi sejujurnya sesuai prompt yang kamu tulis. Variasikan: satu sesi yang semua fotonya medium terbaca sebagai satu pose yang diulang-ulang.'+
     '\n- Field sudut: arah wajah di foto itu — depan, 34 (tiga perempat), profil, dongak (dagu naik), tunduk (dagu turun), atau belakang. Ini dipakai aplikasi untuk memilih acuan wajah yang sudutnya cocok, jadi isi sejujurnya sesuai prompt yang kamu tulis. Variasikan antar foto; feed yang semua wajahnya menghadap depan terbaca sebagai sesi pas foto.'+
     '\n- Untuk foto berperan "objek": TIDAK ADA orang di frame. Tulis bendanya saja, tanpa tangan, tanpa tubuh. Contoh: cangkir kopi setengah kosong di meja kayu bercoret, kunci dan kacamata di sampingnya.'+
     '\n- Jangan tulis aspect ratio, setelan kamera, atau kata "photorealistic"; ketiganya ditambahkan otomatis.'+
@@ -2187,7 +2284,7 @@ function promptShoot(fb){
     '\nBalas HANYA satu objek JSON valid:'+
     '\n{"sesi":[{"nama":"string","pakaiOutfit":"nama entri lemari pakaian atau string kosong","pakaiLokasi":"nama entri lokasi tetap atau string kosong","pakaiProduk":"nama entri produk atau string kosong",'+
     '"outfit":"string","lokasi":"string","waktu":"string","cahaya":"string","rambut":"string","kamera":"string","ruang":"string","catatan":"string",'+
-    '"shots":[{"judul":"string","tujuan":"string","peran":"hero|filler|objek|cermin","sudut":"depan|34|profil|dongak|tunduk|belakang","pose":"string","prompt":"string","negative":"string"}]}]}'+
+    '"shots":[{"judul":"string","tujuan":"string","peran":"hero|filler|objek|cermin","sudut":"depan|34|profil|dongak|tunduk|belakang","jarak":"dekat|medium|penuh","pose":"string","prompt":"string","negative":"string"}]}]}'+
     '\nTepat '+nSesi+' sesi, total '+n+' foto di seluruh sesi.';
 }
 function promptSheet(fb){
@@ -2588,7 +2685,16 @@ function gridRef(){ return state.sheet.grid; }
 function gridEmptyCount(){ return gridRef().cells.filter(c=>!c.img).length; }
 async function renderGridCell(i){
   const g=gridRef(), cell=g.cells[i];
-  cell.img=await generateImage(gridCellPrompt(cell), g.aspek);
+  /* Sel detail (nf) tidak memuat wajah, jadi anchor wajah justru memaksa wajah
+     masuk frame — aturan yang sama seperti frame peran objek. Yang berguna di
+     situ adalah frame TANGAN dari kit acuan, kalau posenya memang tangan. */
+  let refs;
+  if(cell.nf){
+    const t=fokusTangan({prompt:cell.pose});
+    const im=t?acuanImg('tangan'):null;
+    refs=im?[im]:[];
+  }
+  cell.img=await generateImage(gridCellPrompt(cell), g.aspek, refs);
   countCall('img');
   /* Sel ber-flag nf tidak memuat wajah (detail tangan, sepatu) — ia tidak boleh
      jadi acuan wajah, sama seperti frame peran objek di tahap Render. */
@@ -4694,6 +4800,10 @@ function normalizeState(){
     }
     if(!PERAN.some(p=>p.id===sh.peran)) sh.peran='filler';
     if(sh.pose==null) sh.pose='';
+    /* Project lama tidak punya `jarak`. Dikosongkan, bukan ditebak dan
+       disimpan — jarakOf() menebaknya dari prompt setiap kali dipakai, jadi
+       tebakan yang salah bisa diperbaiki dengan mengedit prompt. */
+    if(sh.jarak==null) sh.jarak='';
   });
   /* id sesi yang tidak dikenal (mis. sesi terhapus di file lama) dijadikan lepas. */
   const ids=new Set(state.sesi.map(x=>x.id));
@@ -5330,6 +5440,12 @@ function renderApiModal(){
   };
   $('#imgNote').textContent=inotes[a.img]||'';
   $('#btnTestImg').disabled=(a.img==='manual');
+
+  $('#vidFields').innerHTML=
+    F_('Base URL','api.vidBase',a.vidBase,'https://lite.koboillm.com/v1')+
+    F_('API Key','api.vidKey',a.vidKey,'',1)+
+    F_('Model video','api.vidModel',a.vidModel,'veo-3.1-lite-generate-001-preview');
+  $('#vidNote').textContent='Probe melakukan dua hal murah: (1) GET /models untuk melihat apakah nama model itu benar-benar disajikan gateway, dan (2) satu POST /videos untuk melihat bentuk balasannya. Keduanya bisa gagal, dan itu justru informasinya — hasil mentahnya ditampilkan supaya bisa kamu kirim balik. Perhatikan: langkah 2 BISA memulai job berbayar kalau gateway-mu menerimanya, dan video ditagih per detik, jauh lebih mahal daripada satu gambar.';
 }
 async function testText(){
   try{ setBusy(true,'Tes mesin teks…');
@@ -5347,6 +5463,78 @@ async function testImage(){
     toast('Mesin gambar tersambung ✓','ok');
   }catch(e){ toast(e.message,'err'); }
   finally{ setBusy(false); }
+}
+
+/* ---- probe video ----
+   Sengaja BUKAN mesin. Aplikasi ini belum bisa merender video, dan membangun
+   jalurnya di atas model yang statusnya belum pasti hanya menghasilkan kode
+   yang tidak pernah bisa diuji. Tugas probe cuma satu: mengubah "katanya ada"
+   jadi jawaban mentah dari gateway yang bisa dibaca dan dikirim balik.
+
+   Video di gateway ala OpenAI adalah job panjang (submit -> polling -> ambil
+   hasil), bukan satu request yang membalas byte seperti mesin gambar kita.
+   Karena itu probe berhenti di balasan submit: yang ingin kita ketahui adalah
+   BENTUKNYA, bukan videonya. */
+let vidOutText='';
+function vidLog(s){ vidOutText+=s+'\n'; const el=$('#vidOut'); if(el){ el.style.display='block'; el.textContent=vidOutText; el.scrollTop=el.scrollHeight; } }
+async function probeVideo(){
+  if(busy) return;
+  const a=state.api, base=String(a.vidBase||'').trim().replace(/\/+$/,''), model=String(a.vidModel||'').trim();
+  if(!base||!model){ toast('Isi Base URL dan nama model dulu.','err'); return; }
+  if(!String(a.vidKey||'').trim()){ toast('Isi API Key dulu — probe ini tidak memakai key mesin lain.','err'); return; }
+  const H={'Authorization':'Bearer '+a.vidKey.trim()};
+  const potong=t=>{ t=String(t==null?'':t); return t.length>1200?t.slice(0,1200)+'\n… (dipotong, '+t.length+' karakter)':t; };
+  vidOutText=''; $('#btnCopyVid').style.display='none';
+  try{
+    setBusy(true,'Probe video…');
+    vidLog('base   : '+base);
+    vidLog('model  : '+model);
+    vidLog('waktu  : '+new Date().toISOString());
+
+    /* Langkah 1 — gratis. Nama yang tidak muncul di sini hampir pasti tidak
+       bisa dipanggil, dan itu sudah cukup untuk menghentikan langkah 2. */
+    vidLog('\n=== 1) GET '+base+'/models ===');
+    let ada=false;
+    try{
+      const r=await fetch(base+'/models',{headers:H});
+      const t=await r.text();
+      vidLog('HTTP '+r.status);
+      let ids=[];
+      try{ const d=JSON.parse(t); ids=(d.data||d.models||[]).map(m=>String(m.id||m.name||'')).filter(Boolean); }
+      catch(_){ vidLog('balasan bukan JSON:\n'+potong(t)); }
+      if(ids.length){
+        vidLog('total model disajikan: '+ids.length);
+        ada=ids.includes(model);
+        vidLog(ada?'✓ "'+model+'" ADA di daftar':'✗ "'+model+'" TIDAK ada di daftar');
+        const vid=ids.filter(x=>/veo|sora|kling|wan|minimax|hailuo|runway|luma|pika|seedance|video/i.test(x));
+        vidLog(vid.length?'model bernuansa video yang disajikan ('+vid.length+'):\n  '+vid.join('\n  ')
+                         :'tidak ada satu pun nama model bernuansa video di daftar ini.');
+      }
+    }catch(e){ vidLog('gagal: '+e.message+'\n(biasanya CORS — gateway menolak panggilan langsung dari halaman file://)'); }
+
+    /* Langkah 2 — bisa berbiaya, jadi digerbang confirm() yang menyebutkan itu. */
+    if(!confirm('Lanjut ke langkah 2?\n\nAplikasi akan mengirim SATU permintaan pembuatan video ke:\n  POST '+base+'/videos\n\nKalau gateway menerimanya, ini BISA memulai job berbayar. Video ditagih per detik dan jauh lebih mahal daripada satu gambar.\n\nLangkah 1 di atas sudah tersimpan dan bisa kamu salin tanpa menjalankan langkah ini.')){
+      vidLog('\n=== 2) dilewati atas permintaan user ===');
+      return;
+    }
+    vidLog('\n=== 2) POST '+base+'/videos ===');
+    try{
+      const r=await fetch(base+'/videos',{
+        method:'POST',
+        headers:Object.assign({'Content-Type':'application/json'},H),
+        body:JSON.stringify({model, prompt:'A woman sits at a kitchen table and takes one sip of coffee.', seconds:4})
+      });
+      const t=await r.text();
+      vidLog('HTTP '+r.status+' '+r.statusText);
+      vidLog('content-type: '+(r.headers.get('content-type')||'-'));
+      vidLog('balasan:\n'+potong(t));
+      if(r.ok) vidLog('\nCATATAN: balasan OK. Yang perlu dibaca berikutnya adalah apakah ada id job + status di dalamnya — itu menentukan bentuk polling yang harus dibangun.');
+    }catch(e){ vidLog('gagal: '+e.message); }
+  }finally{
+    setBusy(false);
+    vidLog('\n=== selesai ===');
+    $('#btnCopyVid').style.display='';
+  }
 }
 
 /* =====================================================================
@@ -5729,6 +5917,12 @@ document.addEventListener('click', async e=>{
     case 'btnCloseApi': $('#apiOverlay').classList.remove('open'); render(); break;
     case 'btnTestTxt': testText(); break;
     case 'btnTestImg': testImage(); break;
+    case 'btnProbeVid': probeVideo(); break;
+    case 'btnCopyVid':
+      navigator.clipboard.writeText(vidOutText).then(
+        ()=>toast('Hasil probe disalin. Kirim balik apa adanya.','ok'),
+        ()=>toast('Gagal menyalin — blok teksnya bisa diseleksi manual.','err'));
+      break;
     case 'btnSave': case 'btnSave2': saveProject(); break;
     case 'btnLoad': $('#fileInput').click(); break;
     case 'btnRoster': bukaRoster(); break;
