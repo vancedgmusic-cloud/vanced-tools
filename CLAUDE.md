@@ -1001,6 +1001,15 @@ atau >4 GB dilempar sebagai error yang bisa dibaca user.
 
 ## Verifikasi perubahan
 
+**Selalu kirimkan file hasilnya ke user di akhir sesi pemeriksaan atau perubahan
+(`SendUserFile`), bukan cuma menyebut bahwa perubahannya sudah di-push.** User menguji
+app ini dengan membukanya langsung dari disk lewat `file://`, dan menyuruhnya meng-clone
+atau mengunduh dari GitHub lebih dulu hanya menambah satu langkah di antara perubahan dan
+pengujiannya. Kirim `influencer.html` (atau `index.html` kalau itu yang disentuh) sebagai
+lampiran — **bukan** render inline: panel pratinjau memblokir panggilan keluar ke gateway
+AI, padahal justru itu yang diuji. Pastikan file yang dikirim sama dengan yang sudah
+di-commit, supaya yang diuji dan yang tersimpan tidak berbeda.
+
 Tidak ada test runner. Buka di browser, cek console bersih, lalu smoke test.
 
 - `index.html`: setup → input → generate satu tahap AI → ekspor Remotion → cek
