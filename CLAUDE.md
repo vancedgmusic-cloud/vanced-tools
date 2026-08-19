@@ -89,6 +89,26 @@ sedang aktif dan tidak menimpanya dari file.
 Key hanya dikirim ke API resmi provider-nya. Jangan tambah endpoint pihak ketiga,
 telemetry, atau logging yang menyentuh key.
 
+**Kredensial dibersihkan dari spasi saat diketik** (handler `input`): field `api.*Key`
+kehilangan SEMUA spasi, `api.*Base` dan `api.*Model` dipangkas ujungnya. Menyalin key
+sering ikut membawa newline atau spasi, dan sebagian gateway meng-hash string mentahnya —
+LiteLLM membalas `Unable to find token in cache or LiteLLM_VerificationTokenTable`, yang
+terbaca seolah key-nya salah padahal cuma ada satu karakter tak terlihat. Token API tidak
+pernah memuat spasi, jadi membuang semuanya aman. **Jangan perluas pemangkasan ini ke
+field teks biasa** — user berhak mengetik spasi di sana.
+
+`authHint(status,msg)` di `postJSON` menamai penolakan kredensial (HTTP 401/403 atau
+`AUTH_RE`) alih-alih meneruskan teks mentah gateway, yang tidak memberi tahu user apa pun
+yang bisa ditindak. Ia menyebut tiga sebab tersering — key dan Base URL dari layanan
+berbeda, key dihapus/dibuat ulang, key ter-paste sepotong — lalu satu langkah verifikasi
+gratis: tombol "Tarik daftar" memakai pasangan base+key yang sama persis, jadi kalau
+daftar model muncul berarti kredensialnya sah. Teks asli gateway tetap ditampilkan di
+depan hint, jangan dibuang.
+
+Karena pesan error kini bisa panjang, `.toast` memakai `white-space:pre-line` dan toast
+ber-tipe `err` bertahan 20 detik serta bisa ditutup dengan klik. Pesan yang hilang tepat
+saat sedang dibaca adalah kegagalan tersendiri.
+
 ## `influencer.html` — AI Influencer Studio
 
 Pipeline: `talent → identity → persona → sheet → arc → shoot → render → feed → content → export`.

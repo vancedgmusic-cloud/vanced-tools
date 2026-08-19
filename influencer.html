@@ -421,6 +421,7 @@ table.tl td.k{font-family:var(--mono);font-size:11px;color:var(--violet);white-s
 .toast{
   background:var(--panel3);border:1px solid var(--line2);border-left:3px solid var(--teal);
   border-radius:10px;padding:10px 14px;font-size:12.5px;box-shadow:0 8px 30px #0007;
+  white-space:pre-line;cursor:pointer;max-height:60vh;overflow:auto;
 }
 .toast.err{border-left-color:var(--red)}
 .toast.ok{border-left-color:var(--green)}
@@ -576,7 +577,13 @@ function setPath(obj, path, val){
 function getPath(obj, path){ return path.split('.').reduce((o,k)=>o==null?o:o[isNaN(k)?k:+k], obj); }
 function toast(msg, type=''){
   const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
-  $('#toasts').appendChild(t); setTimeout(()=>t.remove(), 6000);
+  /* Pesan error sekarang bisa panjang dan memang perlu dibaca pelan — enam
+     detik tidak cukup, dan yang paling menyebalkan adalah pesan yang hilang
+     tepat saat sedang dibaca. Klik untuk menutup supaya yang pendek tetap
+     bisa dibuang cepat. */
+  t.title='Klik untuk menutup';
+  t.addEventListener('click',()=>t.remove());
+  $('#toasts').appendChild(t); setTimeout(()=>t.remove(), type==='err'?20000:6000);
 }
 function download(name, text, mime='text/plain'){
   const a=document.createElement('a');
@@ -1230,6 +1237,20 @@ const OA={
 const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|exhausted|too many|unavailable|failed to fetch|quota/i;
 /* postJSON: retry otomatis 3x untuk error transien (429/5xx/server penuh).
    Error non-transien dilempar langsung supaya user cepat tahu salahnya apa. */
+/* Penolakan kredensial punya bentuk yang khas dan penyebab yang sedikit. Teks
+   mentah dari gateway (mis. "Unable to find token in cache or
+   LiteLLM_VerificationTokenTable") tidak memberi tahu user apa pun yang bisa
+   ditindak, jadi kita namai sebabnya. */
+const AUTH_RE=/authentication error|invalid[^.]{0,40}(?:proxy server token|api key|token)|unauthorized|invalid_api_key|incorrect api key|verificationtokentable|no api key|api key not valid|permission denied/i;
+function authHint(status, msg){
+  if(!(status===401||status===403||AUTH_RE.test(String(msg||'')))) return '';
+  return '\n\nIni penolakan KREDENSIAL — bukan kuota, bukan model.'+
+    '\nTiga sebab tersering:'+
+    '\n1. Key dan Base URL berasal dari layanan yang BERBEDA. Key tiap gateway hanya berlaku di gateway itu sendiri.'+
+    '\n2. Key sudah dihapus atau dibuat ulang di dasbor penyedianya.'+
+    '\n3. Key ter-paste sepotong.'+
+    '\n\nBuka ⚙ API, cocokkan key dengan Base URL di sebelahnya, lalu tekan "Tarik daftar". Kalau daftar model muncul, key-nya sah.';
+}
 async function postJSON(url, opts, label){
   let lastMsg='';
   for(let att=0; att<3; att++){
@@ -1246,7 +1267,7 @@ async function postJSON(url, opts, label){
     const errMsg=(d&&d.error)?(d.error.message||JSON.stringify(d.error)):(status>=400?raw.slice(0,300):'');
     if(status>=200&&status<300&&!errMsg) return d;
     lastMsg=errMsg||('HTTP '+status);
-    if(!(status===429||status>=500||TRANSIENT.test(lastMsg))) throw new Error(label+': '+lastMsg);
+    if(!(status===429||status>=500||TRANSIENT.test(lastMsg))) throw new Error(label+': '+lastMsg+authHint(status,lastMsg));
   }
   throw new Error(label+': '+lastMsg+' — server sedang penuh. Tunggu 1–2 menit atau ganti provider di ⚙ API.');
 }
@@ -5544,6 +5565,14 @@ document.addEventListener('input', e=>{
   const p=e.target.dataset.path; if(!p) return;
   let v=e.target.value;
   if(e.target.type==='number') v=+v;
+  /* Kredensial dibersihkan dari spasi. Menyalin key sering ikut membawa spasi
+     atau baris baru di ujung — dan sebagian gateway (LiteLLM di antaranya)
+     meng-hash string mentahnya, jadi satu newline yang tak terlihat menghasilkan
+     "Unable to find token" yang terbaca seolah key-nya salah. Token API tidak
+     pernah memuat spasi, jadi membuang semuanya aman; Base URL dan nama model
+     cukup dirapikan ujungnya. */
+  if(/^api\..*Key$/.test(p)) v=String(v).replace(/\s+/g,'');
+  else if(/^api\..*(Base|Model)$/.test(p)) v=String(v).trim();
   setPath(state,p,v);
   if(p==='shoot.jumlah'||p.startsWith('persona.nama')) renderRail();
   /* Base URL diketik: segarkan chip rekomendasi saja. Ini sengaja di 'input',
