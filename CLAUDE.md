@@ -109,6 +109,23 @@ Karena pesan error kini bisa panjang, `.toast` memakai `white-space:pre-line` da
 ber-tipe `err` bertahan 20 detik serta bisa ditutup dengan klik. Pesan yang hilang tepat
 saat sedang dibaca adalah kegagalan tersendiri.
 
+`keySidik(v)` menampilkan **sidik jari** key di bawah tiap kolom kredensial — 5 karakter
+awal, 4 karakter akhir, dan panjangnya. Itu satu-satunya potongan informasi yang hilang
+saat gateway membalas "token tidak ditemukan": apakah key yang TERSIMPAN di app sama
+dengan key di dasbor penyedia. Gateway menyebut ujungnya di pesan errornya
+(`Received API Key = sk-...zySw`), jadi ujung yang cocok berarti key-nya benar terkirim
+dan masalahnya ada di sisi penyedia. Bagian tengah key **tidak pernah** ditampilkan dan
+kolomnya tetap `type=password`.
+
+`keySalahLayanan(v, base)` memperingatkan kalau prefiks key **menentukan** pemiliknya dan
+Base URL-nya bertentangan (`sk-ant-` di alamat non-Anthropic, dst). `KEY_ASAL` sengaja
+**tidak** memuat `sk-` polos: OpenAI, LiteLLM, Dinoiki, dan banyak gateway lain sama-sama
+memakainya, jadi menebak darinya hanya menghasilkan peringatan palsu. Jangan tambahkan.
+
+Keduanya hidup di wadah `.keyinfo` dan disegarkan lewat `refreshKeyInfo()` pada event
+`input` — **bukan** dengan me-render ulang modal, alasan yang sama seperti `refreshRecs()`:
+mengganti node saat kolom sedang diketik menghilangkan fokus dan klik tombol.
+
 ## `influencer.html` — AI Influencer Studio
 
 Pipeline: `talent → identity → persona → sheet → arc → shoot → render → feed → content → export`.

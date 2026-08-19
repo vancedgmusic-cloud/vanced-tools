@@ -280,6 +280,7 @@ label.pcheck span{flex:1;min-width:0}
 .kadd .kup{font-size:17px}
 .kadd .kup:hover{color:var(--txt);background:var(--panel2)}
 .kadd .kgen:disabled{opacity:.4;cursor:default}
+.hint.bad{color:var(--red);font-weight:600}
 .probeout{margin:10px 0 0;padding:10px 12px;border:1px solid var(--line2);border-radius:8px;
   background:#0000000f;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
   white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto}
@@ -1250,6 +1251,50 @@ function authHint(status, msg){
     '\n2. Key sudah dihapus atau dibuat ulang di dasbor penyedianya.'+
     '\n3. Key ter-paste sepotong.'+
     '\n\nBuka ⚙ API, cocokkan key dengan Base URL di sebelahnya, lalu tekan "Tarik daftar". Kalau daftar model muncul, key-nya sah.';
+}
+/* Prefiks yang MENENTUKAN pemiliknya. `sk-` polos sengaja tidak ada di sini:
+   OpenAI, LiteLLM, Dinoiki, dan banyak gateway lain sama-sama memakainya, jadi
+   ia tidak membuktikan apa pun dan menebak darinya cuma menghasilkan peringatan
+   palsu. Yang terdaftar di bawah hanya yang tidak mungkin salah baca. */
+const KEY_ASAL=[
+  [/^sk-ant-/i,    'Anthropic (Claude)',   /api\.anthropic\.com/i],
+  [/^sk-or-/i,     'OpenRouter',           /openrouter\.ai/i],
+  [/^xai-/i,       'xAI (Grok)',           /api\.x\.ai/i],
+  [/^AIza/,        'Google AI Studio',     /googleapis\.com/i],
+  [/^gsk_/i,       'Groq',                 /api\.groq\.com/i],
+  [/^sk-proj-/i,   'OpenAI',               /api\.openai\.com/i]
+];
+/* Sidik jari key: cukup untuk dicocokkan dengan dasbor penyedia dan dengan
+   potongan yang dilaporkan gateway di pesan error ("Received API Key =
+   sk-...zySw"), tanpa pernah menampilkan key utuhnya di layar. */
+/* Isi wadah sidik jari. Dipakai saat render pertama dan tiap kali kolom key
+   atau Base URL diketik. */
+function keyInfoHTML(val, base){
+  const b=String(base||'').startsWith('api.')?String(getPath(state,base)||''):String(base||'');
+  const salah=keySalahLayanan(val,b), sidik=keySidik(val);
+  return (salah?'<div class="hint bad">⚠ '+esc(salah)+'</div>':'')+
+         (sidik?'<div class="hint">'+esc(sidik)+'</div>':'');
+}
+function refreshKeyInfo(){
+  document.querySelectorAll('.keyinfo').forEach(el=>{
+    el.innerHTML=keyInfoHTML(getPath(state, el.dataset.kifor), el.dataset.kibase||'');
+  });
+}
+function keySidik(v){
+  const k=String(v||'');
+  if(!k) return '';
+  if(k.length<10) return 'yang tersimpan cuma '+k.length+' karakter — hampir pasti ter-paste sepotong.';
+  return 'tersimpan: '+k.slice(0,5)+'…'+k.slice(-4)+' · '+k.length+' karakter. Cocokkan ujungnya dengan key di dasbor penyedia, dan dengan potongan yang disebut gateway di pesan error.';
+}
+/* Peringatan hanya kalau prefiksnya MENENTUKAN dan base URL-nya bertentangan. */
+function keySalahLayanan(v, base){
+  const k=String(v||'').trim(), b=String(base||'');
+  if(!k||!b) return '';
+  for(const [re,nama,host] of KEY_ASAL){
+    if(re.test(k)&&!host.test(b))
+      return 'Key ini berbentuk key '+nama+', tapi Base URL di atas bukan alamat '+nama+'. Key satu layanan tidak berlaku di layanan lain — ini penyebab nomor satu error "token tidak ditemukan".';
+  }
+  return '';
 }
 async function postJSON(url, opts, label){
   let lastMsg='';
@@ -5396,8 +5441,14 @@ function renderApiModal(){
   const a=state.api;
   $('#txtGrid').innerHTML=TXT_PROVIDERS.map(p=>
     '<button class="prov'+(a.txt===p.id?' sel':'')+'" data-txtprov="'+p.id+'"><b>'+esc(p.name)+'</b><span>'+esc(p.desc)+'</span></button>').join('');
-  const F_=(label,path,val,ph,pw)=>'<div class="field"><label>'+esc(label)+'</label><input'+(pw?' type="password"':'')+
-    ' data-path="'+path+'" value="'+esc(val||'')+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+'></div>';
+  const F_=(label,path,val,ph,pw,base)=>
+    '<div class="field"><label>'+esc(label)+'</label><input'+(pw?' type="password"':'')+
+      ' data-path="'+path+'" value="'+esc(val||'')+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+'>'+
+      /* Sidik jari hidup di wadahnya sendiri supaya bisa disegarkan tanpa
+         me-render ulang modal — alasan yang sama seperti chip rekomendasi:
+         mengganti node saat kolom sedang diketik menghilangkan klik/fokus. */
+      (pw?'<div class="keyinfo" data-kifor="'+path+'" data-kibase="'+esc(base||'')+'">'+keyInfoHTML(val,base)+'</div>':'')+
+    '</div>';
   /* Kolom model + tombol tarik daftar dari GET /models milik gateway. */
   const F_MODEL=(path,val,ph,which,base)=>{
     const list=MODEL_CACHE[String(base||'').replace(/\/+$/,'')]||null;
@@ -5413,13 +5464,13 @@ function renderApiModal(){
     '</div>';
   };
   let t='';
-  if(a.txt==='gemini') t=F_('Gemini API Key','api.geminiKey',a.geminiKey,'AIza…',1)+F_('Model','api.geminiModel',a.geminiModel,'gemini-2.5-flash');
-  if(a.txt==='claude') t=F_('Anthropic API Key','api.claudeKey',a.claudeKey,'sk-ant-…',1)+F_('Model','api.claudeModel',a.claudeModel,'claude-sonnet-4-6');
-  if(a.txt==='dinoiki') t=F_('Base URL','api.dinoikiBase',a.dinoikiBase,'https://ai.dinoiki.com/v1')+F_('API Key Dinoiki','api.dinoikiKey',a.dinoikiKey,'sk-…',1)+F_MODEL('api.dinoikiModel',a.dinoikiModel,'gpt-4o','txt',a.dinoikiBase);
-  if(a.txt==='koboillm') t=F_('Base URL','api.koboiBase',a.koboiBase,'https://lite.koboillm.com/v1')+F_('API Key KoboiLLM','api.koboiKey',a.koboiKey,'sk-…',1)+F_MODEL('api.koboiModel',a.koboiModel,'tarik daftar untuk melihat pilihan','txt',a.koboiBase);
-  if(a.txt==='grok') t=F_('Base URL','api.grokBase',a.grokBase,'https://api.x.ai/v1')+F_('API Key Grok (xAI)','api.grokKey',a.grokKey,'xai-…',1)+F_MODEL('api.grokModel',a.grokModel,'grok-4','txt',a.grokBase);
-  if(a.txt==='openrouter') t=F_('Base URL','api.orBase',a.orBase,'https://openrouter.ai/api/v1')+F_('API Key OpenRouter','api.orKey',a.orKey,'sk-or-…',1)+F_MODEL('api.orModel',a.orModel,'google/gemini-2.5-flash','txt',a.orBase);
-  if(a.txt==='compat') t=F_('Base URL','api.compatBase',a.compatBase,'https://api.openai.com/v1 · https://api.groq.com/openai/v1')+F_('API Key','api.compatKey',a.compatKey,'',1)+F_MODEL('api.compatModel',a.compatModel,'','txt',a.compatBase);
+  if(a.txt==='gemini') t=F_('Gemini API Key','api.geminiKey',a.geminiKey,'AIza…',1,'https://generativelanguage.googleapis.com')+F_('Model','api.geminiModel',a.geminiModel,'gemini-2.5-flash');
+  if(a.txt==='claude') t=F_('Anthropic API Key','api.claudeKey',a.claudeKey,'sk-ant-…',1,'https://api.anthropic.com')+F_('Model','api.claudeModel',a.claudeModel,'claude-sonnet-4-6');
+  if(a.txt==='dinoiki') t=F_('Base URL','api.dinoikiBase',a.dinoikiBase,'https://ai.dinoiki.com/v1')+F_('API Key Dinoiki','api.dinoikiKey',a.dinoikiKey,'sk-…',1,'api.dinoikiBase')+F_MODEL('api.dinoikiModel',a.dinoikiModel,'gpt-4o','txt',a.dinoikiBase);
+  if(a.txt==='koboillm') t=F_('Base URL','api.koboiBase',a.koboiBase,'https://lite.koboillm.com/v1')+F_('API Key KoboiLLM','api.koboiKey',a.koboiKey,'sk-…',1,'api.koboiBase')+F_MODEL('api.koboiModel',a.koboiModel,'tarik daftar untuk melihat pilihan','txt',a.koboiBase);
+  if(a.txt==='grok') t=F_('Base URL','api.grokBase',a.grokBase,'https://api.x.ai/v1')+F_('API Key Grok (xAI)','api.grokKey',a.grokKey,'xai-…',1,'api.grokBase')+F_MODEL('api.grokModel',a.grokModel,'grok-4','txt',a.grokBase);
+  if(a.txt==='openrouter') t=F_('Base URL','api.orBase',a.orBase,'https://openrouter.ai/api/v1')+F_('API Key OpenRouter','api.orKey',a.orKey,'sk-or-…',1,'api.orBase')+F_MODEL('api.orModel',a.orModel,'google/gemini-2.5-flash','txt',a.orBase);
+  if(a.txt==='compat') t=F_('Base URL','api.compatBase',a.compatBase,'https://api.openai.com/v1 · https://api.groq.com/openai/v1')+F_('API Key','api.compatKey',a.compatKey,'',1,'api.compatBase')+F_MODEL('api.compatModel',a.compatModel,'','txt',a.compatBase);
   $('#txtFields').innerHTML=t;
 
   const gatewayNote='Base URL sudah diisi dari dashboard masing-masing. Klik "↻ Tarik daftar" untuk menarik model yang aktif di akunmu lewat GET /models — tidak perlu hafal nama modelnya. Kalau key yang kamu beli ternyata key upstream asli (mis. Gemini diawali AIza…), pakai provider Google Gemini di atas, bukan gateway ini.';
@@ -5438,14 +5489,14 @@ function renderApiModal(){
   $('#imgGrid').innerHTML=IMG_PROVIDERS.map(p=>
     '<button class="prov'+(a.img===p.id?' sel':'')+'" data-imgprov="'+p.id+'"><b>'+esc(p.name)+'</b><span>'+esc(p.desc)+'</span></button>').join('');
   let g='';
-  if(a.img==='gemini_image') g=F_('Gemini API Key (kosongkan = pakai key mesin teks)','api.imgGeminiKey',a.imgGeminiKey,'AIza…',1)+F_('Model gambar','api.imgGeminiModel',a.imgGeminiModel,'gemini-2.5-flash-image');
+  if(a.img==='gemini_image') g=F_('Gemini API Key (kosongkan = pakai key mesin teks)','api.imgGeminiKey',a.imgGeminiKey,'AIza…',1,'https://generativelanguage.googleapis.com')+F_('Model gambar','api.imgGeminiModel',a.imgGeminiModel,'gemini-2.5-flash-image');
   if(a.img==='openai_image'||a.img==='compat_image'||a.img==='chat_image')
     g=F_('Base URL','api.imgOaBase',a.imgOaBase,'https://api.openai.com/v1 · https://ai.dinoiki.com/v1 · https://lite.koboillm.com/v1 · https://openrouter.ai/api/v1')+
-      F_('API Key','api.imgOaKey',a.imgOaKey,'',1)+
+      F_('API Key','api.imgOaKey',a.imgOaKey,'',1,'api.imgOaBase')+
       F_MODEL('api.imgOaModel',a.imgOaModel,a.img==='chat_image'?'gemini-2.5-flash-image':'gpt-image-1.5','img',a.imgOaBase);
   if(a.img==='xai_image')
     g=F_('Base URL','api.imgXaiBase',a.imgXaiBase,'https://api.x.ai/v1')+
-      F_('API Key xAI (sama dengan key mesin teks Grok)','api.imgXaiKey',a.imgXaiKey,'xai-…',1)+
+      F_('API Key xAI (sama dengan key mesin teks Grok)','api.imgXaiKey',a.imgXaiKey,'xai-…',1,'api.imgXaiBase')+
       F_MODEL('api.imgXaiModel',a.imgXaiModel,'grok-imagine-image-2.0','img',a.imgXaiBase);
   if(a.img==='free')
     g=F_('Model','api.imgFreeModel',a.imgFreeModel,'flux · turbo');
@@ -5464,7 +5515,7 @@ function renderApiModal(){
 
   $('#vidFields').innerHTML=
     F_('Base URL','api.vidBase',a.vidBase,'https://lite.koboillm.com/v1')+
-    F_('API Key','api.vidKey',a.vidKey,'',1)+
+    F_('API Key','api.vidKey',a.vidKey,'',1,'api.vidBase')+
     F_('Model video','api.vidModel',a.vidModel,'veo-3.1-lite-generate-001-preview');
   $('#vidNote').textContent='Probe melakukan dua hal murah: (1) GET /models untuk melihat apakah nama model itu benar-benar disajikan gateway, dan (2) satu POST /videos untuk melihat bentuk balasannya. Keduanya bisa gagal, dan itu justru informasinya — hasil mentahnya ditampilkan supaya bisa kamu kirim balik. Perhatikan: langkah 2 BISA memulai job berbayar kalau gateway-mu menerimanya, dan video ditagih per detik, jauh lebih mahal daripada satu gambar.';
 }
@@ -5581,6 +5632,7 @@ document.addEventListener('input', e=>{
      mengganti node tombolnya sehingga klik pertamanya hilang. refreshRecs hanya
      menyentuh wadah chip, tidak pernah kolom yang sedang diketik. */
   if(/^api\..*Base$/.test(p)) refreshRecs();
+  if(/^api\..*(Key|Base)$/.test(p)) refreshKeyInfo();
   if(p==='usage.harga'){ const el=$('#usage'); if(el) el.textContent=usageText(); }
   /* Ketikan disimpan menyusul, bukan tiap huruf. */
   if(!p.startsWith('api.')) autosaveSoon();
