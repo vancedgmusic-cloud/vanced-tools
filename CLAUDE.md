@@ -98,11 +98,17 @@ satu entri di `ADAPTERS` + satu di `PROVIDERS`. Yang sudah ada:
   lalu `POST /v1/text-to-speech/{id}` → audio biner.
 - `fish` — Fish Audio. `POST /model` (multipart) → `_id`, lalu `POST /v1/tts`.
   Sering diblokir CORS dari browser; pesan errornya sudah menyebut itu.
-- `openai` — gateway OpenAI-compatible mana pun (Koboi LLM Lite, Dinoiki,
-  LiteLLM, OpenAI). `POST {base}/audio/speech`. Base URL milik user; `base()`
-  menormalkan akhiran `/v1` supaya "https://host" dan "https://host/v1" sama-sama
-  jalan. Daftar suaranya diketik user di `api.oaVoiceList` karena API ini tidak
-  mengumumkan suara yang tersedia.
+- `openai` — gateway OpenAI-compatible mana pun. `POST {base}/audio/speech`.
+  Base URL milik user; `base()` menormalkan akhiran `/v1` supaya "https://host"
+  dan "https://host/v1" sama-sama jalan. Daftar suaranya diketik user di
+  `api.oaVoiceList` karena API ini tidak mengumumkan suara yang tersedia.
+  `fetchOaModels()` menarik `GET {base}/models` lalu menyaringnya dengan
+  `TTS_LOOKING`; nol hasil = gateway itu kemungkinan tidak melayani TTS.
+  Base URL milik user (dikonfirmasi): Dinoiki `https://ai.dinoiki.com/v1`,
+  Koboi LLM Lite `https://lite.koboillm.com/v1`. Menurut `AI_Talent_Forge.html`
+  di branch `claude/ai-influencer-template-ugc-g5fzis`, **Dinoiki menyediakan
+  `/audio/speech`, Koboi tidak** — karena itu HTTP 404 di endpoint ini
+  diterjemahkan jadi pesan tersendiri, bukan error mentah.
 - `local` — Web Speech API. **Tidak mengkloning apa pun** dan `tts()`-nya
   mengembalikan `null` (tidak ada blob). Jangan bikin kode yang mengasumsikan
   `tts()` selalu memberi Blob.

@@ -337,8 +337,11 @@ const state = {
     provider:'eleven',
     elevenKey:'', elevenModel:'eleven_multilingual_v2',
     fishKey:'', fishModel:'s2.1-pro',
-    oaBase:'https://api.openai.com/v1', oaKey:'', oaModel:'gpt-4o-mini-tts',
-    oaVoiceList:'alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, shimmer, verse'
+    /* Enam suara ini yang sudah terbukti jalan di gateway-gateway itu lewat
+       AI_Talent_Forge. Model baru (gpt-4o-mini-tts) menerima lebih banyak —
+       ash, ballad, coral, sage, verse — tinggal ditambahkan sendiri. */
+    oaBase:'https://ai.dinoiki.com/v1', oaKey:'', oaModel:'gpt-4o-mini-tts',
+    oaVoiceList:'alloy, echo, fable, onyx, nova, shimmer'
   },
   consent:false,
   voice:{ nama:'', deskripsi:'', gender:'', usia:'', aksen:'', bahasa:'id', hapusNoise:true },
@@ -368,7 +371,7 @@ const PROVIDERS=[
   {id:'fish',   name:'Fish Audio', clone:true,
    desc:'Clone cepat, biaya murah. Sebagian browser memblokir lewat CORS.'},
   {id:'openai', name:'Gateway OpenAI-compatible', clone:false,
-   desc:'Koboi LLM Lite, Dinoiki, OpenAI, LiteLLM. TTS suara preset — tidak bisa clone.'},
+   desc:'Dinoiki, Koboi LLM Lite, OpenAI. TTS suara preset — tidak bisa clone.'},
   {id:'local',  name:'Preview lokal', clone:false,
    desc:'Suara bawaan sistem (Web Speech). Gratis, offline, TIDAK mengkloning suara.'}
 ];
@@ -387,12 +390,19 @@ const ELEVEN_FORMATS=[
 ];
 /* Gateway OpenAI-compatible: base URL-nya milik user, jadi cuma disediakan
    pintasan. Yang penting kontraknya sama — POST {base}/audio/speech dengan
-   {model, input, voice} → audio biner. */
+   {model, input, voice} → audio biner.
+   Catatan dari AI_Talent_Forge (proyek lain di repo ini, yang sudah memakai
+   endpoint ini): Dinoiki menyediakan /audio/speech, Koboi LLM Lite tidak.
+   Koboi tetap didaftarkan karena katalognya bisa berubah — tombol Tarik model
+   yang memastikan, bukan asumsi di kode ini. */
 const OA_PRESETS=[
-  ['https://api.openai.com/v1','OpenAI langsung'],
-  ['https://lite.koboillm.com/v1','Koboi LLM Lite']
+  ['https://ai.dinoiki.com/v1','Dinoiki'],
+  ['https://lite.koboillm.com/v1','Koboi LLM Lite'],
+  ['https://api.openai.com/v1','OpenAI langsung']
 ];
 const OA_FORMATS=[['mp3','MP3'],['wav','WAV'],['opus','Opus'],['aac','AAC'],['flac','FLAC']];
+const OA_MODEL_HINTS=['gpt-4o-mini-tts','tts-1','tts-1-hd'];
+let oaModels=[];   // hasil "Tarik daftar model", sengaja tidak ikut disimpan
 /* Batas aman per request; teks panjang dipotong lalu disambung.
    Di bawah batas 4096 karakter milik /audio/speech OpenAI. */
 const CHUNK_CHARS=2400;
@@ -585,9 +595,18 @@ const ADAPTERS={
         speed: Math.min(4, Math.max(0.25, +t.speed))
       };
       if(t.instruksi) body.instructions=t.instruksi;
-      return await req(this.base()+'/audio/speech',
-        {method:'POST', headers:this.head({'Content-Type':'application/json'}),
-         body:JSON.stringify(body)}, 'TTS gateway', 'blob');
+      try{
+        return await req(this.base()+'/audio/speech',
+          {method:'POST', headers:this.head({'Content-Type':'application/json'}),
+           body:JSON.stringify(body)}, 'TTS gateway', 'blob');
+      }catch(e){
+        /* 404 di sini artinya gateway-nya hidup tapi tidak melayani TTS sama
+           sekali — beda masalah dari key salah atau model salah, jadi beda pesan. */
+        if(/404|not found|no such endpoint/i.test(e.message))
+          throw new Error('Gateway ini tidak menyediakan endpoint /audio/speech, jadi tidak bisa dipakai untuk TTS. '+
+            'Coba base URL Dinoiki, atau pakai ElevenLabs / Fish Audio.');
+        throw e;
+      }
     },
     async del(){ throw new Error('Suara preset gateway tidak bisa dihapus dari sini.'); }
   },
@@ -920,6 +939,28 @@ async function replayLocal(id){
   catch(e){ toast(e.message,'err'); }
 }
 
+/* Gateway tidak punya endpoint khusus "model TTS", jadi daftar lengkapnya
+   ditarik lalu disaring dengan pola nama. Kalau tidak ada yang cocok, itu
+   sinyal kuat gateway tersebut memang tidak melayani /audio/speech. */
+const TTS_LOOKING=/tts|audio|speech|voice|whisper/i;
+async function fetchOaModels(){
+  if(!guard()) return;
+  try{
+    setBusy(true,'Menarik daftar model…');
+    const d=await req(ADAPTERS.openai.base()+'/models',
+      {headers:ADAPTERS.openai.head()}, 'Daftar model');
+    const raw=Array.isArray(d)?d:(d.data||d.models||[]);
+    oaModels=raw.map(m=>typeof m==='string'?m:(m&&(m.id||m.model_name||m.name))).filter(Boolean).sort();
+    setBusy(false);
+    const tts=oaModels.filter(id=>TTS_LOOKING.test(id));
+    if(!oaModels.length) toast('Gateway menjawab, tapi daftar modelnya kosong.','err');
+    else if(tts.length) toast(oaModels.length+' model terdaftar · '+tts.length+' terlihat untuk suara.','ok');
+    else toast(oaModels.length+' model terdaftar, tapi tidak ada yang terlihat sebagai model TTS. '+
+      'Kemungkinan besar gateway ini tidak melayani /audio/speech.','err');
+    render();
+  }catch(e){ setBusy(false); toast(e.message,'err'); }
+}
+
 async function refreshVoices(silent){
   if(needKey()){ if(!silent) toast('API key belum diisi (⚙ API).','err'); return; }
   try{
@@ -1236,10 +1277,21 @@ function settings(p){
     sl('tts.speed','Kecepatan bicara',0.5,2,0.05,t.speed);
   }
   if(p.id==='openai'){
+    const shown=oaModels.filter(id=>TTS_LOOKING.test(id));
+    const chips=(shown.length?shown:OA_MODEL_HINTS).slice(0,24);
     return '<div class="kvgrid" style="margin-bottom:14px">'+
-      '<div class="kv"><label>Model TTS</label>'+
+      '<div class="kv full"><label>Model TTS</label>'+
         '<input data-path="api.oaModel" value="'+esc(state.api.oaModel)+'" placeholder="gpt-4o-mini-tts · tts-1 · tts-1-hd">'+
-        '<div class="hint">Nama model mengikuti gateway-nya, bukan selalu nama OpenAI.</div></div>'+
+        '<div class="toolbar" style="margin:8px 0 0">'+
+          chips.map(m=>'<button class="btn small ghost" data-act="oamodel" data-model="'+esc(m)+'">'+esc(m)+'</button>').join('')+
+          '<span class="spacer"></span>'+
+          '<button class="btn small" data-act="oamodels" data-busy>↻ Tarik daftar model</button>'+
+        '</div>'+
+        '<div class="hint">'+(oaModels.length
+          ? esc(oaModels.length+' model terdaftar di gateway ini; '+shown.length+' terlihat untuk suara.')+
+            (shown.length?'':' Tidak ada yang cocok — gateway ini kemungkinan tidak melayani /audio/speech.')
+          : 'Chip di atas baru saran. Klik <b>Tarik daftar model</b> untuk melihat katalog asli dari key-mu.')+
+        '</div></div>'+
       '<div class="kv"><label>Format keluaran</label><select data-path="tts.oaFormat">'+
         OA_FORMATS.map(([v,l])=>'<option value="'+v+'"'+(t.oaFormat===v?' selected':'')+'>'+esc(l)+'</option>').join('')+
       '</select></div>'+
@@ -1247,7 +1299,9 @@ function settings(p){
         '<textarea data-path="tts.instruksi" placeholder="mis. bicara hangat dan santai, tempo agak lambat">'+esc(t.instruksi)+'</textarea>'+
         '<div class="hint">Hanya dipatuhi model yang mendukungnya (mis. gpt-4o-mini-tts). Gateway lain mengabaikannya.</div></div>'+
     '</div>'+
-    sl('tts.speed','Kecepatan bicara',0.25,4,0.05,t.speed,'Rentang yang diterima /audio/speech adalah 0,25–4,0.');
+    sl('tts.speed','Kecepatan bicara',0.25,4,0.05,t.speed,
+      'Rentang yang diterima /audio/speech adalah 0,25–4,0. Kalau audionya mau dipakai untuk lipsync, '+
+      'jangan lewat 1,15 — bicara terlalu cepat merusak sinkronisasi bibir.');
   }
   return '<div class="hint" style="margin:0 0 12px">Mode lokal memakai suara bawaan sistem operasi. '+
     'Tidak ada kloning, tidak ada file yang dihasilkan — hanya untuk mendengar naskah lebih dulu.</div>'+
@@ -1371,11 +1425,14 @@ function renderApiModal(){
       '<div class="field"><label>API Key</label>'+
       '<input type="password" data-path="api.oaKey" value="'+esc(a.oaKey)+'" placeholder="sk-…"></div>'+
       '<div class="field"><label>Daftar suara yang tersedia</label>'+
-      '<textarea data-path="api.oaVoiceList" placeholder="alloy, ash, coral, …">'+esc(a.oaVoiceList)+'</textarea>'+
-      '<div class="hint">Dipisah koma. Gateway tidak mengumumkan daftar suaranya lewat API, jadi isi sesuai backend yang dipakai.</div></div>';
+      '<textarea data-path="api.oaVoiceList" placeholder="alloy, echo, fable, onyx, nova, shimmer">'+esc(a.oaVoiceList)+'</textarea>'+
+      '<div class="hint">Dipisah koma. Gateway tidak mengumumkan daftar suaranya lewat API, jadi isi sesuai backend yang dipakai. '+
+      'Model gpt-4o-mini-tts juga menerima <b>ash, ballad, coral, sage, verse</b>. '+
+      'Untuk suara perempuan Indonesia, <b>nova</b> dan <b>shimmer</b> paling sering cocok.</div></div>';
     note='Bentuk API ini TIDAK bisa mengkloning suara — tidak ada endpoint untuk mengunggah sample. '+
          'Yang tersedia hanya suara preset lewat POST {base}/audio/speech. Untuk kloning dari sample, pakai ElevenLabs atau Fish Audio. '+
-         'Base URL Koboi LLM Lite adalah tebakan dari pola LiteLLM — cek dengan Tes koneksi, dan kalau key-mu dibeli lewat Dinoiki untuk dipakai langsung ke OpenAI, pilih preset OpenAI.';
+         'Catatan dari proyek AI_Talent_Forge di repo ini: Dinoiki menyediakan /audio/speech, Koboi LLM Lite tidak — '+
+         'pastikan sendiri dengan tombol Tarik daftar model di langkah 03.';
   }
   if(a.provider==='local'){
     f='<div class="hint" style="margin:0">Tidak butuh key. Suara diambil dari sistem operasi lewat Web Speech API.</div>';
@@ -1414,7 +1471,9 @@ document.addEventListener('click', async e=>{
       $('#apiOverlay').classList.remove('open');
       if(!needKey()&&!voicesLoaded) refreshVoices(true); else render();
       break;
-    case 'oapreset': state.api.oaBase=b.dataset.url; voicesLoaded=false; renderApiModal(); break;
+    case 'oapreset': state.api.oaBase=b.dataset.url; oaModels=[]; voicesLoaded=false; renderApiModal(); break;
+    case 'oamodels': fetchOaModels(); break;
+    case 'oamodel': state.api.oaModel=b.dataset.model; render(); break;
     case 'testapi': testApi(); break;
     case 'pick': $('#audioInput').click(); break;
     case 'rec': startRec(); break;
