@@ -98,9 +98,21 @@ satu entri di `ADAPTERS` + satu di `PROVIDERS`. Yang sudah ada:
   lalu `POST /v1/text-to-speech/{id}` → audio biner.
 - `fish` — Fish Audio. `POST /model` (multipart) → `_id`, lalu `POST /v1/tts`.
   Sering diblokir CORS dari browser; pesan errornya sudah menyebut itu.
+- `openai` — gateway OpenAI-compatible mana pun (Koboi LLM Lite, Dinoiki,
+  LiteLLM, OpenAI). `POST {base}/audio/speech`. Base URL milik user; `base()`
+  menormalkan akhiran `/v1` supaya "https://host" dan "https://host/v1" sama-sama
+  jalan. Daftar suaranya diketik user di `api.oaVoiceList` karena API ini tidak
+  mengumumkan suara yang tersedia.
 - `local` — Web Speech API. **Tidak mengkloning apa pun** dan `tts()`-nya
   mengembalikan `null` (tidak ada blob). Jangan bikin kode yang mengasumsikan
   `tts()` selalu memberi Blob.
+
+`PROVIDERS[].clone` menandai penyedia yang benar-benar bisa mengkloning. `openai`
+dan `local` ber-`clone:false`: langkah 02 menolaknya (di `cloneVoice()`, bukan cuma
+tombol disabled), tombol hapus suara disembunyikan lewat `canClone()`, dan
+`saveProject` tidak menyimpan suaranya karena selalu bisa dibangun ulang.
+**Jangan menambah penyedia non-cloning dengan `clone:true`** — langkah 02 akan
+mengirim sample ke endpoint yang tidak ada.
 
 `req(url, opts, label, want)` menangani retry transien (429/5xx) 3x dengan backoff,
 sama semangatnya dengan `postJSON` di `index.html`. `want` = `json` | `blob` | `none`.
@@ -131,6 +143,10 @@ tidak semua penyedia menerima webm.
 Teks panjang dipotong `chunkText()` per `CHUNK_CHARS` (2400) di batas kalimat, lalu
 blob MP3-nya dirangkai jadi satu file. Untuk ElevenLabs tiap potongan mengirim
 `previous_text` / `next_text` supaya prosodi antar-potongan nyambung.
+
+Perangkaian itu **hanya sah untuk MP3** karena frame MP3 bisa dideret. WAV/FLAC/AAC
+punya header di depan berkas, jadi `speak()` menolak kombinasi >1 potongan + format
+non-MP3 (lihat `outFormat()`) daripada menghasilkan file rusak yang tetap terunduh.
 
 ## Keamanan
 
