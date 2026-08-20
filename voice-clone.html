@@ -421,11 +421,13 @@ const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|ex
 /* Teks polos, tanpa tag: toast() memakai textContent supaya pesan penyedia
    tidak pernah diperlakukan sebagai HTML. */
 const SCOPE_HINT={
-  create_instant_voice_clone:'setel baris "Voices" ke "Write" — izin ini tidak punya tombol sendiri, dia ikut di Write (yang juga sudah mencakup Read)',
+  create_instant_voice_clone:'di bagian Endpoints, setel baris "Voices" ke "Write" — izin ini tidak punya tombol sendiri, dia ikut di Write (yang juga sudah mencakup Read)',
   voices_write:'setel baris "Voices" ke "Write"',
   voices_read:'setel baris "Voices" minimal ke "Read"',
   text_to_speech:'setel baris "Text to Speech" ke "Access"',
-  user_read:'aktifkan "User → Read" — ini hanya untuk tampilan kuota, clone dan TTS tidak membutuhkannya'
+  /* Label asli di dashboard: bagian Administration, baris "User", pilihannya
+     No Access / Access — bukan Read/Write seperti baris Voices. */
+  user_read:'di bagian Administration, setel baris "User" ke "Access" — ini hanya untuk tampilan kuota, clone dan TTS tidak membutuhkannya'
 };
 function scopeAdvice(msg){
   const m=/permission\s+([a-z0-9_]+)/i.exec(msg||'');
