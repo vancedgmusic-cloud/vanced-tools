@@ -413,6 +413,25 @@ const CHUNK_CHARS=2400;
    server penuh) dicoba ulang 3x dengan backoff, error lain dilempar langsung
    supaya user tahu persis apa yang salah. */
 const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|exhausted|too many|unavailable|failed to fetch|quota|busy/i;
+
+/* Penyedia menyebut nama izin internalnya di pesan error, tapi nama itu sering
+   tidak ada sebagai tombol tersendiri di dashboard — mis. create_instant_voice_clone
+   didapat dengan menyetel Voices ke Write. Pemetaan ini menerjemahkannya jadi
+   kontrol yang benar-benar bisa diklik user. */
+/* Teks polos, tanpa tag: toast() memakai textContent supaya pesan penyedia
+   tidak pernah diperlakukan sebagai HTML. */
+const SCOPE_HINT={
+  create_instant_voice_clone:'setel baris "Voices" ke "Write" — izin ini tidak punya tombol sendiri, dia ikut di Write (yang juga sudah mencakup Read)',
+  voices_write:'setel baris "Voices" ke "Write"',
+  voices_read:'setel baris "Voices" minimal ke "Read"',
+  text_to_speech:'setel baris "Text to Speech" ke "Access"',
+  user_read:'aktifkan "User → Read" — ini hanya untuk tampilan kuota, clone dan TTS tidak membutuhkannya'
+};
+function scopeAdvice(msg){
+  const m=/permission\s+([a-z0-9_]+)/i.exec(msg||'');
+  const hint=m && SCOPE_HINT[m[1].toLowerCase()];
+  return hint ? ' Di dashboard ElevenLabs: buka API Keys → ⋯ → Edit, lalu '+hint+'.' : '';
+}
 async function req(url, opts, label, want='json'){
   let lastMsg='';
   for(let att=0; att<3; att++){
@@ -446,8 +465,8 @@ async function req(url, opts, label, want='json'){
       /* Dua kegagalan yang sangat berbeda dan mudah tertukar: key-nya salah,
          atau key-nya benar tapi cakupan izinnya dipangkas saat dibuat. */
       if(/permission|scope|not authoriz|forbidden/i.test(msg))
-        throw new Error(label+': '+msg+' — key-nya sendiri valid, yang kurang cuma izinnya. '+
-          'Buka dashboard penyedia, edit key ini, lalu aktifkan izin yang diminta di pesan itu (atau beri akses penuh).');
+        throw new Error(label+': '+msg+' — key-nya sendiri valid, yang kurang cuma izinnya.'+
+          (scopeAdvice(msg) || ' Buka dashboard penyedia, edit key ini, lalu aktifkan izin yang diminta di pesan itu.'));
       throw new Error(label+': '+msg+' — cek API key lewat tombol ⚙ API.');
     }
     if(r.status===413) throw new Error(label+': file terlalu besar untuk penyedia ini. Potong sample-nya.');
