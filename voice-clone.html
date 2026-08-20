@@ -1,0 +1,1400 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Clone Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0F1218; --panel:#161A22; --panel2:#1C212C; --panel3:#222834;
+  --line:#2A3040; --line2:#39415A;
+  --text:#EAEDF4; --muted:#9AA3B6; --faint:#6B7488;
+  --amber:#F5A83B; --amber-soft:#F5A83B22; --amber-ink:#181005;
+  --teal:#57D0BE; --teal-soft:#57D0BE1c;
+  --red:#F1685A; --red-soft:#F1685A1f;
+  --green:#5CC98B; --green-soft:#5CC98B1f;
+  --r:12px; --r-sm:8px;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'Archivo',system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--text); font-family:var(--sans);
+  font-size:14.5px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--amber);color:var(--amber-ink)}
+button{font-family:inherit;cursor:pointer}
+input,select,textarea{
+  font-family:inherit;font-size:13.5px;color:var(--text);
+  background:var(--panel2);border:1px solid var(--line);border-radius:var(--r-sm);
+  padding:8px 10px;width:100%;outline:none;transition:border-color .15s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--amber)}
+textarea{resize:vertical;min-height:64px;line-height:1.5}
+select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239AA3B6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px}
+label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;font-weight:600}
+a{color:var(--teal)}
+
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-rows:auto 1fr;height:100vh}
+header.top{
+  display:flex;align-items:center;gap:14px;padding:10px 16px;
+  border-bottom:1px solid var(--line);background:var(--panel);
+  position:relative;z-index:5;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand .mark{
+  width:34px;height:34px;border-radius:8px;display:grid;place-items:center;
+  background:linear-gradient(140deg,var(--teal),#2b8f81);color:#08201d;
+  font-weight:900;font-size:14px;letter-spacing:-.5px;
+}
+.brand h1{font-size:15px;font-weight:800;letter-spacing:.02em;line-height:1.1}
+.brand small{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);font-weight:400;letter-spacing:.06em}
+.top .grow{flex:1;min-width:10px}
+.statusline{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);min-width:0}
+.statusline span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.recdot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.busy .recdot{background:var(--red);animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.busy .recdot{animation:none}}
+.top .actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.btn{
+  border:1px solid var(--line);background:var(--panel2);color:var(--text);
+  border-radius:var(--r-sm);padding:7px 12px;font-size:12.5px;font-weight:600;
+  display:inline-flex;align-items:center;gap:7px;transition:.15s;white-space:nowrap;
+}
+.btn:hover{border-color:var(--line2);background:var(--panel3)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--amber);border-color:var(--amber);color:var(--amber-ink)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{background:transparent}
+.btn.danger{color:var(--red);border-color:#5a3a38}
+.btn.rec{background:var(--red);border-color:var(--red);color:#fff}
+.btn.small{padding:5px 9px;font-size:11.5px}
+
+/* ---------- body layout ---------- */
+.body{display:grid;grid-template-columns:250px 1fr;min-height:0}
+nav.rail{
+  border-right:1px solid var(--line);background:var(--panel);
+  overflow-y:auto;padding:14px 10px 24px;
+}
+.rail .railtitle{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);padding:0 8px 10px;text-transform:uppercase}
+.step{
+  display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  background:none;border:1px solid transparent;border-radius:10px;
+  padding:8px 8px;margin-bottom:2px;color:var(--muted);position:relative;
+}
+.step:hover{background:var(--panel2);color:var(--text)}
+.step.active{background:var(--panel3);border-color:var(--line2);color:var(--text)}
+.step .no{font-family:var(--mono);font-size:10.5px;color:var(--faint);width:22px;flex:none}
+.step.active .no{color:var(--amber)}
+.step .lbl{flex:1;font-size:13px;font-weight:600}
+.step .led{width:7px;height:7px;border-radius:50%;background:var(--line2);flex:none}
+.step .led.done{background:var(--green)}
+.railnote{margin:14px 8px 0;padding:10px;border:1px dashed var(--line);border-radius:10px;font-size:11.5px;color:var(--faint);line-height:1.5}
+
+main{overflow-y:auto;padding:22px 26px 60px;min-width:0}
+.panelhead{margin-bottom:18px}
+.panelhead .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;color:var(--amber);text-transform:uppercase;margin-bottom:6px}
+.panelhead h2{font-size:22px;font-weight:800;letter-spacing:-.01em}
+.panelhead p{color:var(--muted);margin-top:5px;max-width:70ch;font-size:13.5px}
+
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:18px;margin-bottom:16px;
+}
+.card h3{font-size:14px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.card h3 .stamp{margin-left:auto}
+.kvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px 14px}
+.kv.full{grid-column:1/-1}
+.hint{font-size:11.5px;color:var(--faint);margin-top:4px;line-height:1.5}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.toolbar .spacer{flex:1}
+.stamp{font-family:var(--mono);font-size:10.5px;color:var(--faint);border:1px solid var(--line);border-radius:99px;padding:3px 9px;white-space:nowrap}
+.stamp.done{color:var(--green);border-color:#2c4a3a}
+.stamp.warn{color:var(--amber);border-color:#54401f}
+
+/* ---------- dropzone + recorder ---------- */
+.drop{
+  border:1px dashed var(--line2);border-radius:var(--r);padding:26px 20px;text-align:center;
+  background:var(--panel2);transition:.15s;
+}
+.drop.over{border-color:var(--amber);background:var(--amber-soft)}
+.drop .big{font-size:15px;font-weight:700;margin-bottom:5px}
+.drop p{font-size:12.5px;color:var(--muted);max-width:60ch;margin:0 auto 14px}
+.drop .row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.rectimer{font-family:var(--mono);font-size:12px;color:var(--red);display:inline-flex;align-items:center;gap:7px}
+.rectimer .dot{width:8px;height:8px;border-radius:50%;background:var(--red);animation:pulse 1s infinite}
+@media (prefers-reduced-motion:reduce){.rectimer .dot{animation:none}}
+
+/* ---------- sample cards ---------- */
+.samples{display:grid;gap:10px}
+.sample{
+  display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel2);padding:10px 12px;
+}
+.sample .wave{width:190px;height:44px;flex:none;background:var(--panel3);border-radius:6px}
+.sample .meta{min-width:0}
+.sample .nm{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sample .sub{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:3px}
+.sample .flags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.flag{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;border-radius:99px;padding:2px 7px;border:1px solid}
+.flag.ok{color:var(--green);border-color:#2c4a3a;background:var(--green-soft)}
+.flag.warn{color:var(--amber);border-color:#54401f;background:var(--amber-soft)}
+.sample .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.sample audio{height:32px;width:170px}
+
+/* ---------- checks ---------- */
+.check{display:flex;gap:10px;padding:10px 12px;border-radius:var(--r-sm);margin-bottom:8px;font-size:13px;border:1px solid var(--line);background:var(--panel2)}
+.check .sym{font-family:var(--mono);flex:none}
+.check.ok{border-color:#2c4a3a;background:var(--green-soft)}.check.ok .sym{color:var(--green)}
+.check.warn{border-color:#54401f;background:var(--amber-soft)}.check.warn .sym{color:var(--amber)}
+.check.err{border-color:#5a3a38;background:var(--red-soft)}.check.err .sym{color:var(--red)}
+
+/* ---------- consent ---------- */
+.consent{
+  display:flex;gap:12px;align-items:flex-start;border:1px solid #54401f;background:var(--amber-soft);
+  border-radius:var(--r);padding:13px 15px;margin-bottom:16px;font-size:13px;line-height:1.55;
+}
+.consent input[type=checkbox]{width:17px;height:17px;flex:none;margin-top:2px;accent-color:var(--amber)}
+.consent b{display:block;margin-bottom:3px}
+
+/* ---------- voice picker ---------- */
+.voicegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.voice{
+  border:1px solid var(--line);border-radius:10px;padding:10px 11px;background:var(--panel2);
+  text-align:left;color:var(--muted);position:relative;
+}
+.voice:hover{border-color:var(--line2)}
+.voice.sel{border-color:var(--amber);background:var(--amber-soft);color:var(--text)}
+.voice b{display:block;font-size:12.5px;color:var(--text);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.voice span{font-family:var(--mono);font-size:10px;line-height:1.4;display:block}
+.voice .x{position:absolute;top:6px;right:6px;border:none;background:none;color:var(--faint);font-size:13px;line-height:1;padding:2px 4px;border-radius:4px}
+.voice .x:hover{color:var(--red);background:var(--red-soft)}
+
+/* ---------- sliders ---------- */
+.slider{margin-bottom:12px}
+.slider .top{display:flex;align-items:baseline;gap:8px;margin-bottom:5px}
+.slider .top label{margin:0;flex:1}
+.slider .val{font-family:var(--mono);font-size:11px;color:var(--amber)}
+.slider input[type=range]{width:100%;padding:0;height:20px;background:none;border:none;accent-color:var(--amber)}
+
+/* ---------- history ---------- */
+.hist{display:grid;gap:10px}
+.hitem{border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel2);padding:12px}
+.hitem .hh{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.hitem .hv{font-size:12.5px;font-weight:700}
+.hitem .hm{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.hitem .ht{font-size:12.5px;color:var(--muted);margin-bottom:10px;max-height:60px;overflow:hidden;line-height:1.5}
+.hitem audio{width:100%;height:34px}
+.hitem .ha{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+
+.counter{font-family:var(--mono);font-size:11px;color:var(--faint);text-align:right;margin-top:5px}
+.counter.over{color:var(--red)}
+
+/* ---------- modal ---------- */
+.overlay{position:fixed;inset:0;background:#0009;z-index:40;display:none;align-items:flex-start;justify-content:center;padding:5vh 16px;overflow-y:auto}
+.overlay.open{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line2);border-radius:14px;max-width:620px;width:100%;padding:20px}
+.modal h2{font-size:17px;font-weight:800;margin-bottom:4px}
+.modal .sub{color:var(--muted);font-size:12.5px;margin-bottom:16px}
+.provgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:16px}
+.prov{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--panel2);text-align:left;color:var(--muted)}
+.prov.sel{border-color:var(--amber);color:var(--text);background:var(--amber-soft)}
+.prov b{display:block;font-size:12.5px;color:var(--text);margin-bottom:2px}
+.prov span{font-size:10.5px;line-height:1.35;display:block}
+.keynote{font-size:11.5px;color:var(--faint);border:1px dashed var(--line);border-radius:8px;padding:9px 11px;margin-top:12px;line-height:1.5}
+.modal .foot{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.field{margin-bottom:12px}
+
+/* ---------- toast ---------- */
+.toasts{position:fixed;top:14px;right:14px;z-index:60;display:flex;flex-direction:column;gap:8px;max-width:340px}
+.toast{
+  background:var(--panel3);border:1px solid var(--line2);border-left:3px solid var(--teal);
+  border-radius:10px;padding:10px 14px;font-size:12.5px;box-shadow:0 8px 30px #0007;
+}
+.toast.err{border-left-color:var(--red)}
+.toast.ok{border-left-color:var(--green)}
+
+.empty{border:1px dashed var(--line2);border-radius:var(--r);padding:30px 20px;text-align:center;color:var(--muted)}
+.empty .big{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
+.empty p{font-size:12.5px;max-width:52ch;margin:0 auto 16px}
+
+@media (max-width:900px){
+  .body{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  nav.rail{
+    display:flex;overflow-x:auto;overflow-y:hidden;border-right:none;
+    border-bottom:1px solid var(--line);padding:8px 10px;gap:4px;
+  }
+  .rail .railtitle,.railnote{display:none}
+  .step{width:auto;flex:none;margin-bottom:0;padding:6px 10px}
+  .step .lbl{font-size:12px;white-space:nowrap}
+  main{padding:16px 14px 40px}
+  .kvgrid{grid-template-columns:1fr}
+  .sample{grid-template-columns:1fr;gap:8px}
+  .sample .wave{width:100%}
+  .sample .acts{justify-content:flex-start}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <header class="top" id="topbar">
+    <div class="brand">
+      <div class="mark">VC</div>
+      <h1>Voice Clone Studio<small>VANCED TOOLS · CLONE &amp; TTS · V0.1</small></h1>
+    </div>
+    <div class="grow"></div>
+    <div class="statusline" id="statusline"><span class="recdot"></span><span id="statustext">Siaga</span></div>
+    <div class="actions">
+      <button class="btn small" data-act="load" title="Buka project .json">📂 Buka</button>
+      <button class="btn small" data-act="save" title="Simpan project sebagai .json">💾 Simpan</button>
+      <button class="btn small" data-act="api">⚙ API</button>
+    </div>
+  </header>
+
+  <div class="body">
+    <nav class="rail" id="rail"></nav>
+    <main id="main"></main>
+  </div>
+</div>
+
+<!-- API modal -->
+<div class="overlay" id="apiOverlay">
+  <div class="modal">
+    <h2>Penyedia Voice &amp; API Key</h2>
+    <div class="sub">Kloning suara butuh model di sisi server — pilih penyedia dan pakai key milikmu sendiri. Key hanya disimpan di memori sesi ini dan hanya dikirim ke penyedia yang dipilih.</div>
+    <div class="provgrid" id="provGrid"></div>
+    <div id="provFields"></div>
+    <div class="keynote" id="provNote"></div>
+    <div class="foot">
+      <button class="btn ghost" data-act="testapi">Tes koneksi</button>
+      <button class="btn primary" data-act="closeapi">Selesai</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<input type="file" id="projInput" accept=".json" style="display:none">
+<input type="file" id="audioInput" accept="audio/*" multiple style="display:none">
+
+<script>
+/* =====================================================================
+   Voice Clone Studio — single-file app
+   Alur: Sample Suara → Buat Voice Clone → Text to Speech → Voice Library.
+
+   Kloning suara TIDAK terjadi di browser: tidak ada model TTS lokal yang
+   bisa meniru suara dari sample. Aplikasi ini adalah klien untuk penyedia
+   voice cloning (ElevenLabs / Fish Audio) memakai API key milik user, plus
+   satu mode "lokal" berbasis Web Speech untuk mencoba naskah tanpa biaya
+   (mode itu memakai suara bawaan OS — tidak mengkloning apa pun).
+
+   Aturan yang tidak boleh dilonggarkan: tombol clone terkunci sampai user
+   menyatakan sample adalah suaranya sendiri atau ia punya izin pemiliknya.
+   Gate-nya ada di cloneVoice(), bukan cuma di tampilan.
+===================================================================== */
+'use strict';
+
+/* ---------------- utilities ---------------- */
+const $ = s => document.querySelector(s);
+const esc = v => String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const uid = () => Math.random().toString(36).slice(2,10);
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+function setPath(obj, path, val){
+  const ks = path.split('.'); let o = obj;
+  for(let i=0;i<ks.length-1;i++){ const k = isNaN(ks[i])?ks[i]:+ks[i]; if(o[k]==null) o[k]={}; o=o[k]; }
+  const last = isNaN(ks.at(-1))?ks.at(-1):+ks.at(-1); o[last]=val;
+}
+function getPath(obj, path){ return path.split('.').reduce((o,k)=>o==null?o:o[isNaN(k)?k:+k], obj); }
+function toast(msg, type=''){
+  const t=document.createElement('div'); t.className='toast '+type; t.textContent=msg;
+  $('#toasts').appendChild(t); setTimeout(()=>t.remove(), 6000);
+}
+function download(name, data, mime='text/plain'){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(data instanceof Blob?data:new Blob([data],{type:mime}));
+  a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+const fmtDur = s => !isFinite(s)?'—':(Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0'));
+const fmtSize = b => b<1024?b+' B':b<1048576?(b/1024).toFixed(0)+' KB':(b/1048576).toFixed(1)+' MB';
+const slug = s => String(s||'voice').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-').toLowerCase()||'voice';
+
+/* ---------------- state ---------------- */
+/* Semua di memori. Tidak ada localStorage — persistence lewat Simpan/Buka .json.
+   Blob audio tidak ikut ke file project (ukurannya bisa ratusan MB); yang
+   penting untuk dipertahankan adalah voice id di sisi penyedia. */
+const state = {
+  api:{
+    provider:'eleven',
+    elevenKey:'', elevenModel:'eleven_multilingual_v2',
+    fishKey:'', fishModel:'s2.1-pro'
+  },
+  consent:false,
+  voice:{ nama:'', deskripsi:'', gender:'', usia:'', aksen:'', bahasa:'id', hapusNoise:true },
+  samples:[],        // {id,name,mime,size,dur,rate,channels,peaks,peak,quiet,blob,url}
+  voices:[],         // {id,name,provider,category,sampleNames,at}
+  activeVoiceId:'',
+  tts:{
+    text:'', stability:0.5, similarity:0.8, style:0, speed:1, speakerBoost:true,
+    format:'mp3_44100_128', bahasa:'', temperature:0.7, topP:0.7, localRate:1, localPitch:1
+  },
+  history:[]         // {id,voiceName,provider,model,text,chars,blob,url,mime,at,local}
+};
+let currentStep='sample', busy=false, voicesLoaded=false, dropDepth=0;
+let recorder=null, recChunks=[], recStart=0, recTimer=null;
+
+/* ---------------- steps, providers, presets ---------------- */
+const STEPS=[
+  {id:'sample',  no:'01', label:'Sample Suara'},
+  {id:'clone',   no:'02', label:'Buat Voice Clone'},
+  {id:'tts',     no:'03', label:'Text to Speech'},
+  {id:'library', no:'04', label:'Voice Library'}
+];
+const PROVIDERS=[
+  {id:'eleven', name:'ElevenLabs', clone:true,
+   desc:'Instant Voice Cloning + TTS multibahasa. Paling mulus dipanggil dari browser.'},
+  {id:'fish',   name:'Fish Audio', clone:true,
+   desc:'Clone cepat, biaya murah. Sebagian browser memblokir lewat CORS.'},
+  {id:'local',  name:'Preview lokal', clone:false,
+   desc:'Suara bawaan sistem (Web Speech). Gratis, offline, TIDAK mengkloning suara.'}
+];
+const provider = () => PROVIDERS.find(p=>p.id===state.api.provider) || PROVIDERS[0];
+const ELEVEN_MODELS=[
+  ['eleven_multilingual_v2','Multilingual v2 — paling stabil, 29 bahasa'],
+  ['eleven_turbo_v2_5','Turbo v2.5 — cepat, murah'],
+  ['eleven_flash_v2_5','Flash v2.5 — latensi terendah'],
+  ['eleven_v3','v3 — paling ekspresif']
+];
+const ELEVEN_FORMATS=[
+  ['mp3_44100_128','MP3 44.1 kHz · 128 kbps (standar)'],
+  ['mp3_44100_192','MP3 44.1 kHz · 192 kbps (butuh paket Creator+)'],
+  ['mp3_22050_32','MP3 22 kHz · 32 kbps (file kecil)']
+];
+/* Batas aman per request; teks panjang dipotong lalu disambung. */
+const CHUNK_CHARS=2400;
+
+/* ---------------- HTTP ---------------- */
+/* Sama semangatnya dengan postJSON di index.html: error transien (429/5xx,
+   server penuh) dicoba ulang 3x dengan backoff, error lain dilempar langsung
+   supaya user tahu persis apa yang salah. */
+const TRANSIENT=/overload|high demand|rate.?limit|try again|temporar|capacity|exhausted|too many|unavailable|failed to fetch|quota|busy/i;
+async function req(url, opts, label, want='json'){
+  let lastMsg='';
+  for(let att=0; att<3; att++){
+    if(att){
+      setBusy(true,'Server sibuk — mencoba ulang ('+att+'/2)…');
+      await sleep(att===1?2500:6000);
+    }
+    let r;
+    try{ r=await fetch(url,opts); }
+    catch(e){ lastMsg=e.message||'gagal terhubung'; continue; }
+    if(r.ok){
+      if(want==='blob') return await r.blob();
+      if(want==='none') return true;
+      try{ return await r.json(); }catch(_){ return {}; }
+    }
+    let msg='HTTP '+r.status;
+    try{
+      const t=await r.text();
+      if(t){
+        try{
+          const d=JSON.parse(t);
+          const det=d && d.detail;
+          msg=(det&&det.message)||(typeof det==='string'?det:'')||
+              (d&&d.message)||(d&&d.error&&(d.error.message||d.error))||msg;
+          if(typeof msg!=='string') msg=JSON.stringify(msg);
+        }catch(_){ msg=t.slice(0,300); }
+      }
+    }catch(_){}
+    lastMsg=msg;
+    if(r.status===401||r.status===403) throw new Error(label+': '+msg+' — cek API key lewat tombol ⚙ API.');
+    if(r.status===413) throw new Error(label+': file terlalu besar untuk penyedia ini. Potong sample-nya.');
+    if(!(r.status===429||r.status>=500||TRANSIENT.test(msg))) throw new Error(label+': '+msg);
+  }
+  const tail=/failed to fetch|network/i.test(lastMsg)
+    ? ' — permintaan tidak sampai. Umumnya browser memblokir lewat CORS: coba provider lain, atau jalankan lewat proxy sendiri.'
+    : ' — server sedang penuh. Tunggu 1–2 menit lalu ulangi.';
+  throw new Error(label+': '+lastMsg+tail);
+}
+
+/* ---------------- adapter per penyedia ----------------
+   Tiap penyedia mengisi kontrak yang sama: test, listVoices, clone, tts, del.
+   Menambah penyedia baru = menambah satu entri di sini + satu di PROVIDERS.
+   PENTING: beri nama field kredensialnya berakhiran "Key" (elevenKey, fishKey,
+   …) — saveProject menghapus key berdasarkan bentuk nama itu, jadi provider
+   baru otomatis aman dan key-nya tidak bocor ke file project yang dibagikan. */
+const ADAPTERS={
+
+  eleven:{
+    key:()=>state.api.elevenKey,
+    head(extra){ return Object.assign({'xi-api-key':state.api.elevenKey}, extra||{}); },
+    async test(){
+      const d=await req('https://api.elevenlabs.io/v1/user/subscription',{headers:this.head()},'ElevenLabs');
+      const used=d.character_count, lim=d.character_limit;
+      return 'Terhubung · paket '+(d.tier||'—')+
+        (lim!=null?' · sisa kuota '+Math.max(0,lim-used).toLocaleString('id-ID')+' karakter':'');
+    },
+    async listVoices(){
+      const d=await req('https://api.elevenlabs.io/v1/voices',{headers:this.head()},'ElevenLabs');
+      return (d.voices||[]).map(v=>({
+        id:v.voice_id, name:v.name, provider:'eleven',
+        category:v.category||'', sampleNames:[], at:''
+      }));
+    },
+    async clone(name, desc, labels, samples){
+      const fd=new FormData();
+      fd.append('name', name);
+      if(desc) fd.append('description', desc);
+      const lab={}; Object.entries(labels).forEach(([k,v])=>{ if(v) lab[k]=v; });
+      if(Object.keys(lab).length) fd.append('labels', JSON.stringify(lab));
+      if(state.voice.hapusNoise) fd.append('remove_background_noise','true');
+      samples.forEach(s=>fd.append('files', s.blob, s.name));
+      const d=await req('https://api.elevenlabs.io/v1/voices/add',
+        {method:'POST', headers:this.head(), body:fd}, 'ElevenLabs clone');
+      if(!d.voice_id) throw new Error('ElevenLabs clone: respons tidak memuat voice_id.');
+      return {id:d.voice_id, needVerify:!!d.requires_verification};
+    },
+    async tts(voiceId, text, prev, next){
+      const t=state.tts;
+      const body={
+        text,
+        model_id: state.api.elevenModel||'eleven_multilingual_v2',
+        voice_settings:{
+          stability:+t.stability, similarity_boost:+t.similarity,
+          style:+t.style, use_speaker_boost:!!t.speakerBoost, speed:+t.speed
+        }
+      };
+      if(prev) body.previous_text=prev;
+      if(next) body.next_text=next;
+      if(t.bahasa) body.language_code=t.bahasa;
+      const url='https://api.elevenlabs.io/v1/text-to-speech/'+encodeURIComponent(voiceId)+
+        '?output_format='+encodeURIComponent(t.format||'mp3_44100_128');
+      return await req(url,{method:'POST', headers:this.head({'Content-Type':'application/json'}),
+        body:JSON.stringify(body)}, 'ElevenLabs TTS', 'blob');
+    },
+    async del(id){
+      await req('https://api.elevenlabs.io/v1/voices/'+encodeURIComponent(id),
+        {method:'DELETE', headers:this.head()}, 'ElevenLabs hapus suara', 'none');
+    }
+  },
+
+  fish:{
+    key:()=>state.api.fishKey,
+    head(extra){ return Object.assign({'Authorization':'Bearer '+state.api.fishKey}, extra||{}); },
+    async test(){
+      const d=await req('https://api.fish.audio/model?self=true&page_size=1',{headers:this.head()},'Fish Audio');
+      return 'Terhubung · '+((d.total!=null?d.total:(d.items||[]).length))+' voice model di akun ini';
+    },
+    async listVoices(){
+      const d=await req('https://api.fish.audio/model?self=true&page_size=50',{headers:this.head()},'Fish Audio');
+      return (d.items||[]).map(v=>({
+        id:v._id||v.id, name:v.title||'(tanpa nama)', provider:'fish',
+        category:v.type||'', sampleNames:[], at:v.created_at||''
+      }));
+    },
+    async clone(name, desc, labels, samples){
+      const fd=new FormData();
+      fd.append('type','tts');
+      fd.append('title', name);
+      if(desc) fd.append('description', desc);
+      fd.append('visibility','private');
+      fd.append('train_mode','fast');
+      samples.forEach(s=>fd.append('voices', s.blob, s.name));
+      const d=await req('https://api.fish.audio/model',
+        {method:'POST', headers:this.head(), body:fd}, 'Fish Audio clone');
+      const id=d._id||d.id;
+      if(!id) throw new Error('Fish Audio clone: respons tidak memuat id model.');
+      return {id, needVerify:false};
+    },
+    async tts(voiceId, text){
+      const t=state.tts;
+      const body={
+        text, reference_id:voiceId, format:'mp3', mp3_bitrate:128, normalize:true,
+        latency:'normal', temperature:+t.temperature, top_p:+t.topP,
+        prosody:{ speed:+t.speed, volume:0 }
+      };
+      return await req('https://api.fish.audio/v1/tts',
+        {method:'POST', headers:this.head({'Content-Type':'application/json','model':state.api.fishModel||'s2.1-pro'}),
+         body:JSON.stringify(body)}, 'Fish Audio TTS', 'blob');
+    },
+    async del(id){
+      await req('https://api.fish.audio/model/'+encodeURIComponent(id),
+        {method:'DELETE', headers:this.head()}, 'Fish Audio hapus model', 'none');
+    }
+  },
+
+  /* Web Speech API. Tidak bisa mengkloning dan tidak menghasilkan file —
+     gunanya hanya mendengar naskah sebelum membakar kuota penyedia. */
+  local:{
+    key:()=>'local',
+    async test(){
+      if(!('speechSynthesis' in window)) throw new Error('Browser ini tidak punya Web Speech API.');
+      return 'Tersedia · '+speechSynthesis.getVoices().length+' suara bawaan sistem';
+    },
+    async listVoices(){
+      if(!('speechSynthesis' in window)) return [];
+      return speechSynthesis.getVoices().map((v,i)=>({
+        id:'local:'+(v.voiceURI||v.name||i), name:v.name, provider:'local',
+        category:v.lang+(v.default?' · default':''), sampleNames:[], at:''
+      }));
+    },
+    async clone(){ throw new Error('Mode preview lokal tidak bisa mengkloning suara. Pilih ElevenLabs atau Fish Audio di ⚙ API.'); },
+    async tts(voiceId, text){
+      if(!('speechSynthesis' in window)) throw new Error('Browser ini tidak punya Web Speech API.');
+      const u=new SpeechSynthesisUtterance(text);
+      const want=String(voiceId).slice(6);
+      const v=speechSynthesis.getVoices().find(x=>(x.voiceURI||x.name)===want);
+      if(v){ u.voice=v; u.lang=v.lang; }
+      u.rate=+state.tts.localRate; u.pitch=+state.tts.localPitch;
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+      return null;                       // tidak ada blob yang bisa diunduh
+    },
+    async del(){ throw new Error('Suara bawaan sistem tidak bisa dihapus dari sini.'); }
+  }
+};
+const adapter = () => ADAPTERS[state.api.provider] || ADAPTERS.eleven;
+function needKey(){
+  const p=provider();
+  if(p.id==='local') return false;
+  return !adapter().key();
+}
+
+/* ---------------- analisis audio ---------------- */
+/* Dipakai untuk gambar waveform + cek kualitas sample sebelum dikirim.
+   Sample jelek (clipping, terlalu pelan, banyak hening) adalah penyebab
+   nomor satu clone terdengar meleset, jadi user diberi tahu lebih dulu. */
+async function analyze(blob){
+  const out={dur:NaN, rate:0, channels:0, peaks:[], peak:0, quiet:0};
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) return out;
+  let ctx;
+  try{
+    ctx=new AC();
+    const buf=await ctx.decodeAudioData(await blob.arrayBuffer());
+    const ch=buf.getChannelData(0), N=160;
+    const block=Math.max(1,Math.floor(ch.length/N));
+    const stride=Math.max(1,Math.floor(block/128));
+    let peak=0, quiet=0;
+    for(let i=0;i<N;i++){
+      let m=0; const s=i*block, e=Math.min(ch.length,s+block);
+      for(let j=s;j<e;j+=stride){ const v=Math.abs(ch[j]); if(v>m) m=v; }
+      out.peaks.push(m); if(m>peak) peak=m; if(m<0.02) quiet++;
+    }
+    out.dur=buf.duration; out.rate=buf.sampleRate; out.channels=buf.numberOfChannels;
+    out.peak=peak; out.quiet=quiet/N;
+  }catch(_){
+    /* Format yang tidak bisa didekode masih boleh dipakai — durasi diambil
+       dari elemen <audio> saja, tanpa waveform. */
+    out.dur=await durationOf(blob);
+  }finally{ if(ctx&&ctx.close) try{ ctx.close(); }catch(_){} }
+  return out;
+}
+function durationOf(blob){
+  return new Promise(res=>{
+    const a=document.createElement('audio'), u=URL.createObjectURL(blob);
+    a.preload='metadata';
+    a.onloadedmetadata=()=>{ URL.revokeObjectURL(u); res(a.duration); };
+    a.onerror=()=>{ URL.revokeObjectURL(u); res(NaN); };
+    a.src=u;
+  });
+}
+function drawWave(cv, peaks){
+  const w=cv.clientWidth||190, h=cv.clientHeight||44, dpr=window.devicePixelRatio||1;
+  cv.width=w*dpr; cv.height=h*dpr;
+  const g=cv.getContext('2d'); g.scale(dpr,dpr); g.clearRect(0,0,w,h);
+  if(!peaks||!peaks.length){
+    g.fillStyle='#6B7488'; g.font='10px monospace'; g.textAlign='center';
+    g.fillText('waveform tidak tersedia', w/2, h/2+3); return;
+  }
+  const n=peaks.length, bw=w/n;
+  for(let i=0;i<n;i++){
+    const v=Math.max(0.02, Math.min(1, peaks[i]));
+    const bh=Math.max(1.5, v*(h-6));
+    g.fillStyle = v>0.985 ? '#F1685A' : '#57D0BE';
+    g.fillRect(i*bw, (h-bh)/2, Math.max(1,bw-0.8), bh);
+  }
+}
+
+/* WAV encoder untuk hasil rekaman. MediaRecorder menghasilkan webm/mp4 yang
+   tidak selalu diterima penyedia; WAV 16-bit mono diterima di mana-mana. */
+async function toWav(blob){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) return blob;
+  let ctx;
+  try{
+    ctx=new AC();
+    const buf=await ctx.decodeAudioData(await blob.arrayBuffer());
+    const n=buf.length, rate=buf.sampleRate, chs=buf.numberOfChannels;
+    const mono=new Float32Array(n);
+    for(let c=0;c<chs;c++){ const d=buf.getChannelData(c); for(let i=0;i<n;i++) mono[i]+=d[i]/chs; }
+    const ab=new ArrayBuffer(44+n*2), dv=new DataView(ab);
+    const str=(o,s)=>{ for(let i=0;i<s.length;i++) dv.setUint8(o+i, s.charCodeAt(i)); };
+    str(0,'RIFF'); dv.setUint32(4, 36+n*2, true); str(8,'WAVE'); str(12,'fmt ');
+    dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+    dv.setUint32(24,rate,true); dv.setUint32(28,rate*2,true);
+    dv.setUint16(32,2,true); dv.setUint16(34,16,true);
+    str(36,'data'); dv.setUint32(40, n*2, true);
+    for(let i=0;i<n;i++){
+      const s=Math.max(-1,Math.min(1,mono[i]));
+      dv.setInt16(44+i*2, s<0?s*0x8000:s*0x7FFF, true);
+    }
+    return new Blob([ab],{type:'audio/wav'});
+  }catch(_){ return blob; }
+  finally{ if(ctx&&ctx.close) try{ ctx.close(); }catch(_){} }
+}
+
+/* ---------------- sample ---------------- */
+const MAX_SAMPLES=25, MAX_FILE=25*1024*1024;
+async function addFiles(files){
+  const list=Array.from(files||[]);
+  if(!list.length) return;
+  let added=0;
+  for(const f of list){
+    if(state.samples.length>=MAX_SAMPLES){ toast('Maksimal '+MAX_SAMPLES+' sample.','err'); break; }
+    if(!/^audio\//.test(f.type) && !/\.(mp3|wav|m4a|aac|ogg|flac|webm|mp4)$/i.test(f.name)){
+      toast('Dilewati (bukan file audio): '+f.name,'err'); continue;
+    }
+    if(f.size>MAX_FILE){ toast('Dilewati (>'+fmtSize(MAX_FILE)+'): '+f.name,'err'); continue; }
+    setBusy(true,'Menganalisis '+f.name+'…');
+    const a=await analyze(f);
+    state.samples.push(Object.assign({
+      id:uid(), name:f.name, mime:f.type||'audio/mpeg', size:f.size,
+      blob:f, url:URL.createObjectURL(f)
+    }, a));
+    added++;
+  }
+  setBusy(false);
+  if(added){ toast(added+' sample ditambahkan.','ok'); render(); }
+}
+function removeSample(id){
+  const i=state.samples.findIndex(s=>s.id===id); if(i<0) return;
+  URL.revokeObjectURL(state.samples[i].url);
+  state.samples.splice(i,1); render();
+}
+const totalDur = () => state.samples.reduce((a,s)=>a+(isFinite(s.dur)?s.dur:0),0);
+
+async function startRec(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    toast('Perekaman butuh koneksi aman (https:// atau localhost). Lewat file:// browser memblokir mikrofon — pakai tombol Pilih file.','err');
+    return;
+  }
+  let stream;
+  try{ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}}); }
+  catch(e){ toast('Mikrofon tidak bisa diakses: '+(e.message||e.name),'err'); return; }
+  const mime=['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(m=>window.MediaRecorder&&MediaRecorder.isTypeSupported(m))||'';
+  recChunks=[];
+  recorder=new MediaRecorder(stream, mime?{mimeType:mime}:undefined);
+  recorder.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
+  recorder.onstop=async()=>{
+    stream.getTracks().forEach(t=>t.stop());
+    clearInterval(recTimer); recTimer=null; recorder=null;
+    const raw=new Blob(recChunks,{type:recChunks[0]?recChunks[0].type:'audio/webm'});
+    recChunks=[];
+    if(raw.size<800){ toast('Rekaman terlalu pendek.','err'); render(); return; }
+    setBusy(true,'Mengonversi rekaman ke WAV…');
+    const wav=await toWav(raw);
+    const name='rekaman-'+(state.samples.length+1)+(wav.type==='audio/wav'?'.wav':'.webm');
+    const a=await analyze(wav);
+    state.samples.push(Object.assign({
+      id:uid(), name, mime:wav.type, size:wav.size, blob:wav, url:URL.createObjectURL(wav)
+    }, a));
+    setBusy(false); toast('Rekaman disimpan sebagai sample.','ok'); render();
+  };
+  recorder.start();
+  recStart=Date.now();
+  recTimer=setInterval(()=>{
+    const el=$('#recTime');
+    if(el) el.textContent=fmtDur((Date.now()-recStart)/1000);
+  },500);
+  render();
+}
+function stopRec(){ if(recorder&&recorder.state!=='inactive') recorder.stop(); }
+
+/* ---------------- teks ---------------- */
+function chunkText(t, max=CHUNK_CHARS){
+  const clean=String(t||'').trim();
+  if(clean.length<=max) return clean?[clean]:[];
+  const parts=clean.split(/(?<=[.!?…])\s+/);
+  const out=[]; let cur='';
+  for(let p of parts){
+    while(p.length>max){                       // kalimat tunggal kepanjangan
+      if(cur){ out.push(cur.trim()); cur=''; }
+      let cut=p.lastIndexOf(' ',max); if(cut<max*0.6) cut=max;
+      out.push(p.slice(0,cut).trim()); p=p.slice(cut);
+    }
+    if((cur+' '+p).trim().length>max){ out.push(cur.trim()); cur=p; }
+    else cur=(cur?cur+' ':'')+p;
+  }
+  if(cur.trim()) out.push(cur.trim());
+  return out.filter(Boolean);
+}
+
+/* ---------------- aksi utama ---------------- */
+function setBusy(on, msg){
+  busy=!!on;
+  $('#topbar').classList.toggle('busy', busy);
+  $('#statustext').textContent = msg || (busy?'Memproses…':'Siaga');
+  document.querySelectorAll('[data-busy]').forEach(b=>{ b.disabled=busy; });
+}
+function guard(){
+  if(busy){ toast('Masih ada proses berjalan.','err'); return false; }
+  if(needKey()){ toast('API key '+provider().name+' belum diisi (tombol ⚙ API).','err'); openApi(); return false; }
+  return true;
+}
+
+async function cloneVoice(){
+  /* Gate izin didahulukan dari cek apa pun yang lain — termasuk cek API key,
+     karena guard() membuka modal API dan itu justru menutupi checkbox izinnya.
+     Dicek di sini, bukan hanya lewat tombol yang disabled, supaya tidak bisa
+     dilewati dari console atau lewat project yang dimuat. */
+  if(!state.consent){
+    toast('Centang pernyataan izin dulu — clone hanya untuk suaramu sendiri atau suara yang kamu punya izinnya.','err');
+    return;
+  }
+  if(!provider().clone){
+    toast('Mode "'+provider().name+'" tidak bisa mengkloning. Pilih ElevenLabs atau Fish Audio di ⚙ API.','err');
+    return;
+  }
+  const nama=(state.voice.nama||'').trim();
+  if(!nama){ toast('Beri nama untuk suara ini dulu.','err'); return; }
+  if(!state.samples.length){ toast('Belum ada sample suara.','err'); go('sample'); return; }
+  if(totalDur()<5){ toast('Total sample terlalu pendek (<5 detik).','err'); return; }
+  if(!guard()) return;
+  try{
+    setBusy(true,'Mengunggah '+state.samples.length+' sample & membuat clone…');
+    const r=await adapter().clone(nama, (state.voice.deskripsi||'').trim(), {
+      gender:state.voice.gender, age:state.voice.usia,
+      accent:state.voice.aksen, language:state.voice.bahasa
+    }, state.samples);
+    state.voices=state.voices.filter(v=>!(v.id===r.id&&v.provider===state.api.provider));
+    state.voices.unshift({
+      id:r.id, name:nama, provider:state.api.provider, category:'cloned',
+      sampleNames:state.samples.map(s=>s.name), at:new Date().toISOString()
+    });
+    state.activeVoiceId=r.id;
+    setBusy(false);
+    toast('Voice clone "'+nama+'" siap dipakai.','ok');
+    if(r.needVerify) toast('Penyedia meminta verifikasi pemilik suara sebelum voice ini bisa dipakai penuh. Cek dashboard akunmu.','err');
+    go('tts');
+  }catch(e){ setBusy(false); toast(e.message,'err'); }
+}
+
+async function speak(){
+  if(!guard()) return;
+  const v=state.voices.find(x=>x.id===state.activeVoiceId);
+  if(!v){ toast('Pilih suara dulu.','err'); return; }
+  if(v.provider!==state.api.provider){
+    toast('Suara "'+v.name+'" milik penyedia '+v.provider+', sementara penyedia aktif '+state.api.provider+'. Ganti lewat ⚙ API.','err');
+    return;
+  }
+  const chunks=chunkText(state.tts.text);
+  if(!chunks.length){ toast('Teksnya masih kosong.','err'); return; }
+  try{
+    const ad=adapter(), parts=[];
+    for(let i=0;i<chunks.length;i++){
+      setBusy(true, chunks.length>1 ? 'Membuat suara… bagian '+(i+1)+'/'+chunks.length : 'Membuat suara…');
+      const b=await ad.tts(v.id, chunks[i], chunks[i-1]||'', chunks[i+1]||'');
+      if(b) parts.push(b);
+    }
+    setBusy(false);
+    if(!parts.length){                            // mode lokal: hanya berbunyi
+      pushHistory(v, null, chunks.join(' '));
+      toast('Diputar dengan suara bawaan sistem (tidak menghasilkan file).','ok');
+      render(); return;
+    }
+    /* Potongan MP3 disatukan sebagai satu berkas — frame MP3 bisa dirangkai
+       berurutan, jadi hasilnya tetap satu audio yang utuh saat diputar. */
+    const blob=new Blob(parts,{type:parts[0].type||'audio/mpeg'});
+    pushHistory(v, blob, chunks.join(' '));
+    toast('Audio selesai ('+fmtSize(blob.size)+').','ok');
+    render();
+  }catch(e){ setBusy(false); toast(e.message,'err'); }
+}
+function pushHistory(v, blob, text){
+  const item={
+    id:uid(), voiceName:v.name, provider:v.provider,
+    model: v.provider==='eleven'?state.api.elevenModel : v.provider==='fish'?state.api.fishModel : 'web-speech',
+    text, chars:text.length, at:new Date().toISOString(),
+    local:!blob, mime:blob?blob.type:'', size:blob?blob.size:0,
+    blob:blob||null, url:blob?URL.createObjectURL(blob):''
+  };
+  state.history.unshift(item);
+  while(state.history.length>20){                 // jaga memori tetap waras
+    const old=state.history.pop();
+    if(old.url) URL.revokeObjectURL(old.url);
+  }
+}
+async function replayLocal(id){
+  const h=state.history.find(x=>x.id===id); if(!h) return;
+  try{ await ADAPTERS.local.tts(state.activeVoiceId, h.text); }
+  catch(e){ toast(e.message,'err'); }
+}
+
+async function refreshVoices(silent){
+  if(needKey()){ if(!silent) toast('API key belum diisi (⚙ API).','err'); return; }
+  try{
+    if(!silent) setBusy(true,'Memuat daftar suara…');
+    const list=await adapter().listVoices();
+    const mine=state.voices.filter(v=>v.provider!==state.api.provider);
+    const known=new Map(state.voices.map(v=>[v.provider+':'+v.id, v]));
+    state.voices=mine.concat(list.map(v=>{
+      const old=known.get(v.provider+':'+v.id);
+      return old ? Object.assign({}, v, {sampleNames:old.sampleNames, at:old.at||v.at}) : v;
+    }));
+    voicesLoaded=true;
+    setBusy(false);
+    if(!silent) toast(list.length+' suara dimuat dari '+provider().name+'.','ok');
+    render();
+  }catch(e){ setBusy(false); if(!silent) toast(e.message,'err'); }
+}
+async function deleteVoice(id){
+  const v=state.voices.find(x=>x.id===id); if(!v) return;
+  if(!confirm('Hapus suara "'+v.name+'" dari akun '+v.provider+'? Tindakan ini permanen di sisi penyedia.')) return;
+  try{
+    setBusy(true,'Menghapus suara…');
+    await ADAPTERS[v.provider].del(id);
+    state.voices=state.voices.filter(x=>!(x.id===id&&x.provider===v.provider));
+    if(state.activeVoiceId===id) state.activeVoiceId='';
+    setBusy(false); toast('Suara dihapus.','ok'); render();
+  }catch(e){ setBusy(false); toast(e.message,'err'); }
+}
+
+/* ---------------- render: rail ---------------- */
+function stepDone(id){
+  if(id==='sample')  return state.samples.length>0;
+  if(id==='clone')   return state.voices.some(v=>v.category==='cloned');
+  if(id==='tts')     return state.history.length>0;
+  if(id==='library') return state.voices.length>0;
+  return false;
+}
+function renderRail(){
+  $('#rail').innerHTML=
+    '<div class="railtitle">Alur kerja</div>'+
+    STEPS.map(s=>
+      '<button class="step '+(currentStep===s.id?'active':'')+'" data-step="'+s.id+'">'+
+        '<span class="no">'+s.no+'</span><span class="lbl">'+esc(s.label)+'</span>'+
+        '<span class="led '+(stepDone(s.id)?'done':'')+'"></span>'+
+      '</button>').join('')+
+    '<div class="railnote">Penyedia aktif: <b>'+esc(provider().name)+'</b>.<br>'+
+    'Tidak ada penyimpanan otomatis — pakai <b>💾 Simpan</b> agar daftar suara tidak hilang saat refresh.</div>';
+}
+function go(id){ currentStep=id; render(); document.querySelector('main').scrollTop=0; }
+
+/* ---------------- render: panel ---------------- */
+function renderPanel(){
+  const m=$('#main');
+  if(currentStep==='sample')  m.innerHTML=viewSample();
+  if(currentStep==='clone')   m.innerHTML=viewClone();
+  if(currentStep==='tts')     m.innerHTML=viewTTS();
+  if(currentStep==='library') m.innerHTML=viewLibrary();
+  document.querySelectorAll('canvas[data-peaks]').forEach(cv=>{
+    const s=state.samples.find(x=>x.id===cv.dataset.peaks);
+    drawWave(cv, s&&s.peaks);
+  });
+}
+function head(eyebrow, title, desc){
+  return '<div class="panelhead"><div class="eyebrow">'+esc(eyebrow)+'</div>'+
+    '<h2>'+esc(title)+'</h2><p>'+desc+'</p></div>';
+}
+
+function viewSample(){
+  const rec=!!recorder;
+  let h=head('Langkah 01','Sample Suara',
+    'Unggah atau rekam suara asli yang mau dikloning. Kualitas sample menentukan hampir seluruh hasil: '+
+    '<b>satu penutur saja</b>, ruangan sunyi, tanpa musik latar, tanpa efek.');
+
+  h+='<div class="card"><h3>Ambil sample</h3>'+
+    '<div class="drop" id="drop">'+
+      '<div class="big">Tarik file audio ke sini</div>'+
+      '<p>MP3, WAV, M4A, OGG, atau FLAC. Maksimal '+MAX_SAMPLES+' file, '+fmtSize(MAX_FILE)+' per file. '+
+      'Target ideal: total 1–3 menit bicara bersih.</p>'+
+      '<div class="row">'+
+        '<button class="btn primary" data-act="pick" data-busy>📁 Pilih file</button>'+
+        (rec
+          ? '<button class="btn rec" data-act="stoprec">⏹ Stop <span class="rectimer"><span class="dot"></span><span id="recTime">0:00</span></span></button>'
+          : '<button class="btn" data-act="rec" data-busy>🎙 Rekam dari mikrofon</button>')+
+      '</div>'+
+    '</div>'+
+    '<div class="hint">Perekaman mikrofon hanya jalan di konteks aman (https:// atau localhost). '+
+    'Kalau file ini dibuka lewat <span style="font-family:var(--mono)">file://</span>, gunakan tombol Pilih file.</div>'+
+  '</div>';
+
+  if(!state.samples.length){
+    h+='<div class="empty"><div class="big">Belum ada sample</div>'+
+       '<p>Tambahkan minimal satu rekaman. Untuk instant cloning, 30 detik sudah jalan, '+
+       'tapi 1–3 menit memberi hasil yang jauh lebih mirip.</p></div>';
+    return h;
+  }
+
+  const tot=totalDur();
+  h+='<div class="card"><h3>Sample terkumpul '+
+     '<span class="stamp '+(tot>=30?'done':'warn')+'">'+state.samples.length+' file · '+fmtDur(tot)+'</span></h3>'+
+     '<div class="samples">'+state.samples.map(s=>{
+        const flags=[];
+        if(s.peak>0.985) flags.push('<span class="flag warn">kemungkinan clipping</span>');
+        else if(s.peak && s.peak<0.12) flags.push('<span class="flag warn">volume terlalu pelan</span>');
+        if(s.quiet>0.5) flags.push('<span class="flag warn">'+Math.round(s.quiet*100)+'% hening</span>');
+        if(isFinite(s.dur)&&s.dur<5) flags.push('<span class="flag warn">terlalu pendek</span>');
+        if(!flags.length) flags.push('<span class="flag ok">terlihat bersih</span>');
+        return '<div class="sample">'+
+          '<canvas class="wave" data-peaks="'+s.id+'"></canvas>'+
+          '<div class="meta"><div class="nm">'+esc(s.name)+'</div>'+
+            '<div class="sub">'+fmtDur(s.dur)+' · '+fmtSize(s.size)+
+            (s.rate?' · '+(s.rate/1000).toFixed(1)+' kHz · '+(s.channels>1?'stereo':'mono'):'')+'</div>'+
+            '<div class="flags">'+flags.join('')+'</div>'+
+          '</div>'+
+          '<div class="acts">'+
+            '<audio controls preload="none" src="'+s.url+'"></audio>'+
+            '<button class="btn small danger" data-act="delsample" data-id="'+s.id+'">Hapus</button>'+
+          '</div></div>';
+     }).join('')+'</div>'+
+     '<div class="toolbar" style="margin:14px 0 0">'+
+       '<button class="btn small" data-act="pick" data-busy>+ Tambah lagi</button>'+
+       '<button class="btn small danger" data-act="clearsamples">Kosongkan semua</button>'+
+       '<span class="spacer"></span>'+
+       '<button class="btn primary" data-act="goclone">Lanjut ke Buat Clone →</button>'+
+     '</div></div>';
+
+  h+='<div class="card"><h3>Cek kelayakan</h3>'+checks(tot)+
+     '<div class="hint">Dua hal yang tidak bisa dideteksi otomatis: apakah cuma ada satu penutur, '+
+     'dan apakah ada musik latar. Dengarkan ulang sebelum lanjut.</div></div>';
+  return h;
+}
+function checks(tot){
+  const c=[];
+  const row=(k,s,t)=>'<div class="check '+k+'"><span class="sym">'+s+'</span><span>'+t+'</span></div>';
+  if(tot<10) c.push(row('err','×','Total durasi '+fmtDur(tot)+' — terlalu pendek. Tambah sample sampai minimal 30 detik.'));
+  else if(tot<30) c.push(row('warn','!','Total durasi '+fmtDur(tot)+' — bisa jalan, tapi 1–3 menit hasilnya jauh lebih mirip.'));
+  else if(tot>600) c.push(row('warn','!','Total durasi '+fmtDur(tot)+' — di atas 10 menit tidak menambah kemiripan, hanya memperlambat unggah.'));
+  else c.push(row('ok','✓','Total durasi '+fmtDur(tot)+' — sudah di rentang ideal.'));
+
+  const clip=state.samples.filter(s=>s.peak>0.985).length;
+  if(clip) c.push(row('warn','!',clip+' sample menyentuh batas atas (clipping). Rekam ulang dengan gain lebih rendah kalau suaranya pecah.'));
+  else c.push(row('ok','✓','Tidak ada indikasi clipping.'));
+
+  const quiet=state.samples.filter(s=>s.quiet>0.5).length;
+  if(quiet) c.push(row('warn','!',quiet+' sample lebih dari separuhnya hening. Potong bagian diam agar model tidak belajar dari kekosongan.'));
+  else c.push(row('ok','✓','Rasio hening wajar.'));
+
+  c.push(row(state.consent?'ok':'warn', state.consent?'✓':'!',
+    state.consent ? 'Pernyataan izin sudah dicentang.'
+                  : 'Pernyataan izin belum dicentang — wajib sebelum clone bisa dibuat (langkah 02).'));
+  return c.join('');
+}
+
+function viewClone(){
+  const v=state.voice, p=provider();
+  let h=head('Langkah 02','Buat Voice Clone',
+    'Sample dikirim ke <b>'+esc(p.name)+'</b> untuk membuat voice baru di akunmu. '+
+    'Yang kembali cuma sebuah <span style="font-family:var(--mono)">voice id</span> — itulah yang dipakai di langkah berikutnya.');
+
+  h+='<label class="consent"><input type="checkbox" data-path="consent" '+(state.consent?'checked':'')+'>'+
+     '<span><b>Suara ini milikku, atau aku punya izin dari pemiliknya.</b>'+
+     'Mengkloning suara orang lain tanpa izin melanggar aturan setiap penyedia dan bisa melanggar hukum. '+
+     'Jangan pakai untuk menyamar sebagai orang lain, menipu, atau melewati verifikasi suara.</span></label>';
+
+  if(!p.clone){
+    h+='<div class="check err"><span class="sym">×</span><span>Mode <b>'+esc(p.name)+'</b> tidak bisa mengkloning suara — '+
+       'Web Speech hanya memutar suara bawaan sistem. Pilih ElevenLabs atau Fish Audio lewat tombol ⚙ API.</span></div>';
+  }
+  if(!state.samples.length){
+    h+='<div class="check err"><span class="sym">×</span><span>Belum ada sample. '+
+       '<a href="#" data-act="gosample">Kembali ke langkah 01</a>.</span></div>';
+  }
+
+  h+='<div class="card"><h3>Identitas suara</h3><div class="kvgrid">'+
+    '<div class="kv"><label>Nama suara *</label>'+
+      '<input data-path="voice.nama" value="'+esc(v.nama)+'" placeholder="mis. Narator Vanced"></div>'+
+    '<div class="kv"><label>Gender</label><select data-path="voice.gender">'+
+      opts(['','male','female','neutral'], v.gender, {'':'— tidak diisi —',male:'Pria',female:'Wanita',neutral:'Netral'})+'</select></div>'+
+    '<div class="kv"><label>Rentang usia</label><select data-path="voice.usia">'+
+      opts(['','young','middle_aged','old'], v.usia, {'':'— tidak diisi —',young:'Muda',middle_aged:'Paruh baya',old:'Tua'})+'</select></div>'+
+    '<div class="kv"><label>Aksen / logat</label>'+
+      '<input data-path="voice.aksen" value="'+esc(v.aksen)+'" placeholder="mis. indonesian, jawa, sunda"></div>'+
+    '<div class="kv"><label>Kode bahasa</label>'+
+      '<input data-path="voice.bahasa" value="'+esc(v.bahasa)+'" placeholder="id"></div>'+
+    '<div class="kv"><label>Bersihkan noise latar</label><select data-path="voice.hapusNoise">'+
+      opts(['true','false'], String(v.hapusNoise), {'true':'Ya — penyedia yang bersihkan','false':'Tidak — kirim apa adanya'})+'</select>'+
+      '<div class="hint">Hanya berlaku di ElevenLabs.</div></div>'+
+    '<div class="kv full"><label>Deskripsi (opsional)</label>'+
+      '<textarea data-path="voice.deskripsi" placeholder="mis. suara hangat, tempo sedang, untuk voice over iklan produk">'+esc(v.deskripsi)+'</textarea></div>'+
+  '</div></div>';
+
+  h+='<div class="card"><h3>Yang akan dikirim</h3>'+
+    (state.samples.length
+      ? '<div class="hint" style="margin:0 0 10px">'+state.samples.length+' file · total '+fmtDur(totalDur())+
+        ' · '+fmtSize(state.samples.reduce((a,s)=>a+s.size,0))+' menuju '+esc(p.name)+'</div>'+
+        '<div class="samples">'+state.samples.map(s=>
+          '<div class="sample" style="grid-template-columns:1fr auto"><div class="meta">'+
+          '<div class="nm">'+esc(s.name)+'</div><div class="sub">'+fmtDur(s.dur)+' · '+fmtSize(s.size)+'</div>'+
+          '</div><div class="acts"><audio controls preload="none" src="'+s.url+'"></audio></div></div>').join('')+'</div>'
+      : '<div class="hint" style="margin:0">Belum ada sample yang bisa dikirim.</div>')+
+    '<div class="toolbar" style="margin:14px 0 0">'+
+      '<button class="btn" data-act="gosample">← Ubah sample</button>'+
+      '<span class="spacer"></span>'+
+      '<button class="btn primary" data-act="clone" data-busy '+
+        ((!state.consent||!state.samples.length||!p.clone)?'disabled':'')+'>⚡ Buat voice clone</button>'+
+    '</div>'+
+    '<div class="hint">Instant cloning biasanya selesai dalam beberapa detik. '+
+    'Voice tersimpan di akun penyedia — bukan di file ini — jadi tetap ada setelah halaman ditutup.</div>'+
+  '</div>';
+  return h;
+}
+function opts(values, sel, labels){
+  return values.map(v=>'<option value="'+esc(v)+'"'+(String(sel)===String(v)?' selected':'')+'>'+
+    esc(labels&&labels[v]!=null?labels[v]:v)+'</option>').join('');
+}
+
+function viewTTS(){
+  const t=state.tts, p=provider();
+  const mine=state.voices.filter(v=>v.provider===state.api.provider);
+  let h=head('Langkah 03','Text to Speech',
+    'Tulis naskah, pilih suara hasil clone, lalu hasilkan audionya. '+
+    'Teks panjang otomatis dipotong per '+CHUNK_CHARS+' karakter dan disambung jadi satu file.');
+
+  h+='<div class="card"><h3>Pilih suara'+
+     '<span class="stamp">'+esc(p.name)+'</span></h3>';
+  if(!mine.length){
+    h+='<div class="empty" style="padding:22px"><div class="big">Belum ada suara di penyedia ini</div>'+
+       '<p>Buat clone di langkah 02, atau muat daftar suara yang sudah ada di akunmu.</p>'+
+       '<button class="btn" data-act="refresh" data-busy>↻ Muat daftar suara</button></div>';
+  }else{
+    h+='<div class="voicegrid">'+mine.map(v=>
+      '<button class="voice '+(state.activeVoiceId===v.id?'sel':'')+'" data-act="pickvoice" data-id="'+esc(v.id)+'">'+
+      '<b>'+esc(v.name)+'</b><span>'+esc(v.category||'voice')+'</span>'+
+      '<span>'+esc(String(v.id).slice(0,20))+'</span></button>').join('')+'</div>'+
+      '<div class="toolbar" style="margin:12px 0 0"><button class="btn small" data-act="refresh" data-busy>↻ Muat ulang</button></div>';
+  }
+  h+='</div>';
+
+  const chars=(t.text||'').length, chunks=chunkText(t.text).length;
+  h+='<div class="card"><h3>Naskah</h3>'+
+    '<textarea data-path="tts.text" id="ttsText" style="min-height:170px" '+
+      'placeholder="Tulis apa yang ingin diucapkan…">'+esc(t.text)+'</textarea>'+
+    '<div class="counter" id="ttsCount">'+chars.toLocaleString('id-ID')+' karakter'+
+      (chunks>1?' · '+chunks+' bagian':'')+'</div>'+
+    '<div class="toolbar" style="margin:12px 0 0">'+
+      '<button class="btn primary" data-act="speak" data-busy '+(state.activeVoiceId?'':'disabled')+'>🔊 Hasilkan suara</button>'+
+      '<button class="btn" data-act="cleartext">Kosongkan</button>'+
+      '<span class="spacer"></span>'+
+      (p.id==='eleven'?'<span class="stamp">± '+chars.toLocaleString('id-ID')+' kredit</span>':'')+
+    '</div></div>';
+
+  h+='<div class="card"><h3>Pengaturan suara</h3>'+settings(p)+'</div>';
+
+  h+='<div class="card"><h3>Hasil'+(state.history.length?'<span class="stamp">'+state.history.length+' audio</span>':'')+'</h3>';
+  if(!state.history.length){
+    h+='<div class="hint" style="margin:0">Audio yang dihasilkan muncul di sini, lengkap dengan tombol unduh.</div>';
+  }else{
+    h+='<div class="hist">'+state.history.map(it=>
+      '<div class="hitem"><div class="hh">'+
+        '<span class="hv">'+esc(it.voiceName)+'</span>'+
+        '<span class="hm">'+esc(it.provider)+' · '+esc(it.model)+' · '+it.chars.toLocaleString('id-ID')+' karakter'+
+        (it.size?' · '+fmtSize(it.size):'')+'</span>'+
+        '<span class="spacer" style="flex:1"></span>'+
+        '<span class="hm">'+esc(new Date(it.at).toLocaleTimeString('id-ID'))+'</span>'+
+      '</div>'+
+      '<div class="ht">'+esc(it.text.slice(0,300))+(it.text.length>300?'…':'')+'</div>'+
+      (it.local
+        ? '<div class="ha"><button class="btn small" data-act="replay" data-id="'+it.id+'">▶ Putar ulang</button>'+
+          '<span class="hm" style="align-self:center">Mode lokal tidak menghasilkan file yang bisa diunduh.</span></div>'
+        : '<audio controls src="'+it.url+'"></audio>'+
+          '<div class="ha"><button class="btn small" data-act="dl" data-id="'+it.id+'">⬇ Unduh</button>'+
+          '<button class="btn small ghost" data-act="reuse" data-id="'+it.id+'">Muat teksnya lagi</button></div>')+
+      '</div>').join('')+'</div>';
+  }
+  h+='</div>';
+  return h;
+}
+function settings(p){
+  const t=state.tts;
+  const sl=(path,label,min,max,step,val,hint)=>
+    '<div class="slider"><div class="top"><label>'+esc(label)+'</label>'+
+    '<span class="val" data-val="'+path+'">'+val+'</span></div>'+
+    '<input type="range" data-path="'+path+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+val+'">'+
+    (hint?'<div class="hint">'+hint+'</div>':'')+'</div>';
+
+  if(p.id==='eleven'){
+    return '<div class="kvgrid" style="margin-bottom:14px">'+
+      '<div class="kv"><label>Model</label><select data-path="api.elevenModel">'+
+        ELEVEN_MODELS.map(([v,l])=>'<option value="'+v+'"'+(state.api.elevenModel===v?' selected':'')+'>'+esc(l)+'</option>').join('')+
+      '</select></div>'+
+      '<div class="kv"><label>Format keluaran</label><select data-path="tts.format">'+
+        ELEVEN_FORMATS.map(([v,l])=>'<option value="'+v+'"'+(t.format===v?' selected':'')+'>'+esc(l)+'</option>').join('')+
+      '</select></div>'+
+      '<div class="kv"><label>Kode bahasa (opsional)</label>'+
+        '<input data-path="tts.bahasa" value="'+esc(t.bahasa)+'" placeholder="id — kosongkan untuk deteksi otomatis">'+
+        '<div class="hint">Hanya dipatuhi model Turbo/Flash v2.5.</div></div>'+
+      '<div class="kv"><label>Speaker boost</label><select data-path="tts.speakerBoost">'+
+        opts(['true','false'], String(t.speakerBoost), {'true':'Aktif — lebih mirip sample','false':'Nonaktif — lebih cepat'})+'</select></div>'+
+    '</div>'+
+    sl('tts.stability','Stability',0,1,0.05,t.stability,'Rendah = ekspresif tapi bisa berubah-ubah. Tinggi = datar tapi konsisten.')+
+    sl('tts.similarity','Similarity boost',0,1,0.05,t.similarity,'Seberapa ketat mengikuti sample. Terlalu tinggi ikut menyalin noise sample.')+
+    sl('tts.style','Style exaggeration',0,1,0.05,t.style,'Naikkan untuk gaya bicara lebih dramatis. Menambah latensi.')+
+    sl('tts.speed','Kecepatan bicara',0.7,1.2,0.05,t.speed);
+  }
+  if(p.id==='fish'){
+    return '<div class="kvgrid" style="margin-bottom:14px">'+
+      '<div class="kv"><label>Model</label>'+
+        '<input data-path="api.fishModel" value="'+esc(state.api.fishModel)+'" placeholder="s2.1-pro · s2-pro · s1"></div>'+
+    '</div>'+
+    sl('tts.temperature','Temperature',0,1,0.05,t.temperature,'Makin tinggi makin bervariasi antar-generate.')+
+    sl('tts.topP','Top P',0,1,0.05,t.topP)+
+    sl('tts.speed','Kecepatan bicara',0.5,2,0.05,t.speed);
+  }
+  return '<div class="hint" style="margin:0 0 12px">Mode lokal memakai suara bawaan sistem operasi. '+
+    'Tidak ada kloning, tidak ada file yang dihasilkan — hanya untuk mendengar naskah lebih dulu.</div>'+
+    sl('tts.localRate','Kecepatan',0.5,2,0.1,t.localRate)+
+    sl('tts.localPitch','Pitch',0,2,0.1,t.localPitch);
+}
+
+function viewLibrary(){
+  let h=head('Langkah 04','Voice Library',
+    'Semua suara di akun penyedia yang sedang aktif. Voice hidup di sisi penyedia, '+
+    'jadi menghapusnya di sini berarti menghapusnya permanen di akunmu.');
+
+  h+='<div class="toolbar">'+
+    '<button class="btn" data-act="refresh" data-busy>↻ Muat dari '+esc(provider().name)+'</button>'+
+    '<span class="spacer"></span>'+
+    '<button class="btn small" data-act="api">⚙ Ganti penyedia</button></div>';
+
+  const byProv={};
+  state.voices.forEach(v=>{ (byProv[v.provider]=byProv[v.provider]||[]).push(v); });
+  if(!state.voices.length){
+    h+='<div class="empty"><div class="big">Belum ada suara</div>'+
+       '<p>Buat voice clone di langkah 02, atau muat daftar suara yang sudah ada di akun penyedia.</p></div>';
+    return h;
+  }
+  Object.keys(byProv).forEach(pid=>{
+    const nm=(PROVIDERS.find(p=>p.id===pid)||{name:pid}).name;
+    h+='<div class="card"><h3>'+esc(nm)+'<span class="stamp">'+byProv[pid].length+' suara</span></h3>'+
+      '<div class="voicegrid">'+byProv[pid].map(v=>
+        '<div class="voice '+(state.activeVoiceId===v.id?'sel':'')+'">'+
+          (pid!=='local'?'<button class="x" data-act="delvoice" data-id="'+esc(v.id)+'" title="Hapus suara">✕</button>':'')+
+          '<b>'+esc(v.name)+'</b>'+
+          '<span>'+esc(v.category||'voice')+(v.at?' · '+esc(String(v.at).slice(0,10)):'')+'</span>'+
+          '<span>'+esc(String(v.id).slice(0,22))+'</span>'+
+          (v.sampleNames&&v.sampleNames.length?'<span>dari: '+esc(v.sampleNames.slice(0,2).join(', '))+
+            (v.sampleNames.length>2?' +'+(v.sampleNames.length-2):'')+'</span>':'')+
+          '<div style="margin-top:8px"><button class="btn small" data-act="usevoice" data-id="'+esc(v.id)+'">Pakai untuk TTS</button></div>'+
+        '</div>').join('')+'</div></div>';
+  });
+  return h;
+}
+
+function render(){ renderRail(); renderPanel(); }
+
+/* ---------------- project save/load ---------------- */
+function saveProject(){
+  /* Kredensial dihapus berdasarkan BENTUK nama field, bukan daftar nama —
+     sama seperti index.html. Provider baru otomatis aman selama field key-nya
+     diberi nama berakhiran "Key". Blob audio sengaja tidak ikut: file project
+     harus tetap ringan, dan voice id di penyedia sudah cukup untuk melanjutkan. */
+  const snap={
+    api:Object.fromEntries(Object.entries(state.api).map(([k,v])=>[k, /key$/i.test(k)?'':v])),
+    consent:state.consent,
+    voice:state.voice,
+    voices:state.voices.filter(v=>v.provider!=='local'),
+    activeVoiceId:state.activeVoiceId,
+    tts:state.tts,
+    history:state.history.map(h=>({
+      id:h.id, voiceName:h.voiceName, provider:h.provider, model:h.model,
+      text:h.text, chars:h.chars, at:h.at, local:h.local, size:h.size
+    })),
+    samples:state.samples.map(s=>({name:s.name, size:s.size, dur:s.dur}))
+  };
+  download(slug(state.voice.nama||'voice-clone')+'-voice-project.json',
+    JSON.stringify(snap,null,2),'application/json');
+  toast('Project disimpan (API key dan file audio tidak ikut).','ok');
+}
+function loadProject(file){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const d=JSON.parse(rd.result);
+      const keepApi=state.api;
+      /* Whitelist: field top-level baru harus didaftarkan di sini, kalau tidak
+         ia tidak akan pernah ter-restore. */
+      ['consent','voice','voices','activeVoiceId','tts','history'].forEach(k=>{ if(d[k]!=null) state[k]=d[k]; });
+      state.api=keepApi;                       // key aktif tidak boleh ditimpa file
+      state.history.forEach(h=>{ h.url=''; h.blob=null; h.local=true; });
+      voicesLoaded=false;
+      toast('Project dimuat. Sample audio tidak ikut tersimpan — unggah ulang kalau mau clone baru.','ok');
+      go('tts');
+    }catch(e){ toast('File project tidak valid.','err'); }
+  };
+  rd.readAsText(file);
+}
+
+/* ---------------- API modal ---------------- */
+function openApi(){ renderApiModal(); $('#apiOverlay').classList.add('open'); }
+function renderApiModal(){
+  $('#provGrid').innerHTML=PROVIDERS.map(p=>
+    '<button class="prov '+(state.api.provider===p.id?'sel':'')+'" data-prov="'+p.id+'">'+
+    '<b>'+esc(p.name)+'</b><span>'+esc(p.desc)+'</span></button>').join('');
+  const a=state.api; let f='', note='';
+  if(a.provider==='eleven'){
+    f='<div class="field"><label>ElevenLabs API Key</label>'+
+      '<input type="password" data-path="api.elevenKey" value="'+esc(a.elevenKey)+'" placeholder="sk_…"></div>'+
+      '<div class="field"><label>Model TTS default</label><select data-path="api.elevenModel">'+
+        ELEVEN_MODELS.map(([v,l])=>'<option value="'+v+'"'+(a.elevenModel===v?' selected':'')+'>'+esc(l)+'</option>').join('')+
+      '</select></div>';
+    note='Key dibuat di elevenlabs.io → Profile → API Keys. Instant Voice Cloning butuh paket berbayar '+
+         '(Starter ke atas); akun gratis tetap bisa memakai suara bawaan untuk TTS.';
+  }
+  if(a.provider==='fish'){
+    f='<div class="field"><label>Fish Audio API Key</label>'+
+      '<input type="password" data-path="api.fishKey" value="'+esc(a.fishKey)+'" placeholder="…"></div>'+
+      '<div class="field"><label>Model</label>'+
+      '<input data-path="api.fishModel" value="'+esc(a.fishModel)+'" placeholder="s2.1-pro"></div>';
+    note='Key dibuat di fish.audio → Developer → API Keys. Sebagian browser memblokir permintaan ini '+
+         'lewat CORS; kalau muncul error "permintaan tidak sampai", pakai ElevenLabs atau jalankan lewat proxy sendiri.';
+  }
+  if(a.provider==='local'){
+    f='<div class="hint" style="margin:0">Tidak butuh key. Suara diambil dari sistem operasi lewat Web Speech API.</div>';
+    note='Mode ini TIDAK mengkloning suara — hasilnya suara robot bawaan OS, dan audionya tidak bisa diunduh. '+
+         'Gunakan untuk mengecek naskah sebelum memakai kuota penyedia berbayar.';
+  }
+  $('#provFields').innerHTML=f;
+  $('#provNote').innerHTML=esc(note)+'<br><br>Key hanya ada di memori tab ini, dikirim hanya ke penyedia yang bersangkutan, '+
+    'dan tidak pernah ikut ke file project yang kamu unduh.';
+}
+async function testApi(){
+  try{
+    setBusy(true,'Menguji koneksi…');
+    const msg=await adapter().test();
+    setBusy(false); toast(provider().name+': '+msg,'ok');
+  }catch(e){ setBusy(false); toast(e.message,'err'); }
+}
+
+/* ---------------- events ---------------- */
+document.addEventListener('click', async e=>{
+  const step=e.target.closest('[data-step]');
+  if(step){ go(step.dataset.step); return; }
+  const prov=e.target.closest('[data-prov]');
+  if(prov){
+    state.api.provider=prov.dataset.prov; voicesLoaded=false;
+    renderApiModal(); render(); return;
+  }
+  const b=e.target.closest('[data-act]');
+  if(!b) return;
+  const id=b.dataset.id;
+  switch(b.dataset.act){
+    case 'save': saveProject(); break;
+    case 'load': $('#projInput').click(); break;
+    case 'api': openApi(); break;
+    case 'closeapi': $('#apiOverlay').classList.remove('open'); render(); break;
+    case 'testapi': testApi(); break;
+    case 'pick': $('#audioInput').click(); break;
+    case 'rec': startRec(); break;
+    case 'stoprec': stopRec(); break;
+    case 'delsample': removeSample(id); break;
+    case 'clearsamples':
+      state.samples.forEach(s=>URL.revokeObjectURL(s.url));
+      state.samples=[]; render(); break;
+    case 'gosample': e.preventDefault(); go('sample'); break;
+    case 'goclone': go('clone'); break;
+    case 'clone': cloneVoice(); break;
+    case 'refresh': refreshVoices(false); break;
+    case 'pickvoice': state.activeVoiceId=id; render(); break;
+    case 'usevoice': {
+      const v=state.voices.find(x=>x.id===id);
+      if(v && v.provider!==state.api.provider){ state.api.provider=v.provider; voicesLoaded=false; }
+      state.activeVoiceId=id; go('tts'); break;
+    }
+    case 'delvoice': deleteVoice(id); break;
+    case 'speak': speak(); break;
+    case 'cleartext': state.tts.text=''; render(); break;
+    case 'replay': replayLocal(id); break;
+    case 'reuse': {
+      const h=state.history.find(x=>x.id===id);
+      if(h){ state.tts.text=h.text; go('tts'); }
+      break;
+    }
+    case 'dl': {
+      const h=state.history.find(x=>x.id===id);
+      if(h&&h.blob) download(slug(h.voiceName)+'-'+h.id+(/(wav)/.test(h.mime)?'.wav':'.mp3'), h.blob);
+      break;
+    }
+  }
+});
+
+/* Binding data-path: state di-update tiap ketikan, tapi TIDAK me-render ulang
+   (fokus dan posisi kursor harus tetap). Yang perlu ikut berubah cuma label
+   angka slider dan penghitung karakter. */
+document.addEventListener('input', e=>{
+  const p=e.target.dataset.path; if(!p) return;
+  let v;
+  if(e.target.type==='checkbox') v=e.target.checked;
+  else if(e.target.type==='range'||e.target.type==='number') v=+e.target.value;
+  else if(e.target.value==='true'||e.target.value==='false') v=e.target.value==='true';
+  else v=e.target.value;
+  setPath(state, p, v);
+  const val=document.querySelector('[data-val="'+p+'"]');
+  if(val) val.textContent=v;
+  if(p==='tts.text'){
+    const c=$('#ttsCount');
+    if(c){
+      const n=String(v).length, k=chunkText(v).length;
+      c.textContent=n.toLocaleString('id-ID')+' karakter'+(k>1?' · '+k+' bagian':'');
+    }
+  }
+});
+document.addEventListener('change', e=>{
+  const p=e.target.dataset.path;
+  if(!p) return;
+  /* Perubahan yang mengubah bentuk panel (checkbox izin, ganti model, ganti
+     penyedia) baru dirender ulang di sini, bukan saat mengetik. */
+  if(p==='consent'||p.startsWith('api.')||p==='voice.hapusNoise') render();
+});
+
+$('#projInput').addEventListener('change', e=>{
+  if(e.target.files[0]) loadProject(e.target.files[0]);
+  e.target.value='';
+});
+$('#audioInput').addEventListener('change', e=>{ addFiles(e.target.files); e.target.value=''; });
+
+/* drag & drop */
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev, e=>{
+  if(!e.dataTransfer||!Array.from(e.dataTransfer.types||[]).includes('Files')) return;
+  e.preventDefault();
+  if(ev==='dragenter') dropDepth++;
+  const d=$('#drop'); if(d) d.classList.add('over');
+}));
+document.addEventListener('dragleave', ()=>{
+  if(--dropDepth<=0){ dropDepth=0; const d=$('#drop'); if(d) d.classList.remove('over'); }
+});
+document.addEventListener('drop', e=>{
+  if(!e.dataTransfer) return;
+  e.preventDefault(); dropDepth=0;
+  const d=$('#drop'); if(d) d.classList.remove('over');
+  if(e.dataTransfer.files&&e.dataTransfer.files.length){
+    if(currentStep!=='sample') currentStep='sample';
+    addFiles(e.dataTransfer.files);
+  }
+});
+$('#apiOverlay').addEventListener('click', e=>{
+  if(e.target.id==='apiOverlay'){ $('#apiOverlay').classList.remove('open'); render(); }
+});
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape') $('#apiOverlay').classList.remove('open');
+});
+window.addEventListener('beforeunload', e=>{
+  if(state.samples.length||state.history.length){ e.preventDefault(); e.returnValue=''; }
+});
+if('speechSynthesis' in window){
+  speechSynthesis.onvoiceschanged=()=>{ if(state.api.provider==='local'&&!voicesLoaded) refreshVoices(true); };
+}
+
+/* ---------------- boot ---------------- */
+render();
+if(!needKey()) refreshVoices(true);
+</script>
+</body>
+</html>
