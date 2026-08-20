@@ -442,7 +442,14 @@ async function req(url, opts, label, want='json'){
       }
     }catch(_){}
     lastMsg=msg;
-    if(r.status===401||r.status===403) throw new Error(label+': '+msg+' — cek API key lewat tombol ⚙ API.');
+    if(r.status===401||r.status===403){
+      /* Dua kegagalan yang sangat berbeda dan mudah tertukar: key-nya salah,
+         atau key-nya benar tapi cakupan izinnya dipangkas saat dibuat. */
+      if(/permission|scope|not authoriz|forbidden/i.test(msg))
+        throw new Error(label+': '+msg+' — key-nya sendiri valid, yang kurang cuma izinnya. '+
+          'Buka dashboard penyedia, edit key ini, lalu aktifkan izin yang diminta di pesan itu (atau beri akses penuh).');
+      throw new Error(label+': '+msg+' — cek API key lewat tombol ⚙ API.');
+    }
     if(r.status===413) throw new Error(label+': file terlalu besar untuk penyedia ini. Potong sample-nya.');
     if(!(r.status===429||r.status>=500||TRANSIENT.test(msg))) throw new Error(label+': '+msg);
   }
@@ -463,11 +470,25 @@ const ADAPTERS={
   eleven:{
     key:()=>state.api.elevenKey,
     head(extra){ return Object.assign({'xi-api-key':state.api.elevenKey}, extra||{}); },
+    /* Diuji lewat /v1/voices — endpoint yang memang dipakai aplikasi ini.
+       Jangan mengembalikannya ke /v1/user/subscription: itu menuntut izin
+       user_read, izin yang tidak pernah dibutuhkan untuk clone maupun TTS, jadi
+       key berizin minimal (yang justru praktik yang benar) akan gagal diuji
+       padahal semua fiturnya jalan. Info kuota tetap diambil, tapi statusnya
+       bonus — kegagalannya tidak boleh menjatuhkan hasil tes. */
     async test(){
-      const d=await req('https://api.elevenlabs.io/v1/user/subscription',{headers:this.head()},'ElevenLabs');
-      const used=d.character_count, lim=d.character_limit;
-      return 'Terhubung · paket '+(d.tier||'—')+
-        (lim!=null?' · sisa kuota '+Math.max(0,lim-used).toLocaleString('id-ID')+' karakter':'');
+      const d=await req('https://api.elevenlabs.io/v1/voices',{headers:this.head()},'ElevenLabs');
+      const n=(d.voices||[]).length;
+      let extra='';
+      try{
+        const s=await req('https://api.elevenlabs.io/v1/user/subscription',{headers:this.head()},'ElevenLabs');
+        if(s.tier) extra+=' · paket '+s.tier;
+        if(s.character_limit!=null)
+          extra+=' · sisa kuota '+Math.max(0,s.character_limit-s.character_count).toLocaleString('id-ID')+' karakter';
+      }catch(_){
+        extra=' · info kuota tidak terbaca (key tanpa izin user_read — tidak masalah untuk clone & TTS)';
+      }
+      return 'Terhubung · '+n+' suara di akun ini'+extra;
     },
     async listVoices(){
       const d=await req('https://api.elevenlabs.io/v1/voices',{headers:this.head()},'ElevenLabs');

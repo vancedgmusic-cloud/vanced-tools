@@ -95,7 +95,11 @@ yang sama: `test`, `listVoices`, `clone`, `tts`, `del`. Menambah penyedia =
 satu entri di `ADAPTERS` + satu di `PROVIDERS`. Yang sudah ada:
 
 - `eleven` — ElevenLabs. `POST /v1/voices/add` (multipart) → `voice_id`,
-  lalu `POST /v1/text-to-speech/{id}` → audio biner.
+  lalu `POST /v1/text-to-speech/{id}` → audio biner. `test()` menguji lewat
+  `GET /v1/voices`, **bukan** `/v1/user/subscription`: endpoint kedua menuntut
+  izin `user_read` yang tidak pernah dipakai aplikasi ini, jadi key berizin
+  minimal akan gagal diuji padahal semua fiturnya jalan. Kuota tetap dibaca,
+  tapi kegagalannya ditelan — statusnya bonus, bukan penentu.
 - `fish` — Fish Audio. `POST /model` (multipart) → `_id`, lalu `POST /v1/tts`.
   Sering diblokir CORS dari browser; pesan errornya sudah menyebut itu.
 - `openai` — gateway OpenAI-compatible mana pun. `POST {base}/audio/speech`.
