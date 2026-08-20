@@ -398,7 +398,8 @@ const ELEVEN_FORMATS=[
 const OA_PRESETS=[
   ['https://ai.dinoiki.com/v1','Dinoiki'],
   ['https://lite.koboillm.com/v1','Koboi LLM Lite'],
-  ['https://api.openai.com/v1','OpenAI langsung']
+  ['https://api.openai.com/v1','OpenAI langsung'],
+  ['http://localhost:8004/v1','Server lokal (Chatterbox)']
 ];
 const OA_FORMATS=[['mp3','MP3'],['wav','WAV'],['opus','Opus'],['aac','AAC'],['flac','FLAC']];
 const OA_MODEL_HINTS=['gpt-4o-mini-tts','tts-1','tts-1-hd'];
@@ -1076,6 +1077,8 @@ function viewSample(){
           '</div>'+
           '<div class="acts">'+
             '<audio controls preload="none" src="'+s.url+'"></audio>'+
+            '<button class="btn small" data-act="dlsample" data-id="'+s.id+'" '+
+              'title="Unduh sample — untuk ditaruh di folder reference_audio server lokal">⬇</button>'+
             '<button class="btn small danger" data-act="delsample" data-id="'+s.id+'">Hapus</button>'+
           '</div></div>';
      }).join('')+'</div>'+
@@ -1396,23 +1399,19 @@ function renderApiModal(){
   $('#provGrid').innerHTML=PROVIDERS.map(p=>
     '<button class="prov '+(state.api.provider===p.id?'sel':'')+'" data-prov="'+p.id+'">'+
     '<b>'+esc(p.name)+'</b><span>'+esc(p.desc)+'</span></button>').join('');
-  const a=state.api; let f='', note='';
+  const a=state.api; let f='';
   if(a.provider==='eleven'){
     f='<div class="field"><label>ElevenLabs API Key</label>'+
       '<input type="password" data-path="api.elevenKey" value="'+esc(a.elevenKey)+'" placeholder="sk_…"></div>'+
       '<div class="field"><label>Model TTS default</label><select data-path="api.elevenModel">'+
         ELEVEN_MODELS.map(([v,l])=>'<option value="'+v+'"'+(a.elevenModel===v?' selected':'')+'>'+esc(l)+'</option>').join('')+
       '</select></div>';
-    note='Key dibuat di elevenlabs.io → Profile → API Keys. Instant Voice Cloning butuh paket berbayar '+
-         '(Starter ke atas); akun gratis tetap bisa memakai suara bawaan untuk TTS.';
   }
   if(a.provider==='fish'){
     f='<div class="field"><label>Fish Audio API Key</label>'+
       '<input type="password" data-path="api.fishKey" value="'+esc(a.fishKey)+'" placeholder="…"></div>'+
       '<div class="field"><label>Model</label>'+
       '<input data-path="api.fishModel" value="'+esc(a.fishModel)+'" placeholder="s2.1-pro"></div>';
-    note='Key dibuat di fish.audio → Developer → API Keys. Sebagian browser memblokir permintaan ini '+
-         'lewat CORS; kalau muncul error "permintaan tidak sampai", pakai ElevenLabs atau jalankan lewat proxy sendiri.';
   }
   if(a.provider==='openai'){
     f='<div class="field"><label>Base URL</label>'+
@@ -1429,19 +1428,44 @@ function renderApiModal(){
       '<div class="hint">Dipisah koma. Gateway tidak mengumumkan daftar suaranya lewat API, jadi isi sesuai backend yang dipakai. '+
       'Model gpt-4o-mini-tts juga menerima <b>ash, ballad, coral, sage, verse</b>. '+
       'Untuk suara perempuan Indonesia, <b>nova</b> dan <b>shimmer</b> paling sering cocok.</div></div>';
-    note='Bentuk API ini TIDAK bisa mengkloning suara — tidak ada endpoint untuk mengunggah sample. '+
-         'Yang tersedia hanya suara preset lewat POST {base}/audio/speech. Untuk kloning dari sample, pakai ElevenLabs atau Fish Audio. '+
-         'Catatan dari proyek AI_Talent_Forge di repo ini: Dinoiki menyediakan /audio/speech, Koboi LLM Lite tidak — '+
-         'pastikan sendiri dengan tombol Tarik daftar model di langkah 03.';
   }
   if(a.provider==='local'){
     f='<div class="hint" style="margin:0">Tidak butuh key. Suara diambil dari sistem operasi lewat Web Speech API.</div>';
-    note='Mode ini TIDAK mengkloning suara — hasilnya suara robot bawaan OS, dan audionya tidak bisa diunduh. '+
-         'Gunakan untuk mengecek naskah sebelum memakai kuota penyedia berbayar.';
   }
   $('#provFields').innerHTML=f;
-  $('#provNote').innerHTML=esc(note)+'<br><br>Key hanya ada di memori tab ini, dikirim hanya ke penyedia yang bersangkutan, '+
+  renderApiNote();
+}
+/* Catatan dipisah dari renderApiModal supaya bisa diperbarui sendirian.
+   Me-render ulang seluruh modal saat base URL berubah pernah menghapus API key
+   yang baru diketik: `change` menyala ketika fokus pindah ke field berikutnya,
+   dan render ulang menghancurkan field itu tepat saat user mengetik di sana. */
+function renderApiNote(){
+  $('#provNote').innerHTML=esc(apiNote(state.api))+
+    '<br><br>Key hanya ada di memori tab ini, dikirim hanya ke penyedia yang bersangkutan, '+
     'dan tidak pernah ikut ke file project yang kamu unduh.';
+}
+function apiNote(a){
+  if(a.provider==='eleven')
+    return 'Key dibuat di elevenlabs.io \u2192 Profile \u2192 API Keys. Instant Voice Cloning butuh paket berbayar '+
+      '(Starter ke atas); akun gratis tetap bisa memakai suara bawaan untuk TTS.';
+  if(a.provider==='fish')
+    return 'Key dibuat di fish.audio \u2192 Developer \u2192 API Keys. Sebagian browser memblokir permintaan ini '+
+      'lewat CORS; kalau muncul error "permintaan tidak sampai", pakai ElevenLabs atau jalankan lewat proxy sendiri.';
+  if(a.provider==='local')
+    return 'Mode ini TIDAK mengkloning suara \u2014 hasilnya suara robot bawaan OS, dan audionya tidak bisa diunduh. '+
+      'Gunakan untuk mengecek naskah sebelum memakai kuota penyedia berbayar.';
+  if(a.provider==='openai')
+    return /localhost|127\.0\.0\.1/.test(a.oaBase)
+      ? 'MODE SERVER LOKAL. Kloningnya terjadi di komputermu sendiri, jadi tanpa key dan tanpa kuota. '+
+        'Alurnya beda: unduh sample-mu di langkah 01 (tombol \u2b07), taruh berkasnya di folder reference_audio/ '+
+        'milik server, lalu tulis nama berkas itu di Daftar suara di atas \u2014 mis. "suara-saya.wav". '+
+        'Langkah 02 tetap tidak dipakai, dan kolom Model diabaikan server lokal \u2014 biarkan apa adanya. '+
+        'Panduan pemasangan: docs/suara-tanpa-api-key.md di repo ini.'
+      : 'Bentuk API ini TIDAK bisa mengkloning suara \u2014 tidak ada endpoint untuk mengunggah sample. '+
+        'Yang tersedia hanya suara preset lewat POST {base}/audio/speech. Untuk kloning dari sample, pakai ElevenLabs atau Fish Audio. '+
+        'Catatan dari proyek AI_Talent_Forge di repo ini: Dinoiki menyediakan /audio/speech, Koboi LLM Lite tidak \u2014 '+
+        'pastikan sendiri dengan tombol Tarik daftar model di langkah 03.';
+  return '';
 }
 async function testApi(){
   try{
@@ -1479,6 +1503,11 @@ document.addEventListener('click', async e=>{
     case 'rec': startRec(); break;
     case 'stoprec': stopRec(); break;
     case 'delsample': removeSample(id); break;
+    case 'dlsample': {
+      const s=state.samples.find(x=>x.id===id);
+      if(s) download(s.name, s.blob);
+      break;
+    }
     case 'clearsamples':
       state.samples.forEach(s=>URL.revokeObjectURL(s.url));
       state.samples=[]; render(); break;
@@ -1536,6 +1565,10 @@ document.addEventListener('change', e=>{
   /* Perubahan yang mengubah bentuk panel (checkbox izin, ganti model, ganti
      penyedia) baru dirender ulang di sini, bukan saat mengetik. */
   if(p==='consent'||p.startsWith('api.')||p==='voice.hapusNoise') render();
+  /* Catatan di modal ikut berubah kalau base URL diarahkan ke server lokal.
+     Aman dirender ulang di sini: `change` baru menyala setelah field kehilangan
+     fokus, jadi tidak memutus ketikan. */
+  if(p==='api.oaBase'&&$('#apiOverlay').classList.contains('open')) renderApiNote();
 });
 
 $('#projInput').addEventListener('change', e=>{

@@ -136,6 +136,22 @@ sama semangatnya dengan `postJSON` di `index.html`. `want` = `json` | `blob` | `
   sebagai tanpa blob.
 - Voice hidup di akun penyedia, bukan di file ini. `deleteVoice()` menghapusnya
   permanen di sana — pertahankan `confirm()`-nya.
+- **Jangan me-render ulang modal API dari event `change`.** `change` menyala saat
+  fokus pindah ke field berikutnya, jadi render ulang menghancurkan field itu
+  tepat ketika user mulai mengetik di sana — API key yang baru diketik hilang
+  tanpa pesan. Itulah kenapa catatan modal dipisah ke `apiNote()` /
+  `renderApiNote()`: yang diperbarui cuma teksnya, tidak ada input yang disentuh.
+
+## Tanpa API key (server lokal)
+
+Preset `http://localhost:8004/v1` mengarah ke `devnen/Chatterbox-TTS-Server`, yang
+menyajikan `/v1/audio/speech` tanpa autentikasi — jadi jalur ini masuk lewat
+adapter `openai` yang sudah ada, tanpa kode khusus. Alurnya berbeda: kloningnya
+terjadi saat generate dari berkas di folder `reference_audio/` server, bukan lewat
+panggilan clone, sehingga langkah 02 tetap tidak dipakai dan nama berkas referensi
+itulah yang diketik user sebagai nama suara. Tombol ⬇ di kartu sample ada untuk
+menjembatani ini (mengunduh sample supaya bisa ditaruh di folder tersebut).
+Panduan lengkap: `docs/suara-tanpa-api-key.md`.
 
 ## Analisis sample
 
