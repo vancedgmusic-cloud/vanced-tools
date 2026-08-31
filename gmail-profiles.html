@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Peluncur Akun Gmail</title>
+<style>
+  :root{
+    --bg:#f1f3f4; --card:#ffffff; --card-border:#e3e5e8; --text:#202124;
+    --sub:#5f6368; --accent:#1a73e8; --accent-ink:#ffffff; --danger:#d93025;
+    --shadow:0 1px 2px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06);
+    --shadow-hover:0 4px 10px rgba(0,0,0,.12), 0 1px 3px rgba(0,0,0,.08);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:'Segoe UI',Roboto,Arial,sans-serif; background:var(--bg);
+    color:var(--text); min-height:100vh;
+  }
+  .wrap{max-width:1000px; margin:0 auto; padding:40px 24px 80px}
+  header{text-align:center; margin-bottom:8px}
+  header h1{font-size:26px; font-weight:500; margin:0 0 6px}
+  header p{color:var(--sub); font-size:14px; margin:0}
+
+  details.info{
+    max-width:720px; margin:22px auto 36px; background:var(--card);
+    border:1px solid var(--card-border); border-radius:10px; padding:2px 18px;
+  }
+  details.info summary{cursor:pointer; padding:12px 0; font-size:13.5px; font-weight:600; color:var(--accent); list-style:none}
+  details.info summary::-webkit-details-marker{display:none}
+  details.info summary:before{content:"ℹ️  "}
+  details.info[open] summary{border-bottom:1px solid var(--card-border)}
+  details.info .body{font-size:13px; line-height:1.65; color:var(--sub); padding:14px 0 16px}
+  details.info .body b{color:var(--text)}
+  details.info .body ul{margin:6px 0; padding-left:18px}
+
+  .grid{
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+    gap:20px; margin-top:8px;
+  }
+  .card{
+    background:var(--card); border:1px solid var(--card-border); border-radius:12px;
+    padding:20px 16px 16px; text-align:center; position:relative; cursor:pointer;
+    box-shadow:var(--shadow); transition:box-shadow .15s, transform .15s;
+  }
+  .card:hover{box-shadow:var(--shadow-hover); transform:translateY(-2px)}
+  .avatar{
+    width:72px; height:72px; border-radius:50%; margin:0 auto 12px;
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-size:28px; font-weight:600; user-select:none;
+  }
+  .name{font-size:14.5px; font-weight:600; margin:0 0 2px; word-break:break-word}
+  .email{font-size:12px; color:var(--sub); margin:0 0 10px; word-break:break-all}
+  .menu-btn{
+    position:absolute; top:8px; right:8px; width:28px; height:28px; border:none;
+    background:transparent; border-radius:50%; cursor:pointer; font-size:16px; color:var(--sub);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .menu-btn:hover{background:#f1f3f4}
+  .quicklinks{display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:4px}
+  .qlink{
+    font-size:11px; padding:4px 8px; border-radius:20px; background:#f1f3f4; color:var(--sub);
+    border:none; cursor:pointer;
+  }
+  .qlink:hover{background:#e8eaed; color:var(--text)}
+
+  .dropdown{
+    position:absolute; top:36px; right:8px; background:#fff; border:1px solid var(--card-border);
+    border-radius:8px; box-shadow:var(--shadow-hover); z-index:20; overflow:hidden; min-width:120px;
+  }
+  .dropdown button{
+    display:block; width:100%; text-align:left; padding:9px 14px; background:none; border:none;
+    font-size:13px; cursor:pointer; color:var(--text);
+  }
+  .dropdown button:hover{background:#f1f3f4}
+  .dropdown button.danger{color:var(--danger)}
+
+  .add-card{
+    border:2px dashed var(--card-border); background:transparent; box-shadow:none;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:170px;
+  }
+  .add-card .plus{font-size:32px; color:var(--sub); margin-bottom:6px}
+  .add-card span{font-size:13px; color:var(--sub); font-weight:500}
+  .add-card:hover{border-color:var(--accent)}
+
+  .toolbar{display:flex; justify-content:center; gap:10px; margin-top:34px}
+  .btn{
+    font-size:13px; padding:8px 16px; border-radius:6px; border:1px solid var(--card-border);
+    background:#fff; color:var(--text); cursor:pointer;
+  }
+  .btn:hover{background:#f1f3f4}
+
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.4); display:flex; align-items:center;
+    justify-content:center; z-index:100; padding:20px;
+  }
+  .overlay[hidden]{display:none}
+  .modal{
+    background:#fff; border-radius:12px; width:100%; max-width:380px; padding:26px 24px;
+    box-shadow:0 8px 28px rgba(0,0,0,.25);
+  }
+  .modal h2{margin:0 0 18px; font-size:18px; font-weight:600}
+  .field{margin-bottom:14px}
+  .field label{display:block; font-size:12.5px; color:var(--sub); margin-bottom:5px; font-weight:600}
+  .field input[type=text]{
+    width:100%; padding:9px 10px; border:1px solid var(--card-border); border-radius:6px; font-size:14px;
+  }
+  .field input:focus{outline:2px solid var(--accent); outline-offset:0}
+  .slot-row{display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--sub)}
+  .slot-row input[type=number]{width:60px; padding:6px; border:1px solid var(--card-border); border-radius:6px}
+  .colors{display:flex; flex-wrap:wrap; gap:8px; margin-top:4px}
+  .swatch{
+    width:26px; height:26px; border-radius:50%; cursor:pointer; border:2px solid transparent;
+  }
+  .swatch.active{border-color:#000}
+  .modal-actions{display:flex; justify-content:space-between; align-items:center; margin-top:20px}
+  .modal-actions .right{display:flex; gap:8px}
+  .primary{background:var(--accent); color:#fff; border:none; padding:9px 18px; border-radius:6px; font-size:13.5px; cursor:pointer}
+  .primary:hover{background:#1765cc}
+  .ghost{background:none; border:none; color:var(--sub); padding:9px 10px; font-size:13.5px; cursor:pointer}
+  .ghost:hover{color:var(--text)}
+  .del-link{background:none; border:none; color:var(--danger); font-size:13px; cursor:pointer; padding:9px 4px}
+
+  footer{text-align:center; margin-top:50px; font-size:11.5px; color:#9aa0a6}
+  #fileImport{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Peluncur Akun Gmail</h1>
+    <p>Klik satu profil untuk langsung masuk Gmail akun itu — tanpa logout/login ulang.</p>
+  </header>
+
+  <details class="info">
+    <summary>Cara kerja &amp; batasannya (baca dulu)</summary>
+    <div class="body">
+      <ul>
+        <li>Tombol di tiap profil membuka Gmail/Drive/dll langsung ke akun tsb pakai mekanisme resmi
+          <b>multi-login Google</b> (URL <code>/u/emailkamu/</code>) — <b>bukan</b> menyimpan password.
+          Syaratnya: akun itu sudah pernah kamu tambahkan lewat foto profil Google → <b>"Tambah akun lain"</b>
+          di browser yang sama. Kalau sudah, klik = langsung masuk, tanpa isi password lagi.</li>
+        <li>Alat ini <b>tidak</b> dan <b>tidak bisa</b> menyimpan 10 password lalu auto-isi form login Google —
+          itu tidak aman, dan otomatisasi form login Google biasanya malah memicu Google mencurigai
+          aktivitas aneh (akun bisa diminta verifikasi ekstra). Jadi fitur itu sengaja tidak ada di sini.</li>
+        <li>Kalau kamu mau pemisahan total seperti profil Chrome di gambar kamu (histori, cookie situs lain,
+          ekstensi beda per akun) — itu fitur <b>Chrome Profile</b> bawaan browser, bukan sesuatu yang bisa
+          dikendalikan dari halaman web. Caranya manual: klik foto profil di pojok kanan atas Chrome →
+          <b>Tambahkan profil lain</b> → ulangi untuk tiap akun, login sekali di masing-masing. Setelah itu
+          kamu tinggal klik profil Chrome-nya langsung.</li>
+        <li>Data 10 profil (nama, email, warna) yang kamu isi di sini cuma tersimpan di
+          <b>localStorage browser kamu sendiri</b> — tidak dikirim ke server manapun. Pakai Ekspor/Impor
+          di bawah untuk backup atau pindah browser.</li>
+      </ul>
+    </div>
+  </details>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="toolbar">
+    <button class="btn" id="btnExport">⬇ Ekspor profil (JSON)</button>
+    <button class="btn" id="btnImport">⬆ Impor profil (JSON)</button>
+    <input type="file" id="fileImport" accept="application/json">
+  </div>
+
+  <footer>Data tersimpan lokal di browser ini saja. Maksimum 10 profil.</footer>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="modal">
+    <h2 id="modalTitle">Tambah Profil</h2>
+    <div class="field">
+      <label for="fName">Nama tampilan</label>
+      <input type="text" id="fName" placeholder="mis. Toko Utama">
+    </div>
+    <div class="field">
+      <label for="fEmail">Alamat Gmail</label>
+      <input type="text" id="fEmail" placeholder="namaakun@gmail.com">
+    </div>
+    <div class="field">
+      <label>Warna avatar</label>
+      <div class="colors" id="colorPicker"></div>
+    </div>
+    <div class="field">
+      <div class="slot-row">
+        <input type="checkbox" id="fUseSlot">
+        <label for="fUseSlot" style="margin:0">Pakai nomor urutan akun (0–9) bukannya email</label>
+      </div>
+      <div class="slot-row" id="slotNumWrap" style="margin-top:8px; display:none">
+        Slot ke- <input type="number" id="fSlot" min="0" max="9" value="0">
+        <span>(urutan saat kamu menambahkan akun di Google, mulai dari 0)</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="del-link" id="btnDelete" style="display:none">Hapus profil</button>
+      <div class="right">
+        <button class="ghost" id="btnCancel">Batal</button>
+        <button class="primary" id="btnSave">Simpan</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+const STORAGE_KEY = 'glx_gmail_profiles_v1';
+const MAX_PROFILES = 10;
+const PALETTE = ['#1a73e8','#ea4335','#fbbc04','#34a853','#9334e6','#e8710a','#12b5cb','#e52592','#795548','#607d8b'];
+
+let profiles = load();
+let openMenuId = null;
+let editingId = null;
+
+function load(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  }catch(e){ return []; }
+}
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+}
+function uid(){
+  return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+}
+function initials(name){
+  const s = (name || '?').trim();
+  if(!s) return '?';
+  const parts = s.split(/\s+/);
+  return parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : s.slice(0,2).toUpperCase();
+}
+function identifierOf(p){
+  return p.useSlot ? String(p.slot ?? 0) : (p.email || '');
+}
+function serviceUrl(service, id){
+  const e = encodeURIComponent(id);
+  switch(service){
+    case 'gmail':    return `https://mail.google.com/mail/u/${e}/`;
+    case 'drive':    return `https://drive.google.com/drive/u/${e}/my-drive`;
+    case 'calendar': return `https://calendar.google.com/calendar/u/${e}/r`;
+    case 'docs':     return `https://docs.google.com/document/u/${e}/`;
+    case 'photos':   return `https://photos.google.com/u/${e}/`;
+    case 'youtube':  return `https://www.youtube.com/?authuser=${e}`;
+  }
+}
+function openService(p, service){
+  const id = identifierOf(p);
+  if(!id){ alert('Isi dulu email atau nomor slot untuk profil ini.'); return; }
+  window.open(serviceUrl(service, id), '_blank', 'noopener');
+}
+
+function render(){
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  profiles.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <button class="menu-btn" data-menu="${p.id}">⋮</button>
+      <div class="avatar" style="background:${p.color}">${initials(p.name)}</div>
+      <p class="name">${escapeHtml(p.name || '(tanpa nama)')}</p>
+      <p class="email">${escapeHtml(p.useSlot ? ('slot #' + (p.slot ?? 0)) : (p.email || 'belum diisi'))}</p>
+      <div class="quicklinks">
+        <button class="qlink" data-svc="gmail">Gmail</button>
+        <button class="qlink" data-svc="drive">Drive</button>
+        <button class="qlink" data-svc="calendar">Kalender</button>
+        <button class="qlink" data-svc="docs">Docs</button>
+        <button class="qlink" data-svc="photos">Foto</button>
+        <button class="qlink" data-svc="youtube">YouTube</button>
+      </div>
+    `;
+    card.addEventListener('click', (e) => {
+      if(e.target.closest('.menu-btn') || e.target.closest('.dropdown')) return;
+      if(e.target.closest('.qlink')){
+        openService(p, e.target.dataset.svc);
+        return;
+      }
+      openService(p, 'gmail');
+    });
+    card.querySelector('[data-menu]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMenu(p.id, card);
+    });
+    grid.appendChild(card);
+  });
+
+  if(profiles.length < MAX_PROFILES){
+    const addCard = document.createElement('div');
+    addCard.className = 'card add-card';
+    addCard.innerHTML = `<div class="plus">+</div><span>Tambah Profil</span>`;
+    addCard.addEventListener('click', () => openModal(null));
+    grid.appendChild(addCard);
+  }
+}
+
+function toggleMenu(id, cardEl){
+  document.querySelectorAll('.dropdown').forEach(d => d.remove());
+  if(openMenuId === id){ openMenuId = null; return; }
+  openMenuId = id;
+  const dd = document.createElement('div');
+  dd.className = 'dropdown';
+  dd.innerHTML = `<button data-act="edit">Edit</button><button data-act="del" class="danger">Hapus</button>`;
+  dd.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const act = e.target.dataset.act;
+    if(act === 'edit') openModal(profiles.find(p => p.id === id));
+    if(act === 'del') deleteProfile(id);
+    dd.remove(); openMenuId = null;
+  });
+  cardEl.appendChild(dd);
+}
+document.addEventListener('click', () => {
+  document.querySelectorAll('.dropdown').forEach(d => d.remove());
+  openMenuId = null;
+});
+
+function deleteProfile(id){
+  if(!confirm('Hapus profil ini?')) return;
+  profiles = profiles.filter(p => p.id !== id);
+  save(); render();
+}
+
+function openModal(p){
+  editingId = p ? p.id : null;
+  document.getElementById('modalTitle').textContent = p ? 'Edit Profil' : 'Tambah Profil';
+  document.getElementById('fName').value = p ? p.name : '';
+  document.getElementById('fEmail').value = p ? p.email : '';
+  document.getElementById('fUseSlot').checked = p ? !!p.useSlot : false;
+  document.getElementById('fSlot').value = p ? (p.slot ?? 0) : 0;
+  document.getElementById('slotNumWrap').style.display = (p && p.useSlot) ? 'flex' : 'none';
+  document.getElementById('btnDelete').style.display = p ? 'inline-block' : 'none';
+
+  const picker = document.getElementById('colorPicker');
+  picker.innerHTML = '';
+  const chosen = p ? p.color : PALETTE[profiles.length % PALETTE.length];
+  PALETTE.forEach(c => {
+    const sw = document.createElement('div');
+    sw.className = 'swatch' + (c === chosen ? ' active' : '');
+    sw.style.background = c;
+    sw.dataset.color = c;
+    sw.addEventListener('click', () => {
+      picker.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+      sw.classList.add('active');
+    });
+    picker.appendChild(sw);
+  });
+
+  document.getElementById('overlay').hidden = false;
+  document.getElementById('fName').focus();
+}
+function closeModal(){
+  document.getElementById('overlay').hidden = true;
+  editingId = null;
+}
+
+document.getElementById('fUseSlot').addEventListener('change', (e) => {
+  document.getElementById('slotNumWrap').style.display = e.target.checked ? 'flex' : 'none';
+});
+document.getElementById('btnCancel').addEventListener('click', closeModal);
+document.getElementById('overlay').addEventListener('click', (e) => {
+  if(e.target.id === 'overlay') closeModal();
+});
+document.getElementById('btnDelete').addEventListener('click', () => {
+  if(editingId){ closeModal(); deleteProfile(editingId); }
+});
+document.getElementById('btnSave').addEventListener('click', () => {
+  const name = document.getElementById('fName').value.trim();
+  const email = document.getElementById('fEmail').value.trim();
+  const useSlot = document.getElementById('fUseSlot').checked;
+  const slot = Math.max(0, Math.min(9, parseInt(document.getElementById('fSlot').value, 10) || 0));
+  const activeSwatch = document.querySelector('.swatch.active');
+  const color = activeSwatch ? activeSwatch.dataset.color : PALETTE[0];
+
+  if(!name){ alert('Isi nama profil dulu.'); return; }
+  if(!useSlot && email && !/^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/.test(email)){
+    alert('Format email sepertinya belum benar.'); return;
+  }
+  if(!useSlot && !email){ alert('Isi alamat Gmail, atau centang "pakai nomor slot".'); return; }
+
+  if(editingId){
+    const p = profiles.find(x => x.id === editingId);
+    Object.assign(p, { name, email, useSlot, slot, color });
+  }else{
+    if(profiles.length >= MAX_PROFILES){ alert('Maksimum 10 profil.'); return; }
+    profiles.push({ id: uid(), name, email, useSlot, slot, color });
+  }
+  save(); render(); closeModal();
+});
+
+document.getElementById('btnExport').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(profiles, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'gmail-profiles.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+document.getElementById('btnImport').addEventListener('click', () => {
+  document.getElementById('fileImport').click();
+});
+document.getElementById('fileImport').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const arr = JSON.parse(reader.result);
+      if(!Array.isArray(arr)) throw new Error('bad format');
+      profiles = arr.slice(0, MAX_PROFILES).map(p => ({
+        id: p.id || uid(),
+        name: p.name || '',
+        email: p.email || '',
+        useSlot: !!p.useSlot,
+        slot: typeof p.slot === 'number' ? p.slot : 0,
+        color: p.color || PALETTE[0],
+      }));
+      save(); render();
+    }catch(err){
+      alert('File JSON tidak valid.');
+    }
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+});
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+render();
+</script>
+</body>
+</html>
